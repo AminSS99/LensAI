@@ -72,18 +72,21 @@ USER_PROMPT_TEMPLATE = """Here are today's tech news items. Please create a cura
 Create an engaging Telegram-friendly digest with the most important stories."""
 
 
-def summarize_news(news_items: List[Dict[str, Any]], max_items: int = 30) -> str:
+def summarize_news(news_items: List[Dict[str, Any]], max_items: int = 30, language: str = 'en') -> str:
     """
     Summarize a list of news items into a formatted digest.
     
     Args:
         news_items: List of news items from scrapers
         max_items: Maximum items to send to API (to control token usage)
+        language: Language code ('en', 'ru')
         
     Returns:
         Formatted markdown digest for Telegram
     """
     if not news_items:
+        if language == 'ru':
+            return "📭 Сегодня новостей нет. Проверьте позже!"
         return "📭 No tech news found today. Check back later!"
     
     # Limit items to control API costs
@@ -92,14 +95,39 @@ def summarize_news(news_items: List[Dict[str, Any]], max_items: int = 30) -> str
     # Format news for the prompt
     news_content = format_news_for_prompt(items_to_summarize)
     
+    # Language-specific prompts
+    if language == 'ru':
+        system_prompt = """Ты куратор и редактор технических новостей. Твоя задача:
+1. Проанализировать предоставленные технические новости
+2. Выбрать самые важные и значимые истории
+3. Создать краткий, хорошо организованный дайджест НА РУССКОМ ЯЗЫКЕ
+
+Формат ответа для Telegram:
+- Используй эмодзи для визуальной привлекательности
+- Группируй новости по категориям (🔥 Главное, 🤖 ИИ Новости, 🛠️ Инструменты, 💼 Индустрия)
+- Краткое описание каждой новости в 1-2 предложениях
+- Указывай источник и делай ссылки кликабельными
+- Максимум 10 новостей, приоритет качеству
+- В конце добавь краткий инсайт или наблюдение
+
+ВАЖНО: Весь текст должен быть НА РУССКОМ ЯЗЫКЕ!"""
+        user_prompt = f"""Вот сегодняшние технические новости. Создай дайджест НА РУССКОМ ЯЗЫКЕ:
+
+{news_content}
+
+Создай увлекательный дайджест для Telegram НА РУССКОМ ЯЗЫКЕ."""
+    else:
+        system_prompt = SYSTEM_PROMPT
+        user_prompt = USER_PROMPT_TEMPLATE.format(news_content=news_content)
+    
     try:
         client = get_client()
         
         response = client.chat.completions.create(
             model="deepseek-chat",
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": USER_PROMPT_TEMPLATE.format(news_content=news_content)}
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
             ],
             temperature=0.7,
             max_tokens=1500

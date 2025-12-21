@@ -32,8 +32,9 @@ def get_main_keyboard():
     
     keyboard = [
         [KeyboardButton("📰 Get News"), KeyboardButton("🔍 Search")],
-        [KeyboardButton("🔖 Saved"), KeyboardButton("⚙️ Settings")],
-        [KeyboardButton("🌐 Language"), KeyboardButton("❓ Help")]
+        [KeyboardButton("🔖 Saved"), KeyboardButton("📊 Status")],
+        [KeyboardButton("🌐 Language"), KeyboardButton("⚙️ Settings")],
+        [KeyboardButton("⏰ Schedule"), KeyboardButton("❓ Help")]
     ]
     return ReplyKeyboardMarkup(
         keyboard, 
@@ -179,8 +180,12 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("😕 No news found. Please try again later.")
             return
         
-        # Summarize with DeepSeek
-        digest = summarize_news(all_news)
+        # Get user language preference
+        from .user_storage import get_user_language
+        user_lang = get_user_language(telegram_id)
+        
+        # Summarize with DeepSeek (in user's language)
+        digest = summarize_news(all_news, language=user_lang)
         
         # Cache the digest for 15 minutes
         set_cached_digest(digest, ttl_minutes=15)
@@ -530,8 +535,7 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 LANGUAGES = {
     'en': '🇬🇧 English',
-    'ru': '🇷🇺 Русский',
-    'az': '🇦🇿 Azərbaycan'
+    'ru': '🇷🇺 Русский'
 }
 
 async def language_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -545,6 +549,9 @@ async def language_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for code, name in LANGUAGES.items():
         check = "✓ " if code == current_lang else ""
         keyboard.append([InlineKeyboardButton(f"{check}{name}", callback_data=f"lang_{code}")])
+    
+    # Azerbaijani - coming soon
+    keyboard.append([InlineKeyboardButton("🇦🇿 Azərbaycan (Tezliklə)", callback_data="lang_coming_soon")])
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
@@ -565,6 +572,15 @@ async def language_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     telegram_id = update.effective_user.id
     lang_code = query.data.replace('lang_', '')
+    
+    # Handle coming soon
+    if lang_code == 'coming_soon':
+        await query.edit_message_text(
+            "🇦🇿 **Azərbaycan dili tezliklə!**\n\n"
+            "Azerbaijani language support is coming soon. Stay tuned!",
+            parse_mode='Markdown'
+        )
+        return
     
     set_user_language(telegram_id, lang_code)
     
@@ -599,11 +615,25 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif user_message == "🔖 Saved":
         await saved_command(update, context)
         return
+    elif user_message == "📊 Status":
+        await status_command(update, context)
+        return
     elif user_message == "⚙️ Settings":
         await sources_command(update, context)
         return
     elif user_message == "🌐 Language":
         await language_command(update, context)
+        return
+    elif user_message == "⏰ Schedule":
+        await update.message.reply_text(
+            "⏰ **Set Daily Digest Time**\n\n"
+            "Use `/settime HH:MM` to schedule your daily news digest.\n\n"
+            "Examples:\n"
+            "• `/settime 09:00` - Morning digest\n"
+            "• `/settime 18:30` - Evening digest\n"
+            "• `/settime 12:00` - Lunch digest",
+            parse_mode='Markdown'
+        )
         return
     elif user_message == "❓ Help":
         await help_command(update, context)
