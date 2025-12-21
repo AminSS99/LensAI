@@ -114,26 +114,36 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /news command - fetch and send digest now."""
     from .cache import get_cached_digest, set_cached_digest, get_digest_timestamp, is_digest_cached
     from .rate_limiter import check_rate_limit
+    from .user_storage import get_user_language
+    from .translations import t
     
     telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
     
     # Check cache first (no rate limit for cached responses)
     if is_digest_cached():
         cached_digest = get_cached_digest()
         timestamp = get_digest_timestamp()
         
-        await update.message.reply_text(
-            f"📰 **Cached News Digest**\n_Last updated: {timestamp[:16] if timestamp else 'recently'}_\n\n" + 
-            cached_digest[:3900],  # Leave room for header
-            parse_mode='Markdown',
-            disable_web_page_preview=True
-        )
+        header = t('cached_news', user_lang, timestamp=timestamp[:16] if timestamp else 'recently')
+        try:
+            await update.message.reply_text(
+                header + cached_digest[:3900],
+                parse_mode='Markdown',
+                disable_web_page_preview=True
+            )
+        except Exception:
+            # Fallback without markdown if parsing fails
+            await update.message.reply_text(
+                header + cached_digest[:3900],
+                disable_web_page_preview=True
+            )
         return
     
     # Rate limit fresh requests
     allowed, message = check_rate_limit(telegram_id, 'news')
     if not allowed:
-        await update.message.reply_text(message)
+        await update.message.reply_text(t('rate_limited', user_lang, seconds=message.split()[-2] if 'seconds' in message else '60'))
         return
     
     # No cache - fetch fresh
@@ -143,12 +153,7 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from .summarizer import summarize_news
     
     # Send "typing" indicator with realistic time estimate
-    await update.message.reply_text(
-        "🔄 **Gathering fresh news from all sources...**\n\n"
-        "⏱️ This usually takes 1-3 minutes. I'll send your digest as soon as it's ready!\n\n"
-        "_Fetching from Hacker News, TechCrunch, and AI blogs..._",
-        parse_mode='Markdown'
-    )
+    await update.message.reply_text(t('gathering_news', user_lang), parse_mode='Markdown')
     
     try:
         # Get user preferences from database (or use defaults)
@@ -177,12 +182,8 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             all_news.extend(ai_news)
         
         if not all_news:
-            await update.message.reply_text("😕 No news found. Please try again later.")
+            await update.message.reply_text(t('no_news', user_lang))
             return
-        
-        # Get user language preference
-        from .user_storage import get_user_language
-        user_lang = get_user_language(telegram_id)
         
         # Summarize with DeepSeek (in user's language)
         digest = summarize_news(all_news, language=user_lang)
@@ -198,17 +199,23 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass  # Skip saving if database not available
         
         # Send digest (split if too long for Telegram)
+        # Use try/except to handle Markdown parsing errors
+        async def send_chunk(chunk):
+            try:
+                await update.message.reply_text(chunk, parse_mode='Markdown', disable_web_page_preview=True)
+            except Exception:
+                # Fallback: send without markdown parsing
+                await update.message.reply_text(chunk, disable_web_page_preview=True)
+        
         if len(digest) > 4000:
-            # Split into chunks
             chunks = [digest[i:i+4000] for i in range(0, len(digest), 4000)]
             for chunk in chunks:
-                await update.message.reply_text(chunk, parse_mode='Markdown', disable_web_page_preview=True)
+                await send_chunk(chunk)
         else:
-            await update.message.reply_text(digest, parse_mode='Markdown', disable_web_page_preview=True)
+            await send_chunk(digest)
             
     except Exception as e:
-        error_msg = f"❌ Error fetching news: {str(e)}"
-        await update.message.reply_text(error_msg)
+        await update.message.reply_text(t('error_fetching', user_lang, error=str(e)[:100]))
 
 
 async def settime_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -392,21 +399,18 @@ Use /sources to toggle sources
 
 async def saved_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /saved command - show saved articles."""
-    from .user_storage import get_saved_articles
+    from .user_storage import get_saved_articles, get_user_language
+    from .translations import t
     
     telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
     articles = get_saved_articles(telegram_id, limit=10)
     
     if not articles:
-        await update.message.reply_text(
-            "🔖 **No saved articles yet!**\n\n"
-            "When reading news, forward any article link to me and I'll save it for you.\n\n"
-            "Or use `/save <url>` to save an article.",
-            parse_mode='Markdown'
-        )
+        await update.message.reply_text(t('no_saved', user_lang), parse_mode='Markdown')
         return
     
-    message = "🔖 **Your Saved Articles**\n\n"
+    message = t('saved_header', user_lang)
     for i, article in enumerate(articles, 1):
         title = article.get('title', 'Untitled')[:50]
         url = article.get('url', '')
@@ -416,13 +420,16 @@ async def saved_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             message += f" _{source}_"
         message += "\n"
     
-    message += "\n_Use /clear\\_saved to delete all_"
+    message += t('saved_footer', user_lang)
     
-    await update.message.reply_text(
-        message, 
-        parse_mode='Markdown',
-        disable_web_page_preview=True
-    )
+    try:
+        await update.message.reply_text(
+            message, 
+            parse_mode='Markdown',
+            disable_web_page_preview=True
+        )
+    except Exception:
+        await update.message.reply_text(message, disable_web_page_preview=True)
 
 
 async def save_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -566,6 +573,7 @@ async def language_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def language_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle language selection callback."""
     from .user_storage import set_user_language
+    from .translations import t
     
     query = update.callback_query
     await query.answer()
@@ -585,9 +593,9 @@ async def language_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     set_user_language(telegram_id, lang_code)
     
     lang_name = LANGUAGES.get(lang_code, lang_code)
+    # Use translated confirmation
     await query.edit_message_text(
-        f"✅ Language set to **{lang_name}**!\n\n"
-        "Future summaries will be in this language.",
+        t('language_set', lang_code, lang=lang_name),
         parse_mode='Markdown'
     )
 
@@ -641,30 +649,32 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Check if it's a URL to save
     if user_message.startswith('http://') or user_message.startswith('https://'):
-        from .user_storage import save_article
+        from .user_storage import save_article, get_user_language
+        from .translations import t
         telegram_id = update.effective_user.id
+        user_lang = get_user_language(telegram_id)
         if save_article(telegram_id, user_message[:50], user_message):
-            await update.message.reply_text("✅ Link saved! View with /saved")
+            await update.message.reply_text(t('link_saved', user_lang))
         else:
-            await update.message.reply_text("ℹ️ Link already saved!")
+            await update.message.reply_text(t('link_exists', user_lang))
         return
     
     # Otherwise, treat as a question for AI
     from .summarizer import get_client
     from .user_storage import get_user_language
     from .rate_limiter import check_rate_limit
+    from .translations import t
     
     telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
     
     # Rate limit AI chat
     allowed, message = check_rate_limit(telegram_id, 'ai_chat')
     if not allowed:
-        await update.message.reply_text(message)
+        await update.message.reply_text(t('rate_limited', user_lang, seconds='60'))
         return
     
-    user_lang = get_user_language(telegram_id)
-    
-    await update.message.reply_text("🤔 _Thinking..._", parse_mode='Markdown')
+    await update.message.reply_text(t('thinking', user_lang), parse_mode='Markdown')
     
     lang_instruction = ""
     if user_lang == 'ru':
@@ -698,16 +708,22 @@ Keep responses under 300 words unless more detail is needed.{lang_instruction}""
         
         answer = response.choices[0].message.content
         
-        # Send answer (split if too long)
+        # Send answer (split if too long) with markdown error handling
+        async def send_answer(text):
+            try:
+                await update.message.reply_text(text, parse_mode='Markdown', disable_web_page_preview=True)
+            except Exception:
+                await update.message.reply_text(text, disable_web_page_preview=True)
+        
         if len(answer) > 4000:
             chunks = [answer[i:i+4000] for i in range(0, len(answer), 4000)]
             for chunk in chunks:
-                await update.message.reply_text(chunk, parse_mode='Markdown', disable_web_page_preview=True)
+                await send_answer(chunk)
         else:
-            await update.message.reply_text(answer, parse_mode='Markdown', disable_web_page_preview=True)
+            await send_answer(answer)
             
     except Exception as e:
-        await update.message.reply_text(f"❌ Sorry, I couldn't process that: {str(e)}")
+        await update.message.reply_text(t('ai_error', user_lang, error=str(e)[:100]))
 
 
 # ============ BOT SETUP ============
