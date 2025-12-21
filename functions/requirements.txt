@@ -1,0 +1,8 @@
+functions-framework==3.*
+firebase-admin==6.*
+google-cloud-firestore==2.*
+python-telegram-bot==20.*
+httpx
+beautifulsoup4==4.*
+feedparser==6.*
+openai==1.*

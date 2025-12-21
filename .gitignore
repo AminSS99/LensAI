@@ -1,0 +1,95 @@
+# ===== SECURITY - NEVER COMMIT THESE =====
+
+# Environment variables with API keys
+.env
+.env.local
+.env.*.local
+*.env
+
+# Google Cloud credentials
+*-service-account*.json
+credentials.json
+service-account*.json
+*.pem
+*.key
+
+# ===== PYTHON =====
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
+venv/
+env/
+.venv/
+.env/
+ENV/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+.eggs/
+
+# PyInstaller
+*.manifest
+*.spec
+
+# ===== IDE / EDITORS =====
+
+# VSCode
+.vscode/
+*.code-workspace
+
+# JetBrains (PyCharm)
+.idea/
+*.iml
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# ===== OS FILES =====
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Linux
+*~
+.directory
+
+# ===== LOGS & TEMP =====
+
+*.log
+*.tmp
+*.temp
+*.cache
+logs/
+temp/
+
+# ===== PROJECT SPECIFIC =====
+
+# Test files with sensitive data
+test_*.env
+*.test.env
+
+# Local development scripts with keys
+local_*.py
+*_local.py
+
+# Build artifacts
+*.zip
+*.tar.gz
