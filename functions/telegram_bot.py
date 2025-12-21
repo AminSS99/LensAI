@@ -31,8 +31,9 @@ def get_main_keyboard():
     from telegram import ReplyKeyboardMarkup, KeyboardButton
     
     keyboard = [
-        [KeyboardButton("📰 Get News"), KeyboardButton("⚙️ Settings")],
-        [KeyboardButton("📊 Status"), KeyboardButton("❓ Help")]
+        [KeyboardButton("📰 Get News"), KeyboardButton("🔍 Search")],
+        [KeyboardButton("🔖 Saved"), KeyboardButton("⚙️ Settings")],
+        [KeyboardButton("🌐 Language"), KeyboardButton("❓ Help")]
     ]
     return ReplyKeyboardMarkup(
         keyboard, 
@@ -81,20 +82,29 @@ Use /settime to change it!
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /help command."""
     help_text = """
-📚 **Tech News Bot Commands**
+📚 **LensAI Bot Commands**
 
-• /news - Get your personalized news digest right now
-• /settime HH:MM - Set daily digest time (e.g., /settime 14:45)
-• /sources - View and toggle news sources
-• /status - Check your current settings
-• /help - Show this help message
+📰 **News**
+• /news - Get your personalized news digest
+• /search <topic> - Search news by topic
+• /sources - Toggle news sources
+
+🔖 **Saved Articles**
+• /save <url> - Save an article
+• /saved - View saved articles
+• /clear\\_saved - Clear all saved
+
+⚙️ **Settings**
+• /settime HH:MM - Set daily digest time
+• /language - Change response language
+• /status - Check your settings
+
+💬 **Chat**
+Just type any question and I'll answer using AI!
 
 💡 **Tips:**
-- Use 24-hour format for time (e.g., 14:45, not 2:45 PM)
-- Toggle sources on/off with /sources
-- News is curated and summarized by AI
-
-Questions? The bot is open source! 🚀
+- Send me any URL to save it
+- Use buttons below for quick access
 """
     await update.message.reply_text(help_text, parse_mode='Markdown')
 
@@ -102,10 +112,11 @@ Questions? The bot is open source! 🚀
 async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /news command - fetch and send digest now."""
     from .cache import get_cached_digest, set_cached_digest, get_digest_timestamp, is_digest_cached
+    from .rate_limiter import check_rate_limit
     
     telegram_id = update.effective_user.id
     
-    # Check cache first
+    # Check cache first (no rate limit for cached responses)
     if is_digest_cached():
         cached_digest = get_cached_digest()
         timestamp = get_digest_timestamp()
@@ -116,6 +127,12 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode='Markdown',
             disable_web_page_preview=True
         )
+        return
+    
+    # Rate limit fresh requests
+    allowed, message = check_rate_limit(telegram_id, 'news')
+    if not allowed:
+        await update.message.reply_text(message)
         return
     
     # No cache - fetch fresh
@@ -366,6 +383,199 @@ Use /sources to toggle sources
     await update.message.reply_text(status_text, parse_mode='Markdown')
 
 
+# ============ SAVED ARTICLES ============
+
+async def saved_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /saved command - show saved articles."""
+    from .user_storage import get_saved_articles
+    
+    telegram_id = update.effective_user.id
+    articles = get_saved_articles(telegram_id, limit=10)
+    
+    if not articles:
+        await update.message.reply_text(
+            "🔖 **No saved articles yet!**\n\n"
+            "When reading news, forward any article link to me and I'll save it for you.\n\n"
+            "Or use `/save <url>` to save an article.",
+            parse_mode='Markdown'
+        )
+        return
+    
+    message = "🔖 **Your Saved Articles**\n\n"
+    for i, article in enumerate(articles, 1):
+        title = article.get('title', 'Untitled')[:50]
+        url = article.get('url', '')
+        source = article.get('source', '')
+        message += f"{i}. [{title}]({url})"
+        if source:
+            message += f" _{source}_"
+        message += "\n"
+    
+    message += "\n_Use /clear\\_saved to delete all_"
+    
+    await update.message.reply_text(
+        message, 
+        parse_mode='Markdown',
+        disable_web_page_preview=True
+    )
+
+
+async def save_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /save command - save an article."""
+    from .user_storage import save_article
+    
+    telegram_id = update.effective_user.id
+    
+    if not context.args:
+        await update.message.reply_text(
+            "📌 **How to save articles:**\n\n"
+            "1. `/save <url>` - Save directly\n"
+            "2. Forward me a message with a link\n"
+            "3. Reply to a news digest with `/save`",
+            parse_mode='Markdown'
+        )
+        return
+    
+    url = context.args[0]
+    title = ' '.join(context.args[1:]) if len(context.args) > 1 else url[:50]
+    
+    if save_article(telegram_id, title, url):
+        await update.message.reply_text("✅ Article saved! View with /saved")
+    else:
+        await update.message.reply_text("ℹ️ Article already saved!")
+
+
+async def clear_saved_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /clear_saved command."""
+    from .user_storage import clear_saved_articles
+    
+    telegram_id = update.effective_user.id
+    clear_saved_articles(telegram_id)
+    await update.message.reply_text("🗑️ All saved articles cleared!")
+
+
+# ============ SEARCH ============
+
+async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /search command - search news by topic."""
+    from .scrapers.hackernews import fetch_hackernews_sync
+    from .scrapers.techcrunch import fetch_techcrunch
+    from .user_storage import add_search_history
+    from .rate_limiter import check_rate_limit
+    
+    telegram_id = update.effective_user.id
+    
+    # Rate limit check
+    allowed, message = check_rate_limit(telegram_id, 'search')
+    if not allowed:
+        await update.message.reply_text(message)
+        return
+    
+    if not context.args:
+        await update.message.reply_text(
+            "🔍 **Search News**\n\n"
+            "Usage: `/search <topic>`\n\n"
+            "Examples:\n"
+            "• `/search GPT-5`\n"
+            "• `/search Apple`\n"
+            "• `/search machine learning`",
+            parse_mode='Markdown'
+        )
+        return
+    
+    query = ' '.join(context.args).lower()
+    add_search_history(telegram_id, query)
+    
+    await update.message.reply_text(f"🔍 Searching for **{query}**...", parse_mode='Markdown')
+    
+    try:
+        # Fetch news
+        all_news = []
+        all_news.extend(fetch_hackernews_sync(30))
+        all_news.extend(fetch_techcrunch(20))
+        
+        # Filter by query
+        results = []
+        for article in all_news:
+            title = article.get('title', '').lower()
+            if query in title or any(word in title for word in query.split()):
+                results.append(article)
+        
+        if not results:
+            await update.message.reply_text(
+                f"😕 No articles found for **{query}**.\n\nTry a different search term!",
+                parse_mode='Markdown'
+            )
+            return
+        
+        # Format results
+        message = f"🔍 **Results for '{query}'** ({len(results)} found)\n\n"
+        for i, article in enumerate(results[:10], 1):
+            title = article.get('title', '')[:60]
+            url = article.get('url', '')
+            source = article.get('source', '')
+            message += f"{i}. [{title}]({url}) _{source}_\n"
+        
+        await update.message.reply_text(
+            message,
+            parse_mode='Markdown',
+            disable_web_page_preview=True
+        )
+        
+    except Exception as e:
+        await update.message.reply_text(f"❌ Search error: {str(e)}")
+
+
+# ============ LANGUAGE ============
+
+LANGUAGES = {
+    'en': '🇬🇧 English',
+    'ru': '🇷🇺 Русский',
+    'az': '🇦🇿 Azərbaycan'
+}
+
+async def language_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /language command - change language."""
+    from .user_storage import get_user_language
+    
+    telegram_id = update.effective_user.id
+    current_lang = get_user_language(telegram_id)
+    
+    keyboard = []
+    for code, name in LANGUAGES.items():
+        check = "✓ " if code == current_lang else ""
+        keyboard.append([InlineKeyboardButton(f"{check}{name}", callback_data=f"lang_{code}")])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await update.message.reply_text(
+        "🌐 **Select Language**\n\n"
+        "Choose your preferred language for summaries:",
+        reply_markup=reply_markup,
+        parse_mode='Markdown'
+    )
+
+
+async def language_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle language selection callback."""
+    from .user_storage import set_user_language
+    
+    query = update.callback_query
+    await query.answer()
+    
+    telegram_id = update.effective_user.id
+    lang_code = query.data.replace('lang_', '')
+    
+    set_user_language(telegram_id, lang_code)
+    
+    lang_name = LANGUAGES.get(lang_code, lang_code)
+    await query.edit_message_text(
+        f"✅ Language set to **{lang_name}**!\n\n"
+        "Future summaries will be in this language.",
+        parse_mode='Markdown'
+    )
+
+
 # ============ Q&A HANDLER ============
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -380,20 +590,57 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_message == "📰 Get News":
         await news_command(update, context)
         return
+    elif user_message == "🔍 Search":
+        await update.message.reply_text(
+            "🔍 **Search News**\n\nType `/search <topic>`\n\nExample: `/search GPT-5`",
+            parse_mode='Markdown'
+        )
+        return
+    elif user_message == "🔖 Saved":
+        await saved_command(update, context)
+        return
     elif user_message == "⚙️ Settings":
         await sources_command(update, context)
         return
-    elif user_message == "📊 Status":
-        await status_command(update, context)
+    elif user_message == "🌐 Language":
+        await language_command(update, context)
         return
     elif user_message == "❓ Help":
         await help_command(update, context)
         return
     
+    # Check if it's a URL to save
+    if user_message.startswith('http://') or user_message.startswith('https://'):
+        from .user_storage import save_article
+        telegram_id = update.effective_user.id
+        if save_article(telegram_id, user_message[:50], user_message):
+            await update.message.reply_text("✅ Link saved! View with /saved")
+        else:
+            await update.message.reply_text("ℹ️ Link already saved!")
+        return
+    
     # Otherwise, treat as a question for AI
     from .summarizer import get_client
+    from .user_storage import get_user_language
+    from .rate_limiter import check_rate_limit
+    
+    telegram_id = update.effective_user.id
+    
+    # Rate limit AI chat
+    allowed, message = check_rate_limit(telegram_id, 'ai_chat')
+    if not allowed:
+        await update.message.reply_text(message)
+        return
+    
+    user_lang = get_user_language(telegram_id)
     
     await update.message.reply_text("🤔 _Thinking..._", parse_mode='Markdown')
+    
+    lang_instruction = ""
+    if user_lang == 'ru':
+        lang_instruction = " Respond in Russian."
+    elif user_lang == 'az':
+        lang_instruction = " Respond in Azerbaijani."
     
     try:
         client = get_client()
@@ -403,7 +650,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             messages=[
                 {
                     "role": "system", 
-                    "content": """You are a helpful tech news assistant. Users may ask you:
+                    "content": f"""You are a helpful tech news assistant. Users may ask you:
 - Questions about tech news, AI developments, or industry trends
 - To explain what a news item means
 - For more details about a technology or company
@@ -411,7 +658,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 Be concise, informative, and friendly. Use emojis sparingly. 
 If the question is about a specific news item, provide context and explain its significance.
-Keep responses under 300 words unless more detail is needed."""
+Keep responses under 300 words unless more detail is needed.{lang_instruction}"""
                 },
                 {"role": "user", "content": user_message}
             ],
@@ -449,8 +696,16 @@ def create_bot_application() -> Application:
     application.add_handler(CommandHandler("sources", sources_command))
     application.add_handler(CommandHandler("status", status_command))
     
-    # Add callback query handler for inline buttons
+    # New feature commands
+    application.add_handler(CommandHandler("saved", saved_command))
+    application.add_handler(CommandHandler("save", save_command))
+    application.add_handler(CommandHandler("clear_saved", clear_saved_command))
+    application.add_handler(CommandHandler("search", search_command))
+    application.add_handler(CommandHandler("language", language_command))
+    
+    # Add callback query handlers for inline buttons
     application.add_handler(CallbackQueryHandler(toggle_source_callback, pattern='^toggle_'))
+    application.add_handler(CallbackQueryHandler(language_callback, pattern='^lang_'))
     
     # Add message handler for buttons and Q&A (handles any text that isn't a command)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
