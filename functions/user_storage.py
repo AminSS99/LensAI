@@ -193,3 +193,71 @@ def get_search_history(telegram_id: int, limit: int = 5) -> List[str]:
     data = _load_user_data(telegram_id)
     history = data.get('search_history', [])
     return [h['query'] for h in reversed(history[-limit:])]
+
+
+# ============ ARTICLE RATINGS ============
+
+def rate_article(telegram_id: int, article_url: str, rating: str) -> bool:
+    """
+    Rate an article (thumbs up/down).
+    
+    Args:
+        telegram_id: User's Telegram ID
+        article_url: URL of the article
+        rating: 'up' or 'down'
+        
+    Returns:
+        True if saved successfully
+    """
+    # Store in Firestore for analytics
+    try:
+        from google.cloud import firestore
+        db = firestore.Client()
+        
+        # Store in user ratings collection
+        db.collection('article_ratings').add({
+            'telegram_id': telegram_id,
+            'article_url': article_url,
+            'rating': rating,
+            'timestamp': firestore.SERVER_TIMESTAMP
+        })
+        return True
+    except Exception as e:
+        print(f"Error saving rating: {e}")
+        # Fall back to local storage
+        data = _load_user_data(telegram_id)
+        if 'ratings' not in data:
+            data['ratings'] = []
+        data['ratings'].append({
+            'url': article_url,
+            'rating': rating,
+            'timestamp': datetime.now().isoformat()
+        })
+        data['ratings'] = data['ratings'][-100:]  # Keep last 100
+        _save_user_data(telegram_id, data)
+        return True
+
+
+def get_article_stats(article_url: str) -> Dict[str, int]:
+    """Get aggregated ratings for an article."""
+    try:
+        from google.cloud import firestore
+        from google.cloud.firestore_v1.base_query import FieldFilter
+        db = firestore.Client()
+        
+        ratings = db.collection('article_ratings')\
+            .where(filter=FieldFilter('article_url', '==', article_url))\
+            .stream()
+        
+        ups = downs = 0
+        for r in ratings:
+            data = r.to_dict()
+            if data.get('rating') == 'up':
+                ups += 1
+            else:
+                downs += 1
+        
+        return {'up': ups, 'down': downs}
+    except Exception:
+        return {'up': 0, 'down': 0}
+

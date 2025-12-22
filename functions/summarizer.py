@@ -34,8 +34,9 @@ def format_news_for_prompt(news_items: List[Dict[str, Any]]) -> str:
         url = item.get('url', '')
         summary = item.get('summary', '')
         score = item.get('score', '')
+        read_time = estimate_read_time(title, summary)
         
-        entry = f"{i}. [{source}] {title}"
+        entry = f"{i}. [{source}] {title} (~{read_time} min)"
         if score:
             entry += f" (Score: {score})"
         if summary:
@@ -48,6 +49,25 @@ def format_news_for_prompt(news_items: List[Dict[str, Any]]) -> str:
     return "\n\n".join(formatted)
 
 
+def estimate_read_time(title: str, summary: str = "") -> int:
+    """
+    Estimate read time for an article in minutes.
+    Based on average reading speed of 200 words per minute.
+    """
+    # Typical article length estimation based on title/summary
+    title_words = len(title.split())
+    summary_words = len(summary.split()) if summary else 0
+    
+    # Estimate full article length (title usually ~10% of article)
+    estimated_words = max(title_words * 10, summary_words * 3, 200)
+    
+    # Calculate read time (minimum 1 minute)
+    read_time = max(1, round(estimated_words / 200))
+    
+    # Cap at 15 minutes for very long articles
+    return min(read_time, 15)
+
+
 SYSTEM_PROMPT = """You are a tech news curator and summarizer. Your job is to:
 1. Analyze the provided tech news items
 2. Identify the most important and impactful stories
@@ -57,7 +77,7 @@ Format your response as a Telegram message using these guidelines:
 - Use emojis to make it visually appealing
 - Group news by category (🔥 Top Stories, 🤖 AI News, 🛠️ New Tools, 💼 Industry News)
 - Keep each summary to 1-2 sentences
-- Include the source and make URLs clickable
+- Include the source, read time (e.g. "~3 min"), and make URLs clickable
 - Be conversational and engaging
 - Maximum 10 items in total, prioritize quality over quantity
 - End with a brief one-liner insight or observation
@@ -106,7 +126,7 @@ def summarize_news(news_items: List[Dict[str, Any]], max_items: int = 30, langua
 - Используй эмодзи для визуальной привлекательности
 - Группируй новости по категориям (🔥 Главное, 🤖 ИИ Новости, 🛠️ Инструменты, 💼 Индустрия)
 - Краткое описание каждой новости в 1-2 предложениях
-- Указывай источник и делай ссылки кликабельными
+- Указывай источник, время чтения (например "~3 мин") и делай ссылки кликабельными
 - Максимум 10 новостей, приоритет качеству
 - В конце добавь краткий инсайт или наблюдение
 
