@@ -533,7 +533,7 @@ async def language_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def language_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle language selection callback."""
-    from .user_storage import set_user_language
+    from .user_storage import set_user_language, get_user_language
     from .translations import t
     
     query = update.callback_query
@@ -544,8 +544,6 @@ async def language_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Handle coming soon
     if lang_code == 'coming_soon':
-        # Use the user's current language to show the message
-        from .user_storage import get_user_language
         current_lang = get_user_language(telegram_id)
         await query.edit_message_text(
             t('az_coming_soon', current_lang),
@@ -553,13 +551,23 @@ async def language_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     
+    # Set the new language
     set_user_language(telegram_id, lang_code)
     
     lang_name = LANGUAGES.get(lang_code, lang_code)
-    # Use translated confirmation
+    
+    # Edit the original message with confirmation
     await query.edit_message_text(
         t('language_set', lang_code, lang=lang_name),
         parse_mode='Markdown'
+    )
+    
+    # IMPORTANT: Send a new message with the refreshed keyboard in the new language
+    # This ensures the keyboard buttons are updated to the new language
+    await query.message.reply_text(
+        t('help_text', lang_code),
+        parse_mode='Markdown',
+        reply_markup=get_main_keyboard(lang_code)
     )
 
 
