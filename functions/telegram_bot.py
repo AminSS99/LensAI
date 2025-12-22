@@ -558,7 +558,7 @@ async def language_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Edit the original message with confirmation
     await query.edit_message_text(
-        t('language_set', lang_code, lang=lang_name),
+        t('language_set', lang_code, language_name=lang_name),
         parse_mode='Markdown'
     )
     
