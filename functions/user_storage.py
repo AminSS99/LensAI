@@ -132,13 +132,41 @@ def set_user_preference(telegram_id: int, key: str, value: Any):
 
 
 def get_user_language(telegram_id: int) -> str:
-    """Get user's preferred language."""
+    """Get user's preferred language from Firestore (with local fallback)."""
+    # Try Firestore first (for cloud deployment)
+    try:
+        from google.cloud import firestore
+        db = firestore.Client()
+        doc = db.collection('user_preferences').document(str(telegram_id)).get()
+        if doc.exists:
+            data = doc.to_dict()
+            return data.get('language', 'en')
+    except Exception as e:
+        # Firestore not available (local development) - fall back to file storage
+        pass
+    
+    # Fall back to local file storage
     prefs = get_user_preferences(telegram_id)
     return prefs.get('language', 'en')
 
 
 def set_user_language(telegram_id: int, language: str):
-    """Set user's preferred language."""
+    """Set user's preferred language to Firestore (with local fallback)."""
+    # Try Firestore first (for cloud deployment)
+    try:
+        from google.cloud import firestore
+        db = firestore.Client()
+        db.collection('user_preferences').document(str(telegram_id)).set({
+            'language': language,
+            'updated_at': firestore.SERVER_TIMESTAMP
+        }, merge=True)
+        print(f"Language set to {language} for user {telegram_id} in Firestore")
+        return
+    except Exception as e:
+        # Firestore not available (local development) - fall back to file storage
+        print(f"Firestore not available, using local storage: {e}")
+    
+    # Fall back to local file storage
     set_user_preference(telegram_id, 'language', language)
 
 
