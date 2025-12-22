@@ -190,48 +190,102 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(t('error_fetching', user_lang, error=str(e)[:100]))
 
 
-async def settime_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /settime command - set daily digest time."""
+async def schedule_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /schedule command - show time picker buttons."""
     from .user_storage import get_user_language
     from .translations import t
+    from .database import get_user
     
     telegram_id = update.effective_user.id
     user_lang = get_user_language(telegram_id)
     
-    # Parse time from command arguments
-    if not context.args:
-        await update.message.reply_text(
-            t('settime_prompt', user_lang),
-            parse_mode='Markdown'
-        )
+    # Get current schedule time
+    current_time = None
+    try:
+        user = get_user(telegram_id)
+        if user:
+            current_time = user.get('schedule_time')
+    except Exception:
+        pass
+    
+    # Available times (top of each hour from 09:00 to 22:00)
+    times = ['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', 
+             '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00', '22:00']
+    
+    # Create button grid (2 columns)
+    keyboard = []
+    for i in range(0, len(times), 2):
+        row = []
+        for j in range(2):
+            if i + j < len(times):
+                time = times[i + j]
+                check = "✓ " if time == current_time else ""
+                row.append(InlineKeyboardButton(f"{check}{time}", callback_data=f"schedule_{time}"))
+        keyboard.append(row)
+    
+    # Add disable option
+    disable_text = "❌ Отключить" if user_lang == 'ru' else "❌ Disable"
+    keyboard.append([InlineKeyboardButton(disable_text, callback_data="schedule_disable")])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    header = "⏰ *Выберите время для ежедневного дайджеста:*" if user_lang == 'ru' else "⏰ *Choose time for daily digest:*"
+    if current_time:
+        current_text = f"\n\n_Текущее время: {current_time}_" if user_lang == 'ru' else f"\n\n_Current time: {current_time}_"
+        header += current_text
+    
+    await update.message.reply_text(
+        header,
+        reply_markup=reply_markup,
+        parse_mode='Markdown'
+    )
+
+
+async def schedule_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle schedule time selection callback."""
+    from .user_storage import get_user_language
+    from .database import create_or_update_user
+    
+    query = update.callback_query
+    await query.answer()
+    
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+    
+    data = query.data.replace('schedule_', '')
+    
+    if data == 'disable':
+        # Disable scheduled digest
+        try:
+            create_or_update_user(telegram_id, schedule_time=None)
+        except Exception:
+            pass
+        
+        msg = "✅ Ежедневный дайджест отключен." if user_lang == 'ru' else "✅ Daily digest disabled."
+        await query.edit_message_text(msg, parse_mode='Markdown')
         return
     
-    time_str = context.args[0]
-    
-    # Validate time format
-    time_pattern = r'^([01]?[0-9]|2[0-3]):([0-5][0-9])$'
-    if not re.match(time_pattern, time_str):
-        await update.message.reply_text(t('settime_invalid', user_lang))
-        return
-    
-    # Normalize to HH:MM format
-    parts = time_str.split(':')
-    normalized_time = f"{int(parts[0]):02d}:{parts[1]}"
+    # Set the selected time
+    selected_time = data  # e.g. "18:00"
     
     try:
-        from .database import create_or_update_user
-        create_or_update_user(telegram_id, schedule_time=normalized_time)
-        
-        await update.message.reply_text(
-            t('settime_success', user_lang, time=normalized_time),
-            parse_mode='Markdown'
-        )
+        create_or_update_user(telegram_id, schedule_time=selected_time)
     except Exception as e:
-        # Database not available - still confirm to user
-        await update.message.reply_text(
-            t('settime_local', user_lang, time=normalized_time),
-            parse_mode='Markdown'
-        )
+        await query.edit_message_text(f"Error: {e}")
+        return
+    
+    if user_lang == 'ru':
+        msg = f"✅ Ежедневный дайджест запланирован на *{selected_time}*!\n\nВы будете получать персональные новости технологий в это время каждый день."
+    else:
+        msg = f"✅ Daily digest scheduled for *{selected_time}*!\n\nYou will receive personalized tech news at this time every day."
+    
+    await query.edit_message_text(msg, parse_mode='Markdown')
+
+
+# Keep settime_command for backward compatibility with /settime command
+async def settime_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /settime command - redirect to schedule picker."""
+    await schedule_command(update, context)
 
 
 async def sources_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -629,10 +683,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     # Schedule button
     elif user_message in ["⏰ Schedule", "⏰ Расписание", t('btn_schedule', 'en'), t('btn_schedule', 'ru')]:
-        await update.message.reply_text(
-            t('schedule_prompt', user_lang),
-            parse_mode='Markdown'
-        )
+        await schedule_command(update, context)
         return
     # Help button
     elif user_message in ["❓ Help", "❓ Помощь", t('btn_help', 'en'), t('btn_help', 'ru')]:
@@ -736,6 +787,7 @@ def create_bot_application() -> Application:
     # Add callback query handlers for inline buttons
     application.add_handler(CallbackQueryHandler(toggle_source_callback, pattern='^toggle_'))
     application.add_handler(CallbackQueryHandler(language_callback, pattern='^lang_'))
+    application.add_handler(CallbackQueryHandler(schedule_callback, pattern='^schedule_'))
     
     # Add message handler for buttons and Q&A (handles any text that isn't a command)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))

@@ -66,9 +66,10 @@ def scheduled_digest(request: Request):
     from .scrapers.ai_blogs import fetch_ai_blogs_sync
     from .summarizer import summarize_news
     
-    # Get current time in HH:MM format
-    # Note: You might need to adjust for timezone
-    current_time = datetime.utcnow().strftime("%H:%M")
+    # Get current time in HH:MM format (Baku timezone - UTC+4)
+    from datetime import timezone, timedelta
+    baku_tz = timezone(timedelta(hours=4))
+    current_time = datetime.now(baku_tz).strftime("%H:00")  # Always use :00 for top-of-hour
     
     # For testing, allow time override via query param
     if request.args.get('time'):
