@@ -170,21 +170,51 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass  # Skip saving if database not available
         
+        # Generate unique digest ID for rating tracking
+        import hashlib
+        digest_id = hashlib.md5(digest[:100].encode()).hexdigest()[:8]
+        
         # Send digest (split if too long for Telegram)
         # Use try/except to handle Markdown parsing errors
-        async def send_chunk(chunk):
+        async def send_chunk(chunk, is_last=False):
             try:
-                await update.message.reply_text(chunk, parse_mode='Markdown', disable_web_page_preview=True)
+                if is_last:
+                    # Add rating buttons to the last chunk
+                    keyboard = [
+                        [
+                            InlineKeyboardButton("👍", callback_data=f"rate_up_{digest_id}"),
+                            InlineKeyboardButton("👎", callback_data=f"rate_down_{digest_id}")
+                        ]
+                    ]
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+                    await update.message.reply_text(
+                        chunk, 
+                        parse_mode='Markdown', 
+                        disable_web_page_preview=True,
+                        reply_markup=reply_markup
+                    )
+                else:
+                    await update.message.reply_text(chunk, parse_mode='Markdown', disable_web_page_preview=True)
             except Exception:
                 # Fallback: send without markdown parsing
-                await update.message.reply_text(chunk, disable_web_page_preview=True)
+                if is_last:
+                    keyboard = [
+                        [
+                            InlineKeyboardButton("👍", callback_data=f"rate_up_{digest_id}"),
+                            InlineKeyboardButton("👎", callback_data=f"rate_down_{digest_id}")
+                        ]
+                    ]
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+                    await update.message.reply_text(chunk, disable_web_page_preview=True, reply_markup=reply_markup)
+                else:
+                    await update.message.reply_text(chunk, disable_web_page_preview=True)
         
         if len(digest) > 4000:
             chunks = [digest[i:i+4000] for i in range(0, len(digest), 4000)]
-            for chunk in chunks:
-                await send_chunk(chunk)
+            for i, chunk in enumerate(chunks):
+                await send_chunk(chunk, is_last=(i == len(chunks) - 1))
         else:
-            await send_chunk(digest)
+            await send_chunk(digest, is_last=True)
             
     except Exception as e:
         await update.message.reply_text(t('error_fetching', user_lang, error=str(e)[:100]))
@@ -638,6 +668,44 @@ async def language_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+# ============ RATING CALLBACK ============
+
+async def rating_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle digest rating button presses."""
+    from .user_storage import get_user_language, rate_article
+    
+    query = update.callback_query
+    await query.answer()
+    
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+    
+    data = query.data  # e.g., "rate_up_abc123" or "rate_down_abc123"
+    parts = data.split('_')
+    
+    if len(parts) >= 3:
+        rating_type = parts[1]  # 'up' or 'down'
+        digest_id = parts[2]  # unique digest ID
+        
+        # Store the rating
+        rate_article(telegram_id, f"digest_{digest_id}", rating_type)
+        
+        # Show confirmation
+        if rating_type == 'up':
+            emoji = "👍"
+            text = "Спасибо за отзыв! Рады, что понравилось!" if user_lang == 'ru' else "Thanks for your feedback! Glad you liked it!"
+        else:
+            emoji = "👎"
+            text = "Спасибо за отзыв! Мы учтём это." if user_lang == 'ru' else "Thanks for your feedback! We'll take note."
+        
+        # Update the message to show the selected rating
+        await query.edit_message_reply_markup(
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(f"✅ {emoji} Оценено" if user_lang == 'ru' else f"✅ {emoji} Rated", callback_data="rated")]
+            ])
+        )
+
+
 # ============ Q&A HANDLER ============
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -788,6 +856,7 @@ def create_bot_application() -> Application:
     application.add_handler(CallbackQueryHandler(toggle_source_callback, pattern='^toggle_'))
     application.add_handler(CallbackQueryHandler(language_callback, pattern='^lang_'))
     application.add_handler(CallbackQueryHandler(schedule_callback, pattern='^schedule_'))
+    application.add_handler(CallbackQueryHandler(rating_callback, pattern='^rate_'))
     
     # Add message handler for buttons and Q&A (handles any text that isn't a command)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
