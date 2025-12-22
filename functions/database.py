@@ -7,6 +7,7 @@ import os
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 from google.cloud import firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 from google.oauth2 import service_account
 
 
@@ -111,8 +112,8 @@ def get_users_for_time(schedule_time: str) -> List[Dict[str, Any]]:
     """
     db = get_db()
     users = db.collection('users')\
-        .where('schedule_time', '==', schedule_time)\
-        .where('is_active', '==', True)\
+        .where(filter=FieldFilter('schedule_time', '==', schedule_time))\
+        .where(filter=FieldFilter('is_active', '==', True))\
         .stream()
     
     return [user.to_dict() for user in users]
@@ -201,7 +202,7 @@ def get_recent_articles(hours: int = 24, limit: int = 50) -> List[Dict[str, Any]
     cutoff = datetime.utcnow() - timedelta(hours=hours)
     
     articles = db.collection('articles')\
-        .where('fetched_at', '>=', cutoff)\
+        .where(filter=FieldFilter('fetched_at', '>=', cutoff))\
         .order_by('fetched_at', direction=firestore.Query.DESCENDING)\
         .limit(limit)\
         .stream()
@@ -239,7 +240,7 @@ def get_user_digests(telegram_id: int, limit: int = 10) -> List[Dict[str, Any]]:
     db = get_db()
     
     digests = db.collection('digests')\
-        .where('user_id', '==', telegram_id)\
+        .where(filter=FieldFilter('user_id', '==', telegram_id))\
         .order_by('sent_at', direction=firestore.Query.DESCENDING)\
         .limit(limit)\
         .stream()
@@ -263,7 +264,7 @@ def cleanup_old_articles(days: int = 7) -> int:
     cutoff = datetime.utcnow() - timedelta(days=days)
     
     old_articles = db.collection('articles')\
-        .where('fetched_at', '<', cutoff)\
+        .where(filter=FieldFilter('fetched_at', '<', cutoff))\
         .stream()
     
     batch = db.batch()

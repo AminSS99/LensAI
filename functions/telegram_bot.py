@@ -551,21 +551,34 @@ async def language_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     
+    # Validate language code
+    if lang_code not in LANGUAGES:
+        return
+    
     # Set the new language
     set_user_language(telegram_id, lang_code)
     
-    lang_name = LANGUAGES.get(lang_code, lang_code)
+    # Rebuild the keyboard with updated checkmark
+    keyboard = []
+    for code, name in LANGUAGES.items():
+        check = "✓ " if code == lang_code else ""
+        keyboard.append([InlineKeyboardButton(f"{check}{name}", callback_data=f"lang_{code}")])
     
-    # Edit the original message with confirmation
+    # Azerbaijani - coming soon
+    keyboard.append([InlineKeyboardButton("🇦🇿 Azərbaycan (Tezliklə)", callback_data="lang_coming_soon")])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    # Update the message with the new keyboard showing the checkmark on selected language
     await query.edit_message_text(
-        t('language_set', lang_code, language_name=lang_name),
+        t('select_language', lang_code) + f"\n\n✅ {LANGUAGES[lang_code]}",
+        reply_markup=reply_markup,
         parse_mode='Markdown'
     )
     
-    # IMPORTANT: Send a new message with the refreshed keyboard in the new language
-    # This ensures the keyboard buttons are updated to the new language
+    # Send a new message with the refreshed keyboard in the new language
     await query.message.reply_text(
-        t('help_text', lang_code),
+        t('language_set', lang_code, language_name=LANGUAGES[lang_code]),
         parse_mode='Markdown',
         reply_markup=get_main_keyboard(lang_code)
     )

@@ -12,11 +12,12 @@ import asyncio
 
 # AI Blog URLs and their scraping configurations
 AI_BLOGS = {
-    'openai': {
-        'url': 'https://openai.com/blog',
-        'name': 'OpenAI',
-        'selector': 'a[href*="/index/"]',  # Blog post links
-    },
+    # OpenAI blog blocks automated scraping (403 Forbidden)
+    # 'openai': {
+    #     'url': 'https://openai.com/blog',
+    #     'name': 'OpenAI',
+    #     'selector': 'a[href*="/index/"]',  # Blog post links
+    # },
     'anthropic': {
         'url': 'https://www.anthropic.com/news',
         'name': 'Anthropic',

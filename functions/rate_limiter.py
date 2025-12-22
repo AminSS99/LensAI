@@ -70,7 +70,7 @@ _limiter = RateLimiter()
 LIMITS = {
     'news': {'max': 5, 'window': 300},      # 5 per 5 minutes
     'search': {'max': 10, 'window': 60},    # 10 per minute
-    'ai_chat': {'max': 20, 'window': 60},   # 20 per minute
+    'ai_chat': {'max': 5, 'window': 300},   # 5 per 5 minutes (reduced to save API costs)
     'save': {'max': 30, 'window': 60},      # 30 per minute
     'default': {'max': 30, 'window': 60}    # Default
 }
