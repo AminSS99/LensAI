@@ -26,15 +26,16 @@ def get_bot_token() -> str:
 
 # ============ KEYBOARD MENUS ============
 
-def get_main_keyboard():
+def get_main_keyboard(lang: str = 'en'):
     """Get the main persistent keyboard with quick action buttons."""
     from telegram import ReplyKeyboardMarkup, KeyboardButton
+    from .translations import t
     
     keyboard = [
-        [KeyboardButton("📰 Get News"), KeyboardButton("🔍 Search")],
-        [KeyboardButton("🔖 Saved"), KeyboardButton("📊 Status")],
-        [KeyboardButton("🌐 Language"), KeyboardButton("⚙️ Settings")],
-        [KeyboardButton("⏰ Schedule"), KeyboardButton("❓ Help")]
+        [KeyboardButton(t('btn_news', lang)), KeyboardButton(t('btn_search', lang))],
+        [KeyboardButton(t('btn_saved', lang)), KeyboardButton(t('btn_status', lang))],
+        [KeyboardButton(t('btn_language', lang)), KeyboardButton(t('btn_settings', lang))],
+        [KeyboardButton(t('btn_schedule', lang)), KeyboardButton(t('btn_help', lang))]
     ]
     return ReplyKeyboardMarkup(
         keyboard, 
@@ -47,9 +48,13 @@ def get_main_keyboard():
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /start command - welcome message."""
+    from .user_storage import get_user_language
+    from .translations import t
+    
     user = update.effective_user
     telegram_id = user.id
     username = user.username or user.first_name
+    user_lang = get_user_language(telegram_id)
     
     # Try to register user in database (optional - may not work locally)
     try:
@@ -58,56 +63,23 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         print(f"Database not available (running locally?): {e}")
     
-    welcome_message = f"""
-👋 Welcome to **Tech News Bot**, {username}!
-
-I'll keep you updated with the latest tech and AI news from:
-• 📰 Hacker News
-• 💻 TechCrunch  
-• 🤖 AI Company Blogs (OpenAI, Anthropic, Google AI, Mistral)
-
-**Quick Actions:** Use the buttons below ⬇️
-
-**Or type any question** and I'll answer using AI!
-
-Your current schedule: **18:00** daily
-Use /settime to change it!
-"""
+    welcome_message = t('welcome', user_lang, username=username)
     await update.message.reply_text(
         welcome_message, 
         parse_mode='Markdown',
-        reply_markup=get_main_keyboard()
+        reply_markup=get_main_keyboard(user_lang)
     )
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /help command."""
-    help_text = """
-📚 **LensAI Bot Commands**
-
-📰 **News**
-• /news - Get your personalized news digest
-• /search <topic> - Search news by topic
-• /sources - Toggle news sources
-
-🔖 **Saved Articles**
-• /save <url> - Save an article
-• /saved - View saved articles
-• /clear\\_saved - Clear all saved
-
-⚙️ **Settings**
-• /settime HH:MM - Set daily digest time
-• /language - Change response language
-• /status - Check your settings
-
-💬 **Chat**
-Just type any question and I'll answer using AI!
-
-💡 **Tips:**
-- Send me any URL to save it
-- Use buttons below for quick access
-"""
-    await update.message.reply_text(help_text, parse_mode='Markdown')
+    from .user_storage import get_user_language
+    from .translations import t
+    
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+    
+    await update.message.reply_text(t('help_text', user_lang), parse_mode='Markdown')
 
 
 async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -220,13 +192,16 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def settime_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /settime command - set daily digest time."""
+    from .user_storage import get_user_language
+    from .translations import t
+    
     telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
     
     # Parse time from command arguments
     if not context.args:
         await update.message.reply_text(
-            "⏰ Please provide a time in HH:MM format.\n"
-            "Example: `/settime 14:45`",
+            t('settime_prompt', user_lang),
             parse_mode='Markdown'
         )
         return
@@ -236,10 +211,7 @@ async def settime_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Validate time format
     time_pattern = r'^([01]?[0-9]|2[0-3]):([0-5][0-9])$'
     if not re.match(time_pattern, time_str):
-        await update.message.reply_text(
-            "❌ Invalid time format. Please use HH:MM (24-hour format).\n"
-            "Examples: 09:00, 14:45, 18:30"
-        )
+        await update.message.reply_text(t('settime_invalid', user_lang))
         return
     
     # Normalize to HH:MM format
@@ -251,21 +223,24 @@ async def settime_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         create_or_update_user(telegram_id, schedule_time=normalized_time)
         
         await update.message.reply_text(
-            f"✅ Daily digest scheduled for **{normalized_time}**!\n\n"
-            "You'll receive your personalized tech news at this time every day.",
+            t('settime_success', user_lang, time=normalized_time),
             parse_mode='Markdown'
         )
     except Exception as e:
         # Database not available - still confirm to user
         await update.message.reply_text(
-            f"⚠️ Schedule set to **{normalized_time}** (local mode - requires cloud deployment for scheduling).",
+            t('settime_local', user_lang, time=normalized_time),
             parse_mode='Markdown'
         )
 
 
 async def sources_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /sources command - show source management."""
+    from .user_storage import get_user_language
+    from .translations import t
+    
     telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
     
     # Try to get user preferences from database, use defaults if not available
     sources = ['hackernews', 'techcrunch', 'ai_blogs']  # Default all enabled
@@ -296,8 +271,7 @@ async def sources_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await update.message.reply_text(
-        "📰 **Your News Sources**\n\n"
-        "Tap to toggle sources on/off:",
+        t('sources_header', user_lang),
         reply_markup=reply_markup,
         parse_mode='Markdown'
     )
@@ -306,11 +280,14 @@ async def sources_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def toggle_source_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle source toggle button presses."""
     from .database import toggle_user_source
+    from .user_storage import get_user_language
+    from .translations import t
     
     query = update.callback_query
     await query.answer()
     
     telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
     source = query.data.replace('toggle_', '')
     
     # Toggle the source
@@ -334,8 +311,7 @@ async def toggle_source_callback(update: Update, context: ContextTypes.DEFAULT_T
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await query.edit_message_text(
-        "📰 **Your News Sources**\n\n"
-        "Tap to toggle sources on/off:",
+        t('sources_header', user_lang),
         reply_markup=reply_markup,
         parse_mode='Markdown'
     )
@@ -343,7 +319,11 @@ async def toggle_source_callback(update: Update, context: ContextTypes.DEFAULT_T
 
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /status command - show current settings."""
+    from .user_storage import get_user_language
+    from .translations import t
+    
     telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
     
     # Try to get user from database
     user = None
@@ -355,20 +335,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if not user:
         # Show default settings for local mode
-        status_text = """
-📊 **Your Settings** (Local Mode)
-
-⏰ **Daily Digest Time:** 18:00 (default)
-🌍 **Timezone:** Asia/Baku
-
-📰 **Active Sources:**
-  • Hacker News
-  • TechCrunch
-  • AI Blogs
-
-_Running locally - settings saved when deployed to cloud_
-"""
-        await update.message.reply_text(status_text, parse_mode='Markdown')
+        await update.message.reply_text(t('status_local', user_lang), parse_mode='Markdown')
         return
     
     sources = user.get('sources', [])
@@ -379,20 +346,16 @@ _Running locally - settings saved when deployed to cloud_
     }
     
     sources_text = '\n'.join([f"  • {source_names.get(s, s)}" for s in sources])
+    if not sources:
+        sources_text = '  No sources selected' if user_lang == 'en' else '  Нет выбранных источников'
     
-    status_text = f"""
-📊 **Your Settings**
-
-⏰ **Daily Digest Time:** {user.get('schedule_time', 'Not set')}
-🌍 **Timezone:** {user.get('timezone', 'Asia/Baku')}
-
-📰 **Active Sources:**
-{sources_text if sources else '  No sources selected'}
-
-Use /settime to change schedule
-Use /sources to toggle sources
-"""
-    await update.message.reply_text(status_text, parse_mode='Markdown')
+    await update.message.reply_text(
+        t('status_cloud', user_lang, 
+          schedule_time=user.get('schedule_time', 'Not set'),
+          timezone=user.get('timezone', 'Asia/Baku'),
+          sources=sources_text),
+        parse_mode='Markdown'
+    )
 
 
 # ============ SAVED ARTICLES ============
@@ -434,16 +397,15 @@ async def saved_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def save_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /save command - save an article."""
-    from .user_storage import save_article
+    from .user_storage import save_article, get_user_language
+    from .translations import t
     
     telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
     
     if not context.args:
         await update.message.reply_text(
-            "📌 **How to save articles:**\n\n"
-            "1. `/save <url>` - Save directly\n"
-            "2. Forward me a message with a link\n"
-            "3. Reply to a news digest with `/save`",
+            t('save_help', user_lang),
             parse_mode='Markdown'
         )
         return
@@ -452,18 +414,20 @@ async def save_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     title = ' '.join(context.args[1:]) if len(context.args) > 1 else url[:50]
     
     if save_article(telegram_id, title, url):
-        await update.message.reply_text("✅ Article saved! View with /saved")
+        await update.message.reply_text(t('article_saved', user_lang))
     else:
-        await update.message.reply_text("ℹ️ Article already saved!")
+        await update.message.reply_text(t('article_exists', user_lang))
 
 
 async def clear_saved_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /clear_saved command."""
-    from .user_storage import clear_saved_articles
+    from .user_storage import clear_saved_articles, get_user_language
+    from .translations import t
     
     telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
     clear_saved_articles(telegram_id)
-    await update.message.reply_text("🗑️ All saved articles cleared!")
+    await update.message.reply_text(t('cleared_saved', user_lang))
 
 
 # ============ SEARCH ============
@@ -472,25 +436,22 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /search command - search news by topic."""
     from .scrapers.hackernews import fetch_hackernews_sync
     from .scrapers.techcrunch import fetch_techcrunch
-    from .user_storage import add_search_history
+    from .user_storage import add_search_history, get_user_language
     from .rate_limiter import check_rate_limit
+    from .translations import t
     
     telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
     
     # Rate limit check
     allowed, message = check_rate_limit(telegram_id, 'search')
     if not allowed:
-        await update.message.reply_text(message)
+        await update.message.reply_text(t('rate_limited', user_lang, seconds='60'))
         return
     
     if not context.args:
         await update.message.reply_text(
-            "🔍 **Search News**\n\n"
-            "Usage: `/search <topic>`\n\n"
-            "Examples:\n"
-            "• `/search GPT-5`\n"
-            "• `/search Apple`\n"
-            "• `/search machine learning`",
+            t('search_prompt', user_lang),
             parse_mode='Markdown'
         )
         return
@@ -498,7 +459,7 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = ' '.join(context.args).lower()
     add_search_history(telegram_id, query)
     
-    await update.message.reply_text(f"🔍 Searching for **{query}**...", parse_mode='Markdown')
+    await update.message.reply_text(t('searching', user_lang, query=query), parse_mode='Markdown')
     
     try:
         # Fetch news
@@ -515,13 +476,13 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if not results:
             await update.message.reply_text(
-                f"😕 No articles found for **{query}**.\n\nTry a different search term!",
+                t('no_results', user_lang, query=query),
                 parse_mode='Markdown'
             )
             return
         
         # Format results
-        message = f"🔍 **Results for '{query}'** ({len(results)} found)\n\n"
+        message = t('search_results', user_lang, query=query, count=len(results))
         for i, article in enumerate(results[:10], 1):
             title = article.get('title', '')[:60]
             url = article.get('url', '')
@@ -535,7 +496,7 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         
     except Exception as e:
-        await update.message.reply_text(f"❌ Search error: {str(e)}")
+        await update.message.reply_text(t('error_fetching', user_lang, error=str(e)[:100]))
 
 
 # ============ LANGUAGE ============
@@ -548,6 +509,7 @@ LANGUAGES = {
 async def language_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /language command - change language."""
     from .user_storage import get_user_language
+    from .translations import t
     
     telegram_id = update.effective_user.id
     current_lang = get_user_language(telegram_id)
@@ -563,8 +525,7 @@ async def language_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await update.message.reply_text(
-        "🌐 **Select Language**\n\n"
-        "Choose your preferred language for summaries:",
+        t('select_language', current_lang),
         reply_markup=reply_markup,
         parse_mode='Markdown'
     )
@@ -583,9 +544,11 @@ async def language_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Handle coming soon
     if lang_code == 'coming_soon':
+        # Use the user's current language to show the message
+        from .user_storage import get_user_language
+        current_lang = get_user_language(telegram_id)
         await query.edit_message_text(
-            "🇦🇿 **Azərbaycan dili tezliklə!**\n\n"
-            "Azerbaijani language support is coming soon. Stay tuned!",
+            t('az_coming_soon', current_lang),
             parse_mode='Markdown'
         )
         return
@@ -604,55 +567,60 @@ async def language_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle any text message - button presses or questions for DeepSeek."""
+    from .user_storage import get_user_language
+    from .translations import t
+    
     user_message = update.message.text
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
     
     # Skip if message is too short
     if not user_message or len(user_message) < 2:
         return
     
-    # Handle button presses
-    if user_message == "📰 Get News":
+    # Handle button presses - check for both English and Russian labels
+    # News button
+    if user_message in ["📰 Get News", "📰 Новости", t('btn_news', 'en'), t('btn_news', 'ru')]:
         await news_command(update, context)
         return
-    elif user_message == "🔍 Search":
+    # Search button
+    elif user_message in ["🔍 Search", "🔍 Поиск", t('btn_search', 'en'), t('btn_search', 'ru')]:
         await update.message.reply_text(
-            "🔍 **Search News**\n\nType `/search <topic>`\n\nExample: `/search GPT-5`",
+            t('search_prompt', user_lang),
             parse_mode='Markdown'
         )
         return
-    elif user_message == "🔖 Saved":
+    # Saved button
+    elif user_message in ["🔖 Saved", "🔖 Сохранённые", t('btn_saved', 'en'), t('btn_saved', 'ru')]:
         await saved_command(update, context)
         return
-    elif user_message == "📊 Status":
+    # Status button
+    elif user_message in ["📊 Status", "📊 Статус", t('btn_status', 'en'), t('btn_status', 'ru')]:
         await status_command(update, context)
         return
-    elif user_message == "⚙️ Settings":
+    # Settings button
+    elif user_message in ["⚙️ Settings", "⚙️ Настройки", t('btn_settings', 'en'), t('btn_settings', 'ru')]:
         await sources_command(update, context)
         return
-    elif user_message == "🌐 Language":
+    # Language button
+    elif user_message in ["🌐 Language", "🌐 Язык", t('btn_language', 'en'), t('btn_language', 'ru')]:
         await language_command(update, context)
         return
-    elif user_message == "⏰ Schedule":
+    # Schedule button
+    elif user_message in ["⏰ Schedule", "⏰ Расписание", t('btn_schedule', 'en'), t('btn_schedule', 'ru')]:
         await update.message.reply_text(
-            "⏰ **Set Daily Digest Time**\n\n"
-            "Use `/settime HH:MM` to schedule your daily news digest.\n\n"
-            "Examples:\n"
-            "• `/settime 09:00` - Morning digest\n"
-            "• `/settime 18:30` - Evening digest\n"
-            "• `/settime 12:00` - Lunch digest",
+            t('schedule_prompt', user_lang),
             parse_mode='Markdown'
         )
         return
-    elif user_message == "❓ Help":
+    # Help button
+    elif user_message in ["❓ Help", "❓ Помощь", t('btn_help', 'en'), t('btn_help', 'ru')]:
         await help_command(update, context)
         return
     
     # Check if it's a URL to save
     if user_message.startswith('http://') or user_message.startswith('https://'):
-        from .user_storage import save_article, get_user_language
-        from .translations import t
-        telegram_id = update.effective_user.id
-        user_lang = get_user_language(telegram_id)
+        from .user_storage import save_article
         if save_article(telegram_id, user_message[:50], user_message):
             await update.message.reply_text(t('link_saved', user_lang))
         else:
@@ -661,12 +629,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Otherwise, treat as a question for AI
     from .summarizer import get_client
-    from .user_storage import get_user_language
     from .rate_limiter import check_rate_limit
-    from .translations import t
-    
-    telegram_id = update.effective_user.id
-    user_lang = get_user_language(telegram_id)
     
     # Rate limit AI chat
     allowed, message = check_rate_limit(telegram_id, 'ai_chat')

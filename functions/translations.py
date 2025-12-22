@@ -6,6 +6,7 @@ Bot message translations for different languages.
 # Message translations
 MESSAGES = {
     'en': {
+        # Existing keys
         'gathering_news': "🔄 **Gathering fresh news from all sources...**\n\n⏱️ This usually takes 1-3 minutes. I'll send your digest as soon as it's ready!\n\n_Fetching from Hacker News, TechCrunch, and AI blogs..._",
         'cached_news': "📰 **Cached News Digest**\n_Last updated: {timestamp}_\n\n",
         'no_news': "😕 No news found. Please try again later.",
@@ -27,8 +28,91 @@ MESSAGES = {
         'article_exists': "ℹ️ Article already saved!",
         'cleared_saved': "🗑️ All saved articles cleared!",
         'ai_error': "❌ Sorry, I couldn't process that: {error}",
+        
+        # New keys for full coverage
+        'welcome': """👋 Welcome to **Tech News Bot**, {username}!
+
+I'll keep you updated with the latest tech and AI news from:
+• 📰 Hacker News
+• 💻 TechCrunch  
+• 🤖 AI Company Blogs (OpenAI, Anthropic, Google AI, Mistral)
+
+**Quick Actions:** Use the buttons below ⬇️
+
+**Or type any question** and I'll answer using AI!
+
+Your current schedule: **18:00** daily
+Use /settime to change it!""",
+        
+        'help_text': """📚 **LensAI Bot Commands**
+
+📰 **News**
+• /news - Get your personalized news digest
+• /search <topic> - Search news by topic
+• /sources - Toggle news sources
+
+🔖 **Saved Articles**
+• /save <url> - Save an article
+• /saved - View saved articles
+• /clear\\_saved - Clear all saved
+
+⚙️ **Settings**
+• /settime HH:MM - Set daily digest time
+• /language - Change response language
+• /status - Check your settings
+
+💬 **Chat**
+Just type any question and I'll answer using AI!
+
+💡 **Tips:**
+- Send me any URL to save it
+- Use buttons below for quick access""",
+        
+        'settime_prompt': "⏰ Please provide a time in HH:MM format.\nExample: `/settime 14:45`",
+        'settime_invalid': "❌ Invalid time format. Please use HH:MM (24-hour format).\nExamples: 09:00, 14:45, 18:30",
+        'settime_success': "✅ Daily digest scheduled for **{time}**!\n\nYou'll receive your personalized tech news at this time every day.",
+        'settime_local': "⚠️ Schedule set to **{time}** (local mode - requires cloud deployment for scheduling).",
+        
+        'status_local': """📊 **Your Settings** (Local Mode)
+
+⏰ **Daily Digest Time:** 18:00 (default)
+🌍 **Timezone:** Asia/Baku
+
+📰 **Active Sources:**
+  • Hacker News
+  • TechCrunch
+  • AI Blogs
+
+_Running locally - settings saved when deployed to cloud_""",
+        
+        'status_cloud': """📊 **Your Settings**
+
+⏰ **Daily Digest Time:** {schedule_time}
+🌍 **Timezone:** {timezone}
+
+📰 **Active Sources:**
+{sources}
+
+Use /settime to change schedule
+Use /sources to toggle sources""",
+        
+        'sources_header': "📰 **Your News Sources**\n\nTap to toggle sources on/off:",
+        'save_help': "📌 **How to save articles:**\n\n1. `/save <url>` - Save directly\n2. Forward me a message with a link\n3. Reply to a news digest with `/save`",
+        'select_language': "🌐 **Select Language**\n\nChoose your preferred language for summaries:",
+        'az_coming_soon': "🇦🇿 **Azərbaycan dili tezliklə!**\n\nAzerbaijani language support is coming soon. Stay tuned!",
+        
+        # Keyboard button labels
+        'btn_news': "📰 Get News",
+        'btn_search': "🔍 Search",
+        'btn_saved': "🔖 Saved",
+        'btn_status': "📊 Status",
+        'btn_language': "🌐 Language",
+        'btn_settings': "⚙️ Settings",
+        'btn_schedule': "⏰ Schedule",
+        'btn_help': "❓ Help",
     },
     'ru': {
+        # Existing keys
         'gathering_news': "🔄 **Собираю свежие новости...**\n\n⏱️ Это обычно занимает 1-3 минуты. Отправлю дайджест, как только будет готов!\n\n_Загружаю с Hacker News, TechCrunch и AI блогов..._",
         'cached_news': "📰 **Кэшированный дайджест**\n_Обновлено: {timestamp}_\n\n",
         'no_news': "😕 Новости не найдены. Попробуйте позже.",
@@ -50,8 +134,91 @@ MESSAGES = {
         'article_exists': "ℹ️ Статья уже сохранена!",
         'cleared_saved': "🗑️ Все сохранённые статьи удалены!",
         'ai_error': "❌ Не удалось обработать запрос: {error}",
+        
+        # New keys for full coverage
+        'welcome': """👋 Добро пожаловать в **Tech News Bot**, {username}!
+
+Я буду держать вас в курсе последних новостей технологий и ИИ:
+• 📰 Hacker News
+• 💻 TechCrunch  
+• 🤖 Блоги AI-компаний (OpenAI, Anthropic, Google AI, Mistral)
+
+**Быстрые действия:** Используйте кнопки ниже ⬇️
+
+**Или задайте любой вопрос** и я отвечу с помощью ИИ!
+
+Ваше расписание: ежедневно в **18:00**
+Используйте /settime чтобы изменить!""",
+        
+        'help_text': """📚 **Команды бота LensAI**
+
+📰 **Новости**
+• /news - Получить персональный дайджест
+• /search <тема> - Поиск по теме
+• /sources - Настроить источники
+
+🔖 **Сохранённые статьи**
+• /save <ссылка> - Сохранить статью
+• /saved - Просмотреть сохранённые
+• /clear\\_saved - Очистить все
+
+⚙️ **Настройки**
+• /settime ЧЧ:ММ - Время ежедневного дайджеста
+• /language - Изменить язык
+• /status - Проверить настройки
+
+💬 **Чат**
+Просто напишите любой вопрос и я отвечу с помощью ИИ!
+
+💡 **Советы:**
+- Отправьте мне URL чтобы сохранить
+- Используйте кнопки ниже для быстрого доступа""",
+        
+        'settime_prompt': "⏰ Укажите время в формате ЧЧ:ММ.\nПример: `/settime 14:45`",
+        'settime_invalid': "❌ Неверный формат времени. Используйте ЧЧ:ММ (24-часовой формат).\nПримеры: 09:00, 14:45, 18:30",
+        'settime_success': "✅ Ежедневный дайджест запланирован на **{time}**!\n\nВы будете получать персональные новости технологий в это время каждый день.",
+        'settime_local': "⚠️ Расписание установлено на **{time}** (локальный режим - для планирования требуется развёртывание в облаке).",
+        
+        'status_local': """📊 **Ваши настройки** (Локальный режим)
+
+⏰ **Время дайджеста:** 18:00 (по умолчанию)
+🌍 **Часовой пояс:** Баку
+
+📰 **Активные источники:**
+  • Hacker News
+  • TechCrunch
+  • AI Блоги
+
+_Работает локально - настройки сохранятся при развёртывании в облаке_""",
+        
+        'status_cloud': """📊 **Ваши настройки**
+
+⏰ **Время дайджеста:** {schedule_time}
+🌍 **Часовой пояс:** {timezone}
+
+📰 **Активные источники:**
+{sources}
+
+Используйте /settime чтобы изменить расписание
+Используйте /sources чтобы настроить источники""",
+        
+        'sources_header': "📰 **Ваши источники новостей**\n\nНажмите чтобы включить/выключить:",
+        'save_help': "📌 **Как сохранить статьи:**\n\n1. `/save <ссылка>` - Сохранить напрямую\n2. Перешлите мне сообщение со ссылкой\n3. Ответьте на дайджест командой `/save`",
+        'select_language': "🌐 **Выберите язык**\n\nВыберите предпочитаемый язык для дайджестов:",
+        'az_coming_soon': "🇦🇿 **Azərbaycan dili tezliklə!**\n\nПоддержка азербайджанского языка скоро появится. Следите за обновлениями!",
+        
+        # Keyboard button labels
+        'btn_news': "📰 Новости",
+        'btn_search': "🔍 Поиск",
+        'btn_saved': "🔖 Сохранённые",
+        'btn_status': "📊 Статус",
+        'btn_language': "🌐 Язык",
+        'btn_settings': "⚙️ Настройки",
+        'btn_schedule': "⏰ Расписание",
+        'btn_help': "❓ Помощь",
     }
 }
+
 
 
 def get_message(key: str, lang: str = 'en', **kwargs) -> str:
