@@ -51,9 +51,42 @@ def _save_user_data(telegram_id: int, data: Dict[str, Any]):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
+# ============ ARTICLE CATEGORIES ============
+
+CATEGORY_KEYWORDS = {
+    'ai': ['ai', 'artificial intelligence', 'machine learning', 'ml', 'deep learning', 'neural', 'gpt', 'llm', 'openai', 'anthropic', 'deepmind', 'mistral', 'gemini', 'claude', 'chatgpt', 'transformer', 'diffusion'],
+    'security': ['security', 'hack', 'breach', 'vulnerability', 'cyber', 'malware', 'ransomware', 'privacy', 'encryption', 'exploit', 'attack'],
+    'crypto': ['crypto', 'bitcoin', 'ethereum', 'blockchain', 'web3', 'nft', 'defi', 'token', 'wallet'],
+    'startups': ['startup', 'funding', 'series a', 'series b', 'vc', 'venture', 'unicorn', 'valuation', 'raised', 'investment'],
+    'hardware': ['hardware', 'chip', 'cpu', 'gpu', 'nvidia', 'amd', 'intel', 'apple silicon', 'processor', 'semiconductor', 'device'],
+    'software': ['software', 'app', 'update', 'release', 'version', 'feature', 'tool', 'platform', 'saas']
+}
+
+def categorize_article(title: str, url: str = "") -> str:
+    """
+    Auto-detect article category based on title and URL.
+    
+    Returns:
+        Category string: 'ai', 'security', 'crypto', 'startups', 'hardware', 'software', or 'tech'
+    """
+    text = (title + " " + url).lower()
+    
+    # Check each category
+    scores = {}
+    for category, keywords in CATEGORY_KEYWORDS.items():
+        score = sum(1 for kw in keywords if kw in text)
+        if score > 0:
+            scores[category] = score
+    
+    # Return category with highest score, or 'tech' as default
+    if scores:
+        return max(scores, key=scores.get)
+    return 'tech'
+
+
 # ============ SAVED ARTICLES ============
 
-def save_article(telegram_id: int, title: str, url: str, source: str = "") -> bool:
+def save_article(telegram_id: int, title: str, url: str, source: str = "", category: str = "") -> bool:
     """
     Save an article for a user.
     
@@ -62,6 +95,7 @@ def save_article(telegram_id: int, title: str, url: str, source: str = "") -> bo
         title: Article title
         url: Article URL
         source: News source name
+        category: Article category (auto-detected if not provided)
         
     Returns:
         True if saved, False if already exists
@@ -73,11 +107,16 @@ def save_article(telegram_id: int, title: str, url: str, source: str = "") -> bo
         if article['url'] == url:
             return False  # Already saved
     
+    # Auto-detect category if not provided
+    if not category:
+        category = categorize_article(title, url)
+    
     # Add new article
     data['saved_articles'].append({
         'title': title,
         'url': url,
         'source': source,
+        'category': category,
         'saved_at': datetime.now().isoformat()
     })
     
@@ -88,10 +127,15 @@ def save_article(telegram_id: int, title: str, url: str, source: str = "") -> bo
     return True
 
 
-def get_saved_articles(telegram_id: int, limit: int = 10) -> List[Dict[str, Any]]:
-    """Get user's saved articles, most recent first."""
+def get_saved_articles(telegram_id: int, limit: int = 10, category: str = None) -> List[Dict[str, Any]]:
+    """Get user's saved articles, most recent first. Optionally filter by category."""
     data = _load_user_data(telegram_id)
     articles = data.get('saved_articles', [])
+    
+    # Filter by category if specified
+    if category:
+        articles = [a for a in articles if a.get('category', 'tech') == category]
+    
     return list(reversed(articles[-limit:]))
 
 

@@ -101,6 +101,25 @@ Use /sources to toggle sources""",
         'select_language': "🌐 **Select Language**\n\nChoose your preferred language for summaries:",
         'az_coming_soon': "🇦🇿 **Azərbaycan dili tezliklə!**\n\nAzerbaijani language support is coming soon. Stay tuned!",
         
+        # New features
+        'share_bot': "📤 **Share LensAI Bot**\n\nShare this bot with friends:\n\n🔗 https://t.me/LensAI_bot\n\n_Stay updated with the latest tech news!_",
+        'filter_prompt': "📂 **Filter by Category**\n\nUse `/filter <category>` to see saved articles by category.\n\nCategories: `ai`, `security`, `crypto`, `startups`, `hardware`, `software`, `tech`",
+        'filter_results': "📂 **{category}** ({count} articles)\n\n",
+        'filter_empty': "📂 No articles in category **{category}**.\n\nSave some articles first!",
+        'recap_header': "📊 **Weekly Recap**\n_Your top saved articles this week:_\n\n",
+        'recap_empty': "📊 **Weekly Recap**\n\nNo articles saved this week. Start saving articles to see your recap!",
+        'article_deleted': "🗑️ Article deleted!",
+        'article_saved_single': "✅ Article saved! Category: {category}",
+        
+        # Category labels
+        'cat_ai': "🤖 AI",
+        'cat_security': "🔒 Security",
+        'cat_crypto': "💰 Crypto",
+        'cat_startups': "🚀 Startups",
+        'cat_hardware': "💻 Hardware",
+        'cat_software': "📱 Software",
+        'cat_tech': "🔧 Tech",
+        
         # Keyboard button labels
         'btn_news': "📰 Get News",
         'btn_search': "🔍 Search",
@@ -110,6 +129,7 @@ Use /sources to toggle sources""",
         'btn_settings': "⚙️ Settings",
         'btn_schedule': "⏰ Schedule",
         'btn_help': "❓ Help",
+        'btn_share': "📤 Share",
     },
     'ru': {
         # Existing keys
@@ -207,6 +227,25 @@ _Работает локально - настройки сохранятся п�
         'select_language': "🌐 **Выберите язык**\n\nВыберите предпочитаемый язык для дайджестов:",
         'az_coming_soon': "🇦🇿 **Azərbaycan dili tezliklə!**\n\nПоддержка азербайджанского языка скоро появится. Следите за обновлениями!",
         
+        # New features
+        'share_bot': "📤 **Поделиться LensAI Bot**\n\nПоделитесь ботом с друзьями:\n\n🔗 https://t.me/LensAI_bot\n\n_Будьте в курсе последних новостей технологий!_",
+        'filter_prompt': "📂 **Фильтр по категории**\n\nИспользуйте `/filter <категория>` для просмотра статей.\n\nКатегории: `ai`, `security`, `crypto`, `startups`, `hardware`, `software`, `tech`",
+        'filter_results': "📂 **{category}** ({count} статей)\n\n",
+        'filter_empty': "📂 Нет статей в категории **{category}**.\n\nСначала сохраните статьи!",
+        'recap_header': "📊 **Недельный обзор**\n_Ваши топ статьи за эту неделю:_\n\n",
+        'recap_empty': "📊 **Недельный обзор**\n\nНет сохранённых статей за неделю. Начните сохранять!",
+        'article_deleted': "🗑️ Статья удалена!",
+        'article_saved_single': "✅ Статья сохранена! Категория: {category}",
+        
+        # Category labels
+        'cat_ai': "🤖 ИИ",
+        'cat_security': "🔒 Безопасность",
+        'cat_crypto': "💰 Крипто",
+        'cat_startups': "🚀 Стартапы",
+        'cat_hardware': "💻 Железо",
+        'cat_software': "📱 Софт",
+        'cat_tech': "🔧 Технологии",
+        
         # Keyboard button labels
         'btn_news': "📰 Новости",
         'btn_search': "🔍 Поиск",
@@ -216,6 +255,7 @@ _Работает локально - настройки сохранятся п�
         'btn_settings': "⚙️ Настройки",
         'btn_schedule': "⏰ Расписание",
         'btn_help': "❓ Помощь",
+        'btn_share': "📤 Поделиться",
     }
 }
 

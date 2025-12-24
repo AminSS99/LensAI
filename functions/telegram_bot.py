@@ -35,7 +35,8 @@ def get_main_keyboard(lang: str = 'en'):
         [KeyboardButton(t('btn_news', lang)), KeyboardButton(t('btn_search', lang))],
         [KeyboardButton(t('btn_saved', lang)), KeyboardButton(t('btn_status', lang))],
         [KeyboardButton(t('btn_language', lang)), KeyboardButton(t('btn_settings', lang))],
-        [KeyboardButton(t('btn_schedule', lang)), KeyboardButton(t('btn_help', lang))]
+        [KeyboardButton(t('btn_schedule', lang)), KeyboardButton(t('btn_help', lang))],
+        [KeyboardButton(t('btn_share', lang))]
     ]
     return ReplyKeyboardMarkup(
         keyboard, 
@@ -98,17 +99,40 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         timestamp = get_digest_timestamp()
         
         header = t('cached_news', user_lang, timestamp=timestamp[:16] if timestamp else 'recently')
+        
+        # Generate digest ID for buttons
+        import hashlib
+        digest_id = hashlib.md5(cached_digest[:100].encode()).hexdigest()[:8]
+        
+        # Define button labels based on language
+        refresh_label = "🔄 Обновить" if user_lang == 'ru' else "🔄 Refresh"
+        save_label = "🔖 Сохранить" if user_lang == 'ru' else "🔖 Save Digest"
+        
+        keyboard = [
+            [
+                InlineKeyboardButton("👍", callback_data=f"rate_up_{digest_id}"),
+                InlineKeyboardButton("👎", callback_data=f"rate_down_{digest_id}"),
+                InlineKeyboardButton(refresh_label, callback_data="refresh_news"),
+            ],
+            [
+                InlineKeyboardButton(save_label, callback_data=f"save_digest_{digest_id}"),
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
         try:
             await update.message.reply_text(
                 header + cached_digest[:3900],
                 parse_mode='Markdown',
-                disable_web_page_preview=True
+                disable_web_page_preview=True,
+                reply_markup=reply_markup
             )
         except Exception:
             # Fallback without markdown if parsing fails
             await update.message.reply_text(
                 header + cached_digest[:3900],
-                disable_web_page_preview=True
+                disable_web_page_preview=True,
+                reply_markup=reply_markup
             )
         return
     
@@ -457,9 +481,10 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ============ SAVED ARTICLES ============
 
 async def saved_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /saved command - show saved articles."""
+    """Handle /saved command - show saved articles with delete buttons."""
     from .user_storage import get_saved_articles, get_user_language
     from .translations import t
+    import hashlib
     
     telegram_id = update.effective_user.id
     user_lang = get_user_language(telegram_id)
@@ -469,31 +494,60 @@ async def saved_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(t('no_saved', user_lang), parse_mode='Markdown')
         return
     
+    # Category emoji mapping
+    cat_emoji = {
+        'ai': '🤖', 'security': '🔒', 'crypto': '💰', 'startups': '🚀',
+        'hardware': '💻', 'software': '📱', 'tech': '🔧'
+    }
+    
     message = t('saved_header', user_lang)
+    keyboard = []
+    
     for i, article in enumerate(articles, 1):
         title = article.get('title', 'Untitled')[:50]
         url = article.get('url', '')
         source = article.get('source', '')
-        message += f"{i}. [{title}]({url})"
-        if source:
-            message += f" _{source}_"
+        category = article.get('category', 'tech')
+        saved_at = article.get('saved_at', '')
+        
+        # Get category emoji
+        emoji = cat_emoji.get(category, '🔧')
+        
+        # Format date
+        date_str = saved_at[:10] if saved_at else ''
+        
+        # Build message line
+        if url.startswith('http'):
+            message += f"{i}. {emoji} [{title}]({url})"
+        else:
+            message += f"{i}. {emoji} {title}"
+        
+        if date_str:
+            message += f" `{date_str}`"
         message += "\n"
+        
+        # Create delete button - use URL hash for unique ID
+        url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
+        delete_label = "🗑️" if user_lang == 'en' else "🗑️"
+        keyboard.append([InlineKeyboardButton(f"{delete_label} {i}. {title[:25]}...", callback_data=f"del_{url_hash}")])
     
     message += t('saved_footer', user_lang)
+    reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
     
     try:
         await update.message.reply_text(
             message, 
             parse_mode='Markdown',
-            disable_web_page_preview=True
+            disable_web_page_preview=True,
+            reply_markup=reply_markup
         )
     except Exception:
-        await update.message.reply_text(message, disable_web_page_preview=True)
+        await update.message.reply_text(message, disable_web_page_preview=True, reply_markup=reply_markup)
 
 
 async def save_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /save command - save an article."""
-    from .user_storage import save_article, get_user_language
+    from .user_storage import save_article, get_user_language, categorize_article
     from .translations import t
     
     telegram_id = update.effective_user.id
@@ -508,9 +562,11 @@ async def save_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     url = context.args[0]
     title = ' '.join(context.args[1:]) if len(context.args) > 1 else url[:50]
+    category = categorize_article(title, url)
     
-    if save_article(telegram_id, title, url):
-        await update.message.reply_text(t('article_saved', user_lang))
+    if save_article(telegram_id, title, url, category=category):
+        cat_label = t(f'cat_{category}', user_lang)
+        await update.message.reply_text(t('article_saved_single', user_lang, category=cat_label))
     else:
         await update.message.reply_text(t('article_exists', user_lang))
 
@@ -524,6 +580,150 @@ async def clear_saved_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     user_lang = get_user_language(telegram_id)
     clear_saved_articles(telegram_id)
     await update.message.reply_text(t('cleared_saved', user_lang))
+
+
+async def filter_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /filter command - filter saved articles by category."""
+    from .user_storage import get_saved_articles, get_user_language
+    from .translations import t
+    
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+    
+    valid_categories = ['ai', 'security', 'crypto', 'startups', 'hardware', 'software', 'tech']
+    
+    if not context.args:
+        await update.message.reply_text(t('filter_prompt', user_lang), parse_mode='Markdown')
+        return
+    
+    category = context.args[0].lower()
+    if category not in valid_categories:
+        await update.message.reply_text(t('filter_prompt', user_lang), parse_mode='Markdown')
+        return
+    
+    articles = get_saved_articles(telegram_id, limit=20, category=category)
+    
+    if not articles:
+        cat_label = t(f'cat_{category}', user_lang)
+        await update.message.reply_text(t('filter_empty', user_lang, category=cat_label), parse_mode='Markdown')
+        return
+    
+    cat_label = t(f'cat_{category}', user_lang)
+    message = t('filter_results', user_lang, category=cat_label, count=len(articles))
+    
+    for i, article in enumerate(articles, 1):
+        title = article.get('title', 'Untitled')[:50]
+        url = article.get('url', '')
+        if url.startswith('http'):
+            message += f"{i}. [{title}]({url})\n"
+        else:
+            message += f"{i}. {title}\n"
+    
+    try:
+        await update.message.reply_text(message, parse_mode='Markdown', disable_web_page_preview=True)
+    except Exception:
+        await update.message.reply_text(message, disable_web_page_preview=True)
+
+
+async def recap_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /recap command - show weekly summary of saved articles."""
+    from .user_storage import get_saved_articles, get_user_language
+    from .translations import t
+    from datetime import datetime, timedelta
+    
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+    
+    # Get all saved articles
+    articles = get_saved_articles(telegram_id, limit=50)
+    
+    # Filter to last 7 days
+    week_ago = datetime.now() - timedelta(days=7)
+    weekly_articles = []
+    
+    for article in articles:
+        saved_at = article.get('saved_at', '')
+        if saved_at:
+            try:
+                saved_date = datetime.fromisoformat(saved_at.replace('Z', '+00:00'))
+                if saved_date.replace(tzinfo=None) > week_ago:
+                    weekly_articles.append(article)
+            except:
+                pass
+    
+    if not weekly_articles:
+        await update.message.reply_text(t('recap_empty', user_lang), parse_mode='Markdown')
+        return
+    
+    # Category emoji mapping
+    cat_emoji = {
+        'ai': '🤖', 'security': '🔒', 'crypto': '💰', 'startups': '🚀',
+        'hardware': '💻', 'software': '📱', 'tech': '🔧'
+    }
+    
+    message = t('recap_header', user_lang)
+    
+    # Show top 5 recent articles
+    for i, article in enumerate(weekly_articles[:5], 1):
+        title = article.get('title', 'Untitled')[:50]
+        url = article.get('url', '')
+        category = article.get('category', 'tech')
+        emoji = cat_emoji.get(category, '🔧')
+        
+        if url.startswith('http'):
+            message += f"{i}. {emoji} [{title}]({url})\n"
+        else:
+            message += f"{i}. {emoji} {title}\n"
+    
+    message += f"\n_Total: {len(weekly_articles)} articles this week_"
+    
+    try:
+        await update.message.reply_text(message, parse_mode='Markdown', disable_web_page_preview=True)
+    except Exception:
+        await update.message.reply_text(message, disable_web_page_preview=True)
+
+
+async def share_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle share button - show bot link to share."""
+    from .user_storage import get_user_language
+    from .translations import t
+    
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+    
+    await update.message.reply_text(t('share_bot', user_lang), parse_mode='Markdown')
+
+
+async def delete_article_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle delete article button press."""
+    from .user_storage import get_user_language, get_saved_articles, delete_saved_article
+    from .translations import t
+    
+    query = update.callback_query
+    await query.answer()
+    
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+    
+    # Get the URL hash from callback data
+    data = query.data  # e.g., "del_abc12345"
+    url_hash = data.replace('del_', '')
+    
+    # Find the article with matching hash
+    import hashlib
+    articles = get_saved_articles(telegram_id, limit=50)
+    
+    for article in articles:
+        article_hash = hashlib.md5(article.get('url', '').encode()).hexdigest()[:8]
+        if article_hash == url_hash:
+            delete_saved_article(telegram_id, article.get('url', ''))
+            await query.edit_message_text(
+                t('article_deleted', user_lang) + f"\n\n_{article.get('title', '')[:40]}_",
+                parse_mode='Markdown'
+            )
+            return
+    
+    await query.edit_message_text(t('article_deleted', user_lang), parse_mode='Markdown')
 
 
 # ============ SEARCH ============
@@ -797,33 +997,76 @@ async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def save_digest_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle save digest button press - bookmark current digest."""
+    """Handle save digest button press - extract and save all article URLs from the digest."""
     from .user_storage import get_user_language, save_article
+    import re
+    from datetime import datetime
     
     query = update.callback_query
     telegram_id = update.effective_user.id
     user_lang = get_user_language(telegram_id)
     
     # Get the digest content from the message
-    digest_content = query.message.text[:500]  # Save first 500 chars as reference
+    digest_content = query.message.text
     
-    # Get digest ID from callback data
-    data = query.data  # e.g., "save_digest_abc123"
-    parts = data.split('_')
-    digest_id = parts[2] if len(parts) >= 3 else "digest"
+    # Extract all URLs from the digest using regex
+    # Look for Markdown links [text](url) or plain URLs
+    url_pattern = r'\[([^\]]+)\]\((https?://[^)]+)\)'
+    matches = re.findall(url_pattern, digest_content)
     
-    # Save the digest
-    from datetime import datetime
-    title = f"📰 Digest {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+    # Also find plain URLs
+    plain_url_pattern = r'(?<!\()https?://[^\s\)\]]+'
+    plain_urls = re.findall(plain_url_pattern, digest_content)
     
-    saved = save_article(telegram_id, title, f"digest://{digest_id}")
+    saved_count = 0
     
-    if saved:
-        text = "✅ Дайджест сохранён! Используй /saved для просмотра." if user_lang == 'ru' else "✅ Digest saved! Use /saved to view."
+    # Save each article found
+    for title, url in matches:
+        # Clean up the title
+        clean_title = title.strip()[:100]
+        # Detect source from URL
+        source = ''
+        if 'techcrunch' in url.lower():
+            source = 'TechCrunch'
+        elif 'news.ycombinator' in url.lower():
+            source = 'Hacker News'
+        elif 'theverge' in url.lower():
+            source = 'The Verge'
+        elif 'github' in url.lower():
+            source = 'GitHub'
+        elif 'anthropic' in url.lower():
+            source = 'Anthropic'
+        elif 'deepmind' in url.lower():
+            source = 'DeepMind'
+        elif 'openai' in url.lower():
+            source = 'OpenAI'
+        elif 'mistral' in url.lower():
+            source = 'Mistral'
+        
+        if save_article(telegram_id, clean_title, url, source):
+            saved_count += 1
+    
+    # Save plain URLs without titles
+    for url in plain_urls:
+        # Skip if already saved in matches
+        if any(url in m[1] for m in matches):
+            continue
+        title = f"Article from {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        if save_article(telegram_id, title, url, ''):
+            saved_count += 1
+    
+    if saved_count > 0:
+        if user_lang == 'ru':
+            text = f"✅ Сохранено {saved_count} статей! Используй /saved для просмотра."
+        else:
+            text = f"✅ Saved {saved_count} articles! Use /saved to view."
         await query.answer(text, show_alert=True)
     else:
-        text = "ℹ️ Дайджест уже сохранён." if user_lang == 'ru' else "ℹ️ Digest already saved."
-        await query.answer(text)
+        if user_lang == 'ru':
+            text = "ℹ️ Все статьи уже сохранены или нет ссылок для сохранения."
+        else:
+            text = "ℹ️ All articles already saved or no links to save."
+        await query.answer(text, show_alert=True)
 
 
 # ============ Q&A HANDLER ============
@@ -876,6 +1119,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Help button
     elif user_message in ["❓ Help", "❓ Помощь", t('btn_help', 'en'), t('btn_help', 'ru')]:
         await help_command(update, context)
+        return
+    # Share button
+    elif user_message in ["📤 Share", "📤 Поделиться", t('btn_share', 'en'), t('btn_share', 'ru')]:
+        await share_command(update, context)
         return
     
     # Check if it's a URL to save
@@ -969,8 +1216,12 @@ def create_bot_application() -> Application:
     application.add_handler(CommandHandler("saved", saved_command))
     application.add_handler(CommandHandler("save", save_command))
     application.add_handler(CommandHandler("clear_saved", clear_saved_command))
+    application.add_handler(CommandHandler("clear", clear_saved_command))  # Alias for /clear_saved
     application.add_handler(CommandHandler("search", search_command))
     application.add_handler(CommandHandler("language", language_command))
+    application.add_handler(CommandHandler("filter", filter_command))
+    application.add_handler(CommandHandler("recap", recap_command))
+    application.add_handler(CommandHandler("share", share_command))
     
     # Add callback query handlers for inline buttons
     application.add_handler(CallbackQueryHandler(toggle_source_callback, pattern='^toggle_'))
@@ -979,6 +1230,7 @@ def create_bot_application() -> Application:
     application.add_handler(CallbackQueryHandler(rating_callback, pattern='^rate_'))
     application.add_handler(CallbackQueryHandler(refresh_callback, pattern='^refresh_'))
     application.add_handler(CallbackQueryHandler(save_digest_callback, pattern='^save_digest_'))
+    application.add_handler(CallbackQueryHandler(delete_article_callback, pattern='^del_'))
     
     # Add message handler for buttons and Q&A (handles any text that isn't a command)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
@@ -989,25 +1241,58 @@ def create_bot_application() -> Application:
 async def send_digest_to_user(telegram_id: int, digest: str):
     """Send a digest message to a specific user."""
     from telegram import Bot
+    from .user_storage import get_user_language
+    import hashlib
     
     bot = Bot(token=get_bot_token())
+    user_lang = get_user_language(telegram_id)
+    
+    # Generate digest ID for buttons
+    digest_id = hashlib.md5(digest[:100].encode()).hexdigest()[:8]
+    
+    # Define button labels based on language
+    refresh_label = "🔄 Обновить" if user_lang == 'ru' else "🔄 Refresh"
+    save_label = "🔖 Сохранить" if user_lang == 'ru' else "🔖 Save Digest"
+    
+    keyboard = [
+        [
+            InlineKeyboardButton("👍", callback_data=f"rate_up_{digest_id}"),
+            InlineKeyboardButton("👎", callback_data=f"rate_down_{digest_id}"),
+            InlineKeyboardButton(refresh_label, callback_data="refresh_news"),
+        ],
+        [
+            InlineKeyboardButton(save_label, callback_data=f"save_digest_{digest_id}"),
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
     
     try:
         if len(digest) > 4000:
             chunks = [digest[i:i+4000] for i in range(0, len(digest), 4000)]
-            for chunk in chunks:
-                await bot.send_message(
-                    chat_id=telegram_id,
-                    text=chunk,
-                    parse_mode='Markdown',
-                    disable_web_page_preview=True
-                )
+            for i, chunk in enumerate(chunks):
+                # Add buttons only to the last chunk
+                if i == len(chunks) - 1:
+                    await bot.send_message(
+                        chat_id=telegram_id,
+                        text=chunk,
+                        parse_mode='Markdown',
+                        disable_web_page_preview=True,
+                        reply_markup=reply_markup
+                    )
+                else:
+                    await bot.send_message(
+                        chat_id=telegram_id,
+                        text=chunk,
+                        parse_mode='Markdown',
+                        disable_web_page_preview=True
+                    )
         else:
             await bot.send_message(
                 chat_id=telegram_id,
                 text=digest,
                 parse_mode='Markdown',
-                disable_web_page_preview=True
+                disable_web_page_preview=True,
+                reply_markup=reply_markup
             )
         return True
     except Exception as e:
