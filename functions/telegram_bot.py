@@ -16,9 +16,6 @@ from telegram.ext import (
     ContextTypes
 )
 
-# Lock to prevent double generation
-GENERATING_USERS = set()
-
 
 def get_bot_token() -> str:
     """Get Telegram bot token from environment."""
@@ -140,9 +137,10 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         return
     
-    # Check if already generating
-    if telegram_id in GENERATING_USERS:
-        wait_text = "⏳ Digest is already being generated, please wait..." if user_lang != 'ru' else "⏳ Дайджест уже генерируется, пожалуйста подождите..."
+    # Check if already generating using distributed lock
+    from .distributed_lock import is_locked
+    if is_locked('news_generation', telegram_id):
+        wait_text = "⏳ Дайджест уже генерируется, пожалуйста подождите..." if user_lang == 'ru' else "⏳ Digest is already being generated, please wait..."
         await update.message.reply_text(wait_text)
         return
     
@@ -152,10 +150,18 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(t('rate_limited', user_lang, seconds=message.split()[-2] if 'seconds' in message else '60'))
         return
     
-    # Send "typing" indicator with realistic time estimate
-    await update.message.reply_text(t('gathering_news', user_lang), parse_mode='Markdown')
+    # Acquire distributed lock
+    from .distributed_lock import DistributedLock
+    lock = DistributedLock('news_generation', telegram_id, ttl_seconds=300)
     
-    GENERATING_USERS.add(telegram_id)
+    if not lock.acquire():
+        # Lock already held
+        wait_text = "⏳ Дайджест уже генерируется, пожалуйста подождите..." if user_lang == 'ru' else "⏳ Digest is already being generated, please wait..."
+        await update.message.reply_text(wait_text)
+        return
+    
+    # Send "typing" indicator after acquiring lock
+    await update.message.reply_text(t('gathering_news', user_lang), parse_mode='Markdown')
     
     try:
         from .scrapers.hackernews import fetch_hackernews
@@ -272,8 +278,7 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(t('error_fetching', user_lang, error=str(e)[:100]))
     finally:
-        if telegram_id in GENERATING_USERS:
-            GENERATING_USERS.remove(telegram_id)
+        lock.release()
 
 
 async def schedule_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -948,18 +953,19 @@ async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     telegram_id = update.effective_user.id
     user_lang = get_user_language(telegram_id)
     
-    # Check if already generating
-    if telegram_id in GENERATING_USERS:
-        await query.answer("⏳ Generating...", show_alert=True)
+    # Acquire distributed lock
+    from .distributed_lock import DistributedLock
+    lock = DistributedLock('news_generation', telegram_id, ttl_seconds=300)
+    
+    if not lock.acquire():
+        await query.answer("⏳ Генерирую..." if user_lang == 'ru' else "⏳ Generating...", show_alert=True)
         return
         
-    await query.answer("🔄 Fetching fresh news...")
+    await query.answer("🔄 Обновляю новости..." if user_lang == 'ru' else "🔄 Fetching fresh news...")
     
     # Send a "fetching" message
     loading_text = "⏳ Получаю свежие новости..." if user_lang == 'ru' else "⏳ Fetching fresh news..."
     await query.message.reply_text(loading_text)
-    
-    GENERATING_USERS.add(telegram_id)
     
     try:
         from .scrapers.hackernews import fetch_hackernews
@@ -1032,8 +1038,7 @@ async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         error_text = f"❌ Ошибка: {str(e)[:50]}" if user_lang == 'ru' else f"❌ Error: {str(e)[:50]}"
         await query.message.reply_text(error_text)
     finally:
-        if telegram_id in GENERATING_USERS:
-            GENERATING_USERS.remove(telegram_id)
+        lock.release()
 
 
 async def save_digest_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
