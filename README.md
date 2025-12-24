@@ -26,11 +26,13 @@ LensAI is an AI-powered **tech news aggregator** that delivers personalized dail
 
 ### Key Highlights
 
-- 📰 **Multi-source aggregation** — Hacker News, TechCrunch, AI company blogs
+- 📰 **Multi-source aggregation** — Hacker News, TechCrunch, AI company blogs, The Verge, GitHub Trending
 - 🤖 **AI summarization** — DeepSeek creates digestible, curated digests
+- 🔖 **Article saving** — Save interesting articles to your personal collection
 - 💬 **Q&A Chat** — Ask any tech question and get AI-powered answers
 - ⏰ **Scheduled delivery** — Set your preferred daily digest time
-- ☁️ **Cloud-native** — Runs 24/7 on Google Cloud Functions
+- 🌐 **Multi-language** — Full support for English, Russian, and Azerbaijani
+- ☁️ **Cloud-native** — Runs 24/7 on Google Cloud Functions with Firestore
 
 ---
 
@@ -38,43 +40,57 @@ LensAI is an AI-powered **tech news aggregator** that delivers personalized dail
 
 | Feature | Description |
 |---------|-------------|
-| 📰 **News Scraping** | Fetches from Hacker News API, TechCrunch RSS, and AI company blogs (Anthropic, Google AI, Mistral, DeepMind) |
+| 📰 **News Scraping** | Fetches from Hacker News, TechCrunch, AI blogs (Anthropic, OpenAI, Mistral, DeepMind), The Verge, GitHub Trending |
 | 🧠 **AI Summarization** | Uses DeepSeek to create engaging, categorized news digests |
+| 🔖 **Save Articles** | Save articles to Firestore with automatic categorization (AI, Security, Crypto, etc.) |
 | 💬 **Interactive Q&A** | Ask questions about any tech topic and get AI responses |
 | ⚡ **Smart Caching** | 15-minute cache prevents redundant API calls |
+| 🔒 **Distributed Lock** | Firestore-based locking prevents duplicate message sends |
 | 🎛️ **Source Control** | Toggle news sources on/off via inline buttons |
 | ⏰ **Custom Scheduling** | Set your preferred daily digest delivery time |
+| 🌐 **Multi-language** | English, Russian, and Azerbaijani support |
 
 ---
 
 ## 🏗️ Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    GOOGLE CLOUD                         │
-├─────────────────────────────────────────────────────────┤
-│                                                         │
-│  ┌──────────────┐    ┌──────────────┐                  │
-│  │ Cloud        │───▶│ Cloud        │                  │
-│  │ Scheduler    │    │ Functions    │                  │
-│  │ (your time)  │    │ (Python 3.11)│                  │
-│  └──────────────┘    └──────┬───────┘                  │
-│                             │                          │
-│  ┌──────────────┐          │      ┌──────────────┐    │
-│  │ Secret       │◀─────────┼─────▶│ Telegram     │    │
-│  │ Manager      │          │      │ Bot API      │    │
-│  └──────────────┘          │      └──────┬───────┘    │
-│                            │             │            │
-└────────────────────────────┼─────────────┼────────────┘
-                             │             │
-        ┌────────────────────┘             │
-        ▼                                  ▼
-┌───────────────┐                   ┌──────────────┐
-│ News Sources  │                   │     YOU      │
-│ • Hacker News │                   │  (Telegram)  │
-│ • TechCrunch  │                   └──────────────┘
-│ • AI Blogs    │
-└───────────────┘
+┌──────────────────────────────────────────────────────────┐
+│                    GOOGLE CLOUD                          │
+├──────────────────────────────────────────────────────────┤
+│                                                          │
+│  ┌──────────────┐    ┌──────────────┐                   │
+│  │ Cloud        │───▶│ Cloud        │                   │
+│  │ Scheduler    │    │ Functions    │                   │
+│  │ (your time)  │    │ (Python 3.11)│                   │
+│  └──────────────┘    └──────┬───────┘                   │
+│                             │                           │
+│  ┌──────────────┐          │      ┌──────────────┐     │
+│  │ Firestore    │◀─────────┼─────▶│ Telegram     │     │
+│  │ Database     │          │      │ Bot API      │     │
+│  │ • Users      │          │      └──────┬───────┘     │
+│  │ • Articles   │          │             │             │
+│  │ • Locks      │          │             │             │
+│  └──────────────┘          │             │             │
+│                            │             │             │
+│  ┌──────────────┐          │             │             │
+│  │ Secret       │◀─────────┘             │             │
+│  │ Manager      │                        │             │
+│  └──────────────┘                        │             │
+│                                          │             │
+└──────────────────────────────────────────┼─────────────┘
+                                           │
+         ┌─────────────────────────────────┘
+         │
+    ┌────┴──────┐                   ┌──────────────┐
+    │   News    │                   │     YOU      │
+    │  Sources  │                   │  (Telegram)  │
+    │ • HN      │                   └──────────────┘
+    │ • TC      │
+    │ • AI      │
+    │ • Verge   │
+    │ • GitHub  │
+    └───────────┘
 ```
 
 ---
