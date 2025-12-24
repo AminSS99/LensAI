@@ -1003,6 +1003,9 @@ async def save_digest_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     from datetime import datetime
     
     query = update.callback_query
+    # Answer immediately to prevent Telegram from retrying the callback
+    await query.answer("💾 Saving articles...")
+    
     telegram_id = update.effective_user.id
     user_lang = get_user_language(telegram_id)
     
