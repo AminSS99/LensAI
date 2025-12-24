@@ -5,20 +5,21 @@ Uses DeepSeek API to summarize and format tech news digest.
 
 import os
 from typing import List, Dict, Any
-from openai import OpenAI
+from openai import AsyncOpenAI
+import asyncio
 
 
 # DeepSeek uses OpenAI-compatible API
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 
 
-def get_client() -> OpenAI:
-    """Get DeepSeek API client."""
+def get_async_client() -> AsyncOpenAI:
+    """Get DeepSeek Async API client."""
     api_key = os.environ.get('DEEPSEEK_API_KEY')
     if not api_key:
         raise ValueError("DEEPSEEK_API_KEY environment variable not set")
     
-    return OpenAI(
+    return AsyncOpenAI(
         api_key=api_key,
         base_url=DEEPSEEK_BASE_URL
     )
@@ -116,7 +117,7 @@ USER_PROMPT_TEMPLATE = """Here are today's tech news items. Please create a cura
 Create an engaging Telegram-friendly digest with the most important stories."""
 
 
-def summarize_news(news_items: List[Dict[str, Any]], max_items: int = 30, language: str = 'en') -> str:
+async def summarize_news(news_items: List[Dict[str, Any]], max_items: int = 30, language: str = 'en') -> str:
     """
     Summarize a list of news items into a formatted digest.
     
@@ -165,9 +166,9 @@ def summarize_news(news_items: List[Dict[str, Any]], max_items: int = 30, langua
         user_prompt = USER_PROMPT_TEMPLATE.format(news_content=news_content)
     
     try:
-        client = get_client()
+        client = get_async_client()
         
-        response = client.chat.completions.create(
+        response = await client.chat.completions.create(
             model="deepseek-chat",
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -187,7 +188,7 @@ def summarize_news(news_items: List[Dict[str, Any]], max_items: int = 30, langua
 
 def create_fallback_digest(news_items: List[Dict[str, Any]]) -> str:
     """Create a simple digest without AI if API fails."""
-    lines = ["📰 *Tech News Digest*\n"]
+    lines = ["📰 *Tech News Digest*\\n"]
     
     for item in news_items:
         source = item.get('source', 'News')
@@ -199,19 +200,19 @@ def create_fallback_digest(news_items: List[Dict[str, Any]]) -> str:
             lines.append(f"  {url}")
         lines.append("")
     
-    lines.append("\n_Generated without AI summarization (API unavailable)_")
-    return "\n".join(lines)
+    lines.append("\\n_Generated without AI summarization (API unavailable)_")
+    return "\\n".join(lines)
 
 
-def quick_summary(text: str, max_length: int = 100) -> str:
+async def quick_summary(text: str, max_length: int = 100) -> str:
     """
     Generate a quick one-liner summary of text.
     Useful for individual article summaries.
     """
     try:
-        client = get_client()
+        client = get_async_client()
         
-        response = client.chat.completions.create(
+        response = await client.chat.completions.create(
             model="deepseek-chat",
             messages=[
                 {"role": "system", "content": "Summarize the following in one concise sentence."},
@@ -246,10 +247,15 @@ if __name__ == "__main__":
     ]
     
     print("Testing summarizer (requires DEEPSEEK_API_KEY)...")
-    try:
-        digest = summarize_news(sample_news)
-        print(digest)
-    except ValueError as e:
-        print(f"Skipping test: {e}")
-        print("\nFallback digest:")
-        print(create_fallback_digest(sample_news))
+    
+    async def test():
+        try:
+            digest = await summarize_news(sample_news)
+            print(digest)
+        except ValueError as e:
+            print(f"Skipping test: {e}")
+            print("\\nFallback digest:")
+            print(create_fallback_digest(sample_news))
+            
+    asyncio.run(test())
+

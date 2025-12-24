@@ -61,9 +61,9 @@ def scheduled_digest(request: Request):
     """
     from .database import get_users_for_time, save_digest
     from .telegram_bot import send_digest_to_user
-    from .scrapers.hackernews import fetch_hackernews_sync
+    from .scrapers.hackernews import fetch_hackernews
     from .scrapers.techcrunch import fetch_techcrunch
-    from .scrapers.ai_blogs import fetch_ai_blogs_sync
+    from .scrapers.ai_blogs import fetch_ai_blogs
     from .scrapers.theverge import fetch_theverge
     from .scrapers.github_trending import fetch_github_trending
     from .summarizer import summarize_news
@@ -86,63 +86,74 @@ def scheduled_digest(request: Request):
         if not users:
             return json.dumps({'message': f'No users scheduled for {current_time}', 'sent': 0}), 200
         
-        # Fetch news from all sources
-        all_news = []
-        all_news.extend(fetch_hackernews_sync(12))
-        all_news.extend(fetch_techcrunch(8))
-        all_news.extend(fetch_ai_blogs_sync(3))
-        all_news.extend(fetch_theverge(5))
-        all_news.extend(fetch_github_trending(5))
-        
-        if not all_news:
-            return json.dumps({'message': 'No news available', 'sent': 0}), 200
-        
-        # Import user language function
-        from .user_storage import get_user_language
-        
-        # Group users by language
-        users_by_lang = {}
-        for user in users:
-            telegram_id = user.get('telegram_id')
-            if telegram_id:
-                lang = get_user_language(telegram_id)
-                if lang not in users_by_lang:
-                    users_by_lang[lang] = []
-                users_by_lang[lang].append(user)
-        
-        # Generate digests for each language (cache to avoid duplicate API calls)
-        digests_by_lang = {}
-        for lang in users_by_lang.keys():
-            print(f"Generating digest for language: {lang}")
-            digests_by_lang[lang] = summarize_news(all_news, language=lang)
-        
-        # Send to all scheduled users with their language-specific digest
-        sent_count = 0
-        errors = []
-        
-        async def send_all():
-            nonlocal sent_count
+        async def process_digest():
+            # Fetch news from all sources concurrently
+            tasks = []
+            tasks.append(fetch_hackernews(12))
+            tasks.append(asyncio.to_thread(fetch_techcrunch, 8))
+            tasks.append(fetch_ai_blogs(3))
+            tasks.append(asyncio.to_thread(fetch_theverge, 5))
+            tasks.append(asyncio.to_thread(fetch_github_trending, 5))
+            
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            all_news = []
+            for res in results:
+                if isinstance(res, list):
+                    all_news.extend(res)
+                elif isinstance(res, Exception):
+                    print(f"Error fetching news: {res}")
+            
+            if not all_news:
+                return {'message': 'No news available', 'sent': 0}
+            
+            # Import user language function
+            from .user_storage import get_user_language
+            
+            # Group users by language
+            users_by_lang = {}
+            for user in users:
+                telegram_id = user.get('telegram_id')
+                if telegram_id:
+                    lang = get_user_language(telegram_id)
+                    if lang not in users_by_lang:
+                        users_by_lang[lang] = []
+                    users_by_lang[lang].append(user)
+            
+            # Generate digests for each language (cache to avoid duplicate API calls)
+            digests_by_lang = {}
+            for lang in users_by_lang.keys():
+                print(f"Generating digest for language: {lang}")
+                digests_by_lang[lang] = await summarize_news(all_news, language=lang)
+            
+            # Send to all scheduled users with their language-specific digest
+            sent_count = 0
+            errors = []
+            
             for lang, lang_users in users_by_lang.items():
                 digest = digests_by_lang[lang]
                 for user in lang_users:
                     telegram_id = user.get('telegram_id')
-                    if telegram_id:
-                        success = await send_digest_to_user(telegram_id, digest)
-                        if success:
-                            save_digest(telegram_id, digest)
-                            sent_count += 1
-                        else:
-                            errors.append(telegram_id)
-        
-        asyncio.run(send_all())
-        
-        result = {
-            'message': f'Digest sent for {current_time}',
-            'sent': sent_count,
-            'total_users': len(users),
-            'errors': errors
-        }
-        
+                    try:
+                        if telegram_id:
+                            success = await send_digest_to_user(telegram_id, digest)
+                            if success:
+                                save_digest(telegram_id, digest)
+                                sent_count += 1
+                            else:
+                                errors.append(telegram_id)
+                    except Exception as e:
+                        print(f"Error sending to {telegram_id}: {e}")
+                        errors.append(telegram_id)
+                        
+            return {
+                'message': f'Digest sent for {current_time}',
+                'sent': sent_count,
+                'total_users': len(users),
+                'errors': errors
+            }
+
+        result = asyncio.run(process_digest())
         return json.dumps(result), 200
         
     except Exception as e:
@@ -158,45 +169,59 @@ def fetch_news(request: Request):
     HTTP Cloud Function to fetch and return news.
     Useful for testing or API access.
     """
-    from .scrapers.hackernews import fetch_hackernews_sync
+    from .scrapers.hackernews import fetch_hackernews
     from .scrapers.techcrunch import fetch_techcrunch
-    from .scrapers.ai_blogs import fetch_ai_blogs_sync
+    from .scrapers.ai_blogs import fetch_ai_blogs
     from .scrapers.theverge import fetch_theverge
     from .scrapers.github_trending import fetch_github_trending
     from .summarizer import summarize_news
     
     try:
-        sources = request.args.get('sources', 'all').split(',')
+        sources_arg = request.args.get('sources', 'all').split(',')
         summarize = request.args.get('summarize', 'true').lower() == 'true'
         
-        all_news = []
-        
-        if 'all' in sources or 'hackernews' in sources:
-            all_news.extend(fetch_hackernews_sync(12))
-        
-        if 'all' in sources or 'techcrunch' in sources:
-            all_news.extend(fetch_techcrunch(8))
-        
-        if 'all' in sources or 'ai_blogs' in sources:
-            all_news.extend(fetch_ai_blogs_sync(3))
-        
-        if 'all' in sources or 'theverge' in sources:
-            all_news.extend(fetch_theverge(5))
-        
-        if 'all' in sources or 'github' in sources:
-            all_news.extend(fetch_github_trending(5))
-        
-        if summarize and all_news:
-            digest = summarize_news(all_news)
-            return json.dumps({
-                'digest': digest,
-                'article_count': len(all_news)
-            }), 200
-        else:
-            return json.dumps({
-                'articles': all_news,
-                'count': len(all_news)
-            }), 200
+        async def fetch_async():
+            tasks = []
+            
+            if 'all' in sources_arg or 'hackernews' in sources_arg:
+                tasks.append(fetch_hackernews(12))
+            
+            if 'all' in sources_arg or 'techcrunch' in sources_arg:
+                tasks.append(asyncio.to_thread(fetch_techcrunch, 8))
+            
+            if 'all' in sources_arg or 'ai_blogs' in sources_arg:
+                tasks.append(fetch_ai_blogs(3))
+            
+            if 'all' in sources_arg or 'theverge' in sources_arg:
+                tasks.append(asyncio.to_thread(fetch_theverge, 5))
+            
+            if 'all' in sources_arg or 'github' in sources_arg:
+                tasks.append(asyncio.to_thread(fetch_github_trending, 5))
+                
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            all_news = []
+            for res in results:
+                if isinstance(res, list):
+                    all_news.extend(res)
+                elif isinstance(res, Exception):
+                    # Log error but continue
+                    print(f"Error fetching source: {res}")
+            
+            if summarize and all_news:
+                digest = await summarize_news(all_news)
+                return {
+                    'digest': digest,
+                    'article_count': len(all_news)
+                }
+            else:
+                return {
+                    'articles': all_news,
+                    'count': len(all_news)
+                }
+
+        result = asyncio.run(fetch_async())
+        return json.dumps(result), 200
             
     except Exception as e:
         return json.dumps({'error': str(e)}), 500

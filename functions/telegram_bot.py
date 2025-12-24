@@ -5,6 +5,7 @@ Handles all Telegram bot interactions and commands.
 
 import os
 import re
+import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, 
@@ -14,6 +15,9 @@ from telegram.ext import (
     filters,
     ContextTypes
 )
+
+# Lock to prevent double generation
+GENERATING_USERS = set()
 
 
 def get_bot_token() -> str:
@@ -136,22 +140,29 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         return
     
+    # Check if already generating
+    if telegram_id in GENERATING_USERS:
+        wait_text = "⏳ Digest is already being generated, please wait..." if user_lang != 'ru' else "⏳ Дайджест уже генерируется, пожалуйста подождите..."
+        await update.message.reply_text(wait_text)
+        return
+    
     # Rate limit fresh requests
     allowed, message = check_rate_limit(telegram_id, 'news')
     if not allowed:
         await update.message.reply_text(t('rate_limited', user_lang, seconds=message.split()[-2] if 'seconds' in message else '60'))
         return
     
-    # No cache - fetch fresh
-    from .scrapers.hackernews import fetch_hackernews_sync
-    from .scrapers.techcrunch import fetch_techcrunch
-    from .scrapers.ai_blogs import fetch_ai_blogs_sync
-    from .summarizer import summarize_news
-    
     # Send "typing" indicator with realistic time estimate
     await update.message.reply_text(t('gathering_news', user_lang), parse_mode='Markdown')
     
+    GENERATING_USERS.add(telegram_id)
+    
     try:
+        from .scrapers.hackernews import fetch_hackernews
+        from .scrapers.techcrunch import fetch_techcrunch
+        from .scrapers.ai_blogs import fetch_ai_blogs
+        from .summarizer import summarize_news
+        
         # Get user preferences from database (or use defaults)
         sources = ['hackernews', 'techcrunch', 'ai_blogs']  # Default sources
         try:
@@ -162,27 +173,34 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass  # Use defaults if database not available
         
-        # Fetch news from selected sources
-        all_news = []
+        # Fetch news concurrently
+        tasks = []
         
         if 'hackernews' in sources:
-            hn_news = fetch_hackernews_sync(15)
-            all_news.extend(hn_news)
+            tasks.append(fetch_hackernews(15))
         
         if 'techcrunch' in sources:
-            tc_news = fetch_techcrunch(10)
-            all_news.extend(tc_news)
+            # wrap sync function
+            tasks.append(asyncio.to_thread(fetch_techcrunch, 10))
         
         if 'ai_blogs' in sources:
-            ai_news = fetch_ai_blogs_sync(3)
-            all_news.extend(ai_news)
+            tasks.append(fetch_ai_blogs(3))
+            
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        all_news = []
+        for res in results:
+            if isinstance(res, list):
+                all_news.extend(res)
+            elif isinstance(res, Exception):
+                print(f"Error fetching news: {res}")
         
         if not all_news:
             await update.message.reply_text(t('no_news', user_lang))
             return
         
         # Summarize with DeepSeek (in user's language)
-        digest = summarize_news(all_news, language=user_lang)
+        digest = await summarize_news(all_news, language=user_lang)
         
         # Cache the digest for 15 minutes
         set_cached_digest(digest, ttl_minutes=15)
@@ -199,7 +217,6 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         digest_id = hashlib.md5(digest[:100].encode()).hexdigest()[:8]
         
         # Send digest (split if too long for Telegram)
-        # Use try/except to handle Markdown parsing errors
         # Define button labels based on language
         refresh_label = "🔄 Обновить" if user_lang == 'ru' else "🔄 Refresh"
         save_label = "🔖 Сохранить" if user_lang == 'ru' else "🔖 Save Digest"
@@ -254,6 +271,9 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
     except Exception as e:
         await update.message.reply_text(t('error_fetching', user_lang, error=str(e)[:100]))
+    finally:
+        if telegram_id in GENERATING_USERS:
+            GENERATING_USERS.remove(telegram_id)
 
 
 async def schedule_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -924,37 +944,54 @@ async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from .translations import t
     
     query = update.callback_query
-    await query.answer("🔄 Fetching fresh news...")
     
     telegram_id = update.effective_user.id
     user_lang = get_user_language(telegram_id)
+    
+    # Check if already generating
+    if telegram_id in GENERATING_USERS:
+        await query.answer("⏳ Generating...", show_alert=True)
+        return
+        
+    await query.answer("🔄 Fetching fresh news...")
     
     # Send a "fetching" message
     loading_text = "⏳ Получаю свежие новости..." if user_lang == 'ru' else "⏳ Fetching fresh news..."
     await query.message.reply_text(loading_text)
     
-    # Fetch fresh news using the same logic as news_command
-    from .scrapers.hackernews import fetch_hackernews_sync
-    from .scrapers.techcrunch import fetch_techcrunch
-    from .scrapers.ai_blogs import fetch_ai_blogs_sync
-    from .scrapers.theverge import fetch_theverge
-    from .scrapers.github_trending import fetch_github_trending
-    from .summarizer import summarize_news
+    GENERATING_USERS.add(telegram_id)
     
     try:
+        from .scrapers.hackernews import fetch_hackernews
+        from .scrapers.techcrunch import fetch_techcrunch
+        from .scrapers.ai_blogs import fetch_ai_blogs
+        from .scrapers.theverge import fetch_theverge
+        from .scrapers.github_trending import fetch_github_trending
+        from .summarizer import summarize_news
+        
+        # Fetch fresh news concurrently
+        tasks = []
+        tasks.append(fetch_hackernews(12))
+        tasks.append(asyncio.to_thread(fetch_techcrunch, 8))
+        tasks.append(fetch_ai_blogs(3))
+        tasks.append(asyncio.to_thread(fetch_theverge, 5))
+        tasks.append(asyncio.to_thread(fetch_github_trending, 5))
+        
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
         all_news = []
-        all_news.extend(fetch_hackernews_sync(12))
-        all_news.extend(fetch_techcrunch(8))
-        all_news.extend(fetch_ai_blogs_sync(3))
-        all_news.extend(fetch_theverge(5))
-        all_news.extend(fetch_github_trending(5))
+        for res in results:
+            if isinstance(res, list):
+                all_news.extend(res)
+            elif isinstance(res, Exception):
+                print(f"Error fetching news in refresh: {res}")
         
         if not all_news:
             error_text = "❌ Не удалось получить новости." if user_lang == 'ru' else "❌ Could not fetch news."
             await query.message.reply_text(error_text)
             return
         
-        digest = summarize_news(all_news, language=user_lang)
+        digest = await summarize_news(all_news, language=user_lang)
         
         # Generate unique digest ID
         import hashlib
@@ -994,6 +1031,9 @@ async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         error_text = f"❌ Ошибка: {str(e)[:50]}" if user_lang == 'ru' else f"❌ Error: {str(e)[:50]}"
         await query.message.reply_text(error_text)
+    finally:
+        if telegram_id in GENERATING_USERS:
+            GENERATING_USERS.remove(telegram_id)
 
 
 async def save_digest_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1138,7 +1178,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     # Otherwise, treat as a question for AI
-    from .summarizer import get_client
+    from .summarizer import get_async_client
     from .rate_limiter import check_rate_limit
     
     # Rate limit AI chat
@@ -1156,9 +1196,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lang_instruction = " Respond in Azerbaijani."
     
     try:
-        client = get_client()
+        client = get_async_client()
         
-        response = client.chat.completions.create(
+        response = await client.chat.completions.create(
             model="deepseek-chat",
             messages=[
                 {
