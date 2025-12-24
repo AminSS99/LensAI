@@ -24,19 +24,43 @@ def get_client() -> OpenAI:
     )
 
 
+# Source emoji mapping
+SOURCE_EMOJIS = {
+    'Hacker News': '📰',
+    'TechCrunch': '💻',
+    'The Verge': '📱',
+    'GitHub Trending': '🔥',
+    'Anthropic': '🤖',
+    'Google AI': '🧠',
+    'Mistral AI': '🌪️',
+    'DeepMind': '🔬',
+    'Product Hunt': '🚀',
+    'OpenAI': '🤖',
+}
+
+
+def get_source_emoji(source: str) -> str:
+    """Get emoji for a news source."""
+    for key, emoji in SOURCE_EMOJIS.items():
+        if key.lower() in source.lower():
+            return emoji
+    return '📄'  # Default emoji
+
+
 def format_news_for_prompt(news_items: List[Dict[str, Any]]) -> str:
-    """Format news items for the summarization prompt."""
+    """Format news items for the summarization prompt with source emojis."""
     formatted = []
     
     for i, item in enumerate(news_items, 1):
         source = item.get('source', 'Unknown')
+        emoji = get_source_emoji(source)
         title = item.get('title', 'No title')
         url = item.get('url', '')
         summary = item.get('summary', '')
         score = item.get('score', '')
         read_time = estimate_read_time(title, summary)
         
-        entry = f"{i}. [{source}] {title} (~{read_time} min)"
+        entry = f"{i}. {emoji} [{source}] {title} (~{read_time} min)"
         if score:
             entry += f" (Score: {score})"
         if summary:

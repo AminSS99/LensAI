@@ -179,11 +179,15 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         async def send_chunk(chunk, is_last=False):
             try:
                 if is_last:
-                    # Add rating buttons to the last chunk
+                    # Add rating, refresh and save buttons to the last chunk
                     keyboard = [
                         [
                             InlineKeyboardButton("👍", callback_data=f"rate_up_{digest_id}"),
-                            InlineKeyboardButton("👎", callback_data=f"rate_down_{digest_id}")
+                            InlineKeyboardButton("👎", callback_data=f"rate_down_{digest_id}"),
+                            InlineKeyboardButton("🔄 Refresh", callback_data="refresh_news"),
+                        ],
+                        [
+                            InlineKeyboardButton("🔖 Save Digest", callback_data=f"save_digest_{digest_id}"),
                         ]
                     ]
                     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -201,7 +205,11 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     keyboard = [
                         [
                             InlineKeyboardButton("👍", callback_data=f"rate_up_{digest_id}"),
-                            InlineKeyboardButton("👎", callback_data=f"rate_down_{digest_id}")
+                            InlineKeyboardButton("👎", callback_data=f"rate_down_{digest_id}"),
+                            InlineKeyboardButton("🔄 Refresh", callback_data="refresh_news"),
+                        ],
+                        [
+                            InlineKeyboardButton("🔖 Save Digest", callback_data=f"save_digest_{digest_id}"),
                         ]
                     ]
                     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -706,6 +714,110 @@ async def rating_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
+async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle refresh button press - fetch fresh news digest."""
+    from .user_storage import get_user_language
+    from .translations import t
+    
+    query = update.callback_query
+    await query.answer("🔄 Fetching fresh news...")
+    
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+    
+    # Send a "fetching" message
+    loading_text = "⏳ Получаю свежие новости..." if user_lang == 'ru' else "⏳ Fetching fresh news..."
+    await query.message.reply_text(loading_text)
+    
+    # Fetch fresh news using the same logic as news_command
+    from .scrapers.hackernews import fetch_hackernews_sync
+    from .scrapers.techcrunch import fetch_techcrunch
+    from .scrapers.ai_blogs import fetch_ai_blogs_sync
+    from .scrapers.theverge import fetch_theverge
+    from .scrapers.github_trending import fetch_github_trending
+    from .summarizer import summarize_news
+    
+    try:
+        all_news = []
+        all_news.extend(fetch_hackernews_sync(12))
+        all_news.extend(fetch_techcrunch(8))
+        all_news.extend(fetch_ai_blogs_sync(3))
+        all_news.extend(fetch_theverge(5))
+        all_news.extend(fetch_github_trending(5))
+        
+        if not all_news:
+            error_text = "❌ Не удалось получить новости." if user_lang == 'ru' else "❌ Could not fetch news."
+            await query.message.reply_text(error_text)
+            return
+        
+        digest = summarize_news(all_news, language=user_lang)
+        
+        # Generate unique digest ID
+        import hashlib
+        digest_id = hashlib.md5(digest[:100].encode()).hexdigest()[:8]
+        
+        # Send the digest with buttons
+        keyboard = [
+            [
+                InlineKeyboardButton("👍", callback_data=f"rate_up_{digest_id}"),
+                InlineKeyboardButton("👎", callback_data=f"rate_down_{digest_id}"),
+                InlineKeyboardButton("🔄 Refresh", callback_data="refresh_news"),
+            ],
+            [
+                InlineKeyboardButton("🔖 Save Digest", callback_data=f"save_digest_{digest_id}"),
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        try:
+            await query.message.reply_text(
+                digest,
+                parse_mode='Markdown',
+                disable_web_page_preview=True,
+                reply_markup=reply_markup
+            )
+        except Exception:
+            await query.message.reply_text(
+                digest,
+                disable_web_page_preview=True,
+                reply_markup=reply_markup
+            )
+            
+    except Exception as e:
+        error_text = f"❌ Ошибка: {str(e)[:50]}" if user_lang == 'ru' else f"❌ Error: {str(e)[:50]}"
+        await query.message.reply_text(error_text)
+
+
+async def save_digest_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle save digest button press - bookmark current digest."""
+    from .user_storage import get_user_language, save_article
+    
+    query = update.callback_query
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+    
+    # Get the digest content from the message
+    digest_content = query.message.text[:500]  # Save first 500 chars as reference
+    
+    # Get digest ID from callback data
+    data = query.data  # e.g., "save_digest_abc123"
+    parts = data.split('_')
+    digest_id = parts[2] if len(parts) >= 3 else "digest"
+    
+    # Save the digest
+    from datetime import datetime
+    title = f"📰 Digest {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+    
+    saved = save_article(telegram_id, title, f"digest://{digest_id}")
+    
+    if saved:
+        text = "✅ Дайджест сохранён! Используй /saved для просмотра." if user_lang == 'ru' else "✅ Digest saved! Use /saved to view."
+        await query.answer(text, show_alert=True)
+    else:
+        text = "ℹ️ Дайджест уже сохранён." if user_lang == 'ru' else "ℹ️ Digest already saved."
+        await query.answer(text)
+
+
 # ============ Q&A HANDLER ============
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -857,6 +969,8 @@ def create_bot_application() -> Application:
     application.add_handler(CallbackQueryHandler(language_callback, pattern='^lang_'))
     application.add_handler(CallbackQueryHandler(schedule_callback, pattern='^schedule_'))
     application.add_handler(CallbackQueryHandler(rating_callback, pattern='^rate_'))
+    application.add_handler(CallbackQueryHandler(refresh_callback, pattern='^refresh_'))
+    application.add_handler(CallbackQueryHandler(save_digest_callback, pattern='^save_digest_'))
     
     # Add message handler for buttons and Q&A (handles any text that isn't a command)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
