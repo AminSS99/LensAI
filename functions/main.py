@@ -64,6 +64,8 @@ def scheduled_digest(request: Request):
     from .scrapers.hackernews import fetch_hackernews_sync
     from .scrapers.techcrunch import fetch_techcrunch
     from .scrapers.ai_blogs import fetch_ai_blogs_sync
+    from .scrapers.theverge import fetch_theverge
+    from .scrapers.github_trending import fetch_github_trending
     from .summarizer import summarize_news
     
     # Get current time in HH:MM format (Baku timezone - UTC+4)
@@ -84,11 +86,13 @@ def scheduled_digest(request: Request):
         if not users:
             return json.dumps({'message': f'No users scheduled for {current_time}', 'sent': 0}), 200
         
-        # Fetch news once for all users
+        # Fetch news from all sources
         all_news = []
-        all_news.extend(fetch_hackernews_sync(15))
-        all_news.extend(fetch_techcrunch(10))
+        all_news.extend(fetch_hackernews_sync(12))
+        all_news.extend(fetch_techcrunch(8))
         all_news.extend(fetch_ai_blogs_sync(3))
+        all_news.extend(fetch_theverge(5))
+        all_news.extend(fetch_github_trending(5))
         
         if not all_news:
             return json.dumps({'message': 'No news available', 'sent': 0}), 200
@@ -157,6 +161,8 @@ def fetch_news(request: Request):
     from .scrapers.hackernews import fetch_hackernews_sync
     from .scrapers.techcrunch import fetch_techcrunch
     from .scrapers.ai_blogs import fetch_ai_blogs_sync
+    from .scrapers.theverge import fetch_theverge
+    from .scrapers.github_trending import fetch_github_trending
     from .summarizer import summarize_news
     
     try:
@@ -166,13 +172,19 @@ def fetch_news(request: Request):
         all_news = []
         
         if 'all' in sources or 'hackernews' in sources:
-            all_news.extend(fetch_hackernews_sync(15))
+            all_news.extend(fetch_hackernews_sync(12))
         
         if 'all' in sources or 'techcrunch' in sources:
-            all_news.extend(fetch_techcrunch(10))
+            all_news.extend(fetch_techcrunch(8))
         
         if 'all' in sources or 'ai_blogs' in sources:
             all_news.extend(fetch_ai_blogs_sync(3))
+        
+        if 'all' in sources or 'theverge' in sources:
+            all_news.extend(fetch_theverge(5))
+        
+        if 'all' in sources or 'github' in sources:
+            all_news.extend(fetch_github_trending(5))
         
         if summarize and all_news:
             digest = summarize_news(all_news)
