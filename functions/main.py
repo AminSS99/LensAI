@@ -93,24 +93,42 @@ def scheduled_digest(request: Request):
         if not all_news:
             return json.dumps({'message': 'No news available', 'sent': 0}), 200
         
-        # Generate digest
-        digest = summarize_news(all_news)
+        # Import user language function
+        from .user_storage import get_user_language
         
-        # Send to all scheduled users
+        # Group users by language
+        users_by_lang = {}
+        for user in users:
+            telegram_id = user.get('telegram_id')
+            if telegram_id:
+                lang = get_user_language(telegram_id)
+                if lang not in users_by_lang:
+                    users_by_lang[lang] = []
+                users_by_lang[lang].append(user)
+        
+        # Generate digests for each language (cache to avoid duplicate API calls)
+        digests_by_lang = {}
+        for lang in users_by_lang.keys():
+            print(f"Generating digest for language: {lang}")
+            digests_by_lang[lang] = summarize_news(all_news, language=lang)
+        
+        # Send to all scheduled users with their language-specific digest
         sent_count = 0
         errors = []
         
         async def send_all():
             nonlocal sent_count
-            for user in users:
-                telegram_id = user.get('telegram_id')
-                if telegram_id:
-                    success = await send_digest_to_user(telegram_id, digest)
-                    if success:
-                        save_digest(telegram_id, digest)
-                        sent_count += 1
-                    else:
-                        errors.append(telegram_id)
+            for lang, lang_users in users_by_lang.items():
+                digest = digests_by_lang[lang]
+                for user in lang_users:
+                    telegram_id = user.get('telegram_id')
+                    if telegram_id:
+                        success = await send_digest_to_user(telegram_id, digest)
+                        if success:
+                            save_digest(telegram_id, digest)
+                            sent_count += 1
+                        else:
+                            errors.append(telegram_id)
         
         asyncio.run(send_all())
         

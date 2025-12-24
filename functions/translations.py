@@ -30,18 +30,18 @@ MESSAGES = {
         'ai_error': "❌ Sorry, I couldn't process that: {error}",
         
         # New keys for full coverage
-        'welcome': """👋 Welcome to **Tech News Bot**, {username}!
+        'welcome': """👋 Welcome to *Tech News Bot*, {username}!
 
 I'll keep you updated with the latest tech and AI news from:
 • 📰 Hacker News
 • 💻 TechCrunch  
-• 🤖 AI Company Blogs (OpenAI, Anthropic, Google AI, Mistral)
+• 🤖 AI Company Blogs (Anthropic, Google AI, Mistral, DeepMind)
 
-**Quick Actions:** Use the buttons below ⬇️
+*Quick Actions:* Use the buttons below ⬇️
 
-**Or type any question** and I'll answer using AI!
+*Or type any question* and I'll answer using AI!
 
-Your current schedule: **18:00** daily
+Your current schedule: *18:00* daily
 Use /settime to change it!""",
         
         'help_text': """📚 **LensAI Bot Commands**
@@ -136,18 +136,18 @@ Use /sources to toggle sources""",
         'ai_error': "❌ Не удалось обработать запрос: {error}",
         
         # New keys for full coverage
-        'welcome': """👋 Добро пожаловать в **Tech News Bot**, {username}!
+        'welcome': """👋 Добро пожаловать в *Tech News Bot*, {username}!
 
 Я буду держать вас в курсе последних новостей технологий и ИИ:
 • 📰 Hacker News
 • 💻 TechCrunch  
-• 🤖 Блоги AI-компаний (OpenAI, Anthropic, Google AI, Mistral)
+• 🤖 Блоги AI-компаний (Anthropic, Google AI, Mistral, DeepMind)
 
-**Быстрые действия:** Используйте кнопки ниже ⬇️
+*Быстрые действия:* Используйте кнопки ниже ⬇️
 
-**Или задайте любой вопрос** и я отвечу с помощью ИИ!
+*Или задайте любой вопрос* и я отвечу с помощью ИИ!
 
-Ваше расписание: ежедневно в **18:00**
+Ваше расписание: ежедневно в *18:00*
 Используйте /settime чтобы изменить!""",
         
         'help_text': """📚 **Команды бота LensAI**
