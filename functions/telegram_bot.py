@@ -6,6 +6,7 @@ Handles all Telegram bot interactions and commands.
 import os
 import re
 import asyncio
+from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, 
@@ -211,16 +212,31 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Cache the digest for 15 minutes
         set_cached_digest(digest, ttl_minutes=15)
         
+        # Generate unique digest ID for rating tracking
+        import hashlib
+        digest_id = hashlib.md5(digest[:100].encode()).hexdigest()[:8]
+        
+        # Store full digest in Firestore for save button access
+        try:
+            from .user_storage import get_firestore_client
+            db = get_firestore_client()
+            if db:
+                from google.cloud import firestore
+                db.collection('digests_temp').document(digest_id).set({
+                    'content': digest,
+                    'user_id': telegram_id,
+                    'created_at': firestore.SERVER_TIMESTAMP,
+                    'expires_at': datetime.now() + timedelta(hours=24)
+                })
+        except Exception as e:
+            print(f"Error storing digest: {e}")
+        
         # Try to save digest to history (optional)
         try:
             from .database import save_digest
             save_digest(telegram_id, digest)
         except Exception:
-            pass  # Skip saving if database not available
-        
-        # Generate unique digest ID for rating tracking
-        import hashlib
-        digest_id = hashlib.md5(digest[:100].encode()).hexdigest()[:8]
+            pass
         
         # Send digest (split if too long for Telegram)
         # Define button labels based on language
@@ -1003,6 +1019,21 @@ async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         import hashlib
         digest_id = hashlib.md5(digest[:100].encode()).hexdigest()[:8]
         
+        # Store full digest in Firestore for save button access
+        try:
+            from .user_storage import get_firestore_client
+            db = get_firestore_client()
+            if db:
+                from google.cloud import firestore
+                db.collection('digests_temp').document(digest_id).set({
+                    'content': digest,
+                    'user_id': telegram_id,
+                    'created_at': firestore.SERVER_TIMESTAMP,
+                    'expires_at': datetime.now() + timedelta(hours=24)
+                })
+        except Exception as e:
+            print(f"Error storing digest in refresh: {e}")
+        
         # Define button labels based on language
         refresh_label = "🔄 Обновить" if user_lang == 'ru' else "🔄 Refresh"
         save_label = "🔖 Сохранить" if user_lang == 'ru' else "🔖 Save Digest"
@@ -1043,78 +1074,91 @@ async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def save_digest_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle save digest button press - extract and save all article URLs from the digest."""
-    from .user_storage import get_user_language, save_article
+    from .user_storage import get_user_language, save_article, get_firestore_client
     import re
-    from datetime import datetime
     
     query = update.callback_query
-    # Answer immediately to prevent Telegram from retrying the callback
-    await query.answer("💾 Saving articles...")
+    await query.answer("💾 Сохраняю..." if get_user_language(update.effective_user.id) == 'ru' else "💾 Saving...")
     
     telegram_id = update.effective_user.id
     user_lang = get_user_language(telegram_id)
     
-    # Get the digest content from the message
-    digest_content = query.message.text
+    # Extract digest_id from callback_data
+    callback_data = query.data
+    parts = callback_data.split('_')
+    if len(parts) < 3:
+        await query.answer("❌ Error: Invalid callback data", show_alert=True)
+        return
     
-    # Extract all URLs from the digest using regex
-    # Look for Markdown links [text](url) or plain URLs
-    url_pattern = r'\[([^\]]+)\]\((https?://[^)]+)\)'
-    matches = re.findall(url_pattern, digest_content)
+    digest_id = parts[2]
     
-    # Also find plain URLs
-    plain_url_pattern = r'(?<!\()https?://[^\s\)\]]+'
-    plain_urls = re.findall(plain_url_pattern, digest_content)
+    # Fetch full digest from Firestore
+    db = get_firestore_client()
+    if not db:
+        await query.answer("❌ Database unavailable", show_alert=True)
+        return
     
-    saved_count = 0
-    
-    # Save each article found
-    for title, url in matches:
-        # Clean up the title
-        clean_title = title.strip()[:100]
-        # Detect source from URL
-        source = ''
-        if 'techcrunch' in url.lower():
-            source = 'TechCrunch'
-        elif 'news.ycombinator' in url.lower():
-            source = 'Hacker News'
-        elif 'theverge' in url.lower():
-            source = 'The Verge'
-        elif 'github' in url.lower():
-            source = 'GitHub'
-        elif 'anthropic' in url.lower():
-            source = 'Anthropic'
-        elif 'deepmind' in url.lower():
-            source = 'DeepMind'
-        elif 'openai' in url.lower():
-            source = 'OpenAI'
-        elif 'mistral' in url.lower():
-            source = 'Mistral'
+    try:
+        digest_doc = db.collection('digests_temp').document(digest_id).get()
+        if not digest_doc.exists:
+            await query.answer("❌ Digest not found" if user_lang != 'ru' else "❌ Дайджест не найден", show_alert=True)
+            return
         
-        if save_article(telegram_id, clean_title, url, source):
-            saved_count += 1
-    
-    # Save plain URLs without titles
-    for url in plain_urls:
-        # Skip if already saved in matches
-        if any(url in m[1] for m in matches):
-            continue
-        title = f"Article from {datetime.now().strftime('%Y-%m-%d %H:%M')}"
-        if save_article(telegram_id, title, url, ''):
-            saved_count += 1
-    
-    if saved_count > 0:
-        if user_lang == 'ru':
-            text = f"✅ Сохранено {saved_count} статей! Используй /saved для просмотра."
+        digest_content = digest_doc.to_dict().get('content', '')
+        
+        # Extract all URLs from the full digest using regex
+        url_pattern = r'\[([^\]]+)\]\((https?://[^)]+)\)'
+        matches = re.findall(url_pattern, digest_content)
+        
+        # Also find plain URLs
+        plain_url_pattern = r'(?<!\()https?://[^\s\)\]]+'
+        plain_urls = re.findall(plain_url_pattern, digest_content)
+        
+        saved_count = 0
+        
+        # Save each article found
+        for title, url in matches:
+            clean_title = title.strip()[:100]
+            # Detect source from URL
+            source = ''
+            if 'techcrunch' in url.lower():
+                source = 'TechCrunch'
+            elif 'news.ycombinator' in url.lower():
+                source = 'Hacker News'
+            elif 'theverge' in url.lower():
+                source = 'The Verge'
+            elif 'github' in url.lower():
+                source = 'GitHub'
+            elif 'anthropic' in url.lower():
+                source = 'Anthropic'
+            elif 'deepmind' in url.lower():
+                source = 'DeepMind'
+            elif 'openai' in url.lower():
+                source = 'OpenAI'
+            elif 'mistral' in url.lower():
+                source = 'Mistral'
+            
+            if save_article(telegram_id, clean_title, url, source):
+                saved_count += 1
+        
+        # Save plain URLs without titles
+        for url in plain_urls:
+            if any(url in m[1] for m in matches):
+                continue
+            title = f"Article {datetime.now().strftime('%Y-%m-%d')}"
+            if save_article(telegram_id, title, url, ''):
+                saved_count += 1
+        
+        if saved_count > 0:
+            text = f"✅ Сохранено {saved_count} статей! Используй /saved для просмотра." if user_lang == 'ru' else f"✅ Saved {saved_count} articles! Use /saved to view."
+            await query.answer(text, show_alert=True)
         else:
-            text = f"✅ Saved {saved_count} articles! Use /saved to view."
-        await query.answer(text, show_alert=True)
-    else:
-        if user_lang == 'ru':
-            text = "ℹ️ Все статьи уже сохранены или нет ссылок для сохранения."
-        else:
-            text = "ℹ️ All articles already saved or no links to save."
-        await query.answer(text, show_alert=True)
+            text = "ℹ️ Все статьи уже сохранены или нет ссылок для сохранения." if user_lang == 'ru' else "ℹ️ All articles already saved or no links to save."
+            await query.answer(text, show_alert=True)
+            
+    except Exception as e:
+        print(f"Error in save_digest_callback: {e}")
+        await query.answer("❌ Ошибка сохранения" if user_lang == 'ru' else "❌ Save error", show_alert=True)
 
 
 # ============ Q&A HANDLER ============
