@@ -176,6 +176,10 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Send digest (split if too long for Telegram)
         # Use try/except to handle Markdown parsing errors
+        # Define button labels based on language
+        refresh_label = "🔄 Обновить" if user_lang == 'ru' else "🔄 Refresh"
+        save_label = "🔖 Сохранить" if user_lang == 'ru' else "🔖 Save Digest"
+        
         async def send_chunk(chunk, is_last=False):
             try:
                 if is_last:
@@ -184,10 +188,10 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         [
                             InlineKeyboardButton("👍", callback_data=f"rate_up_{digest_id}"),
                             InlineKeyboardButton("👎", callback_data=f"rate_down_{digest_id}"),
-                            InlineKeyboardButton("🔄 Refresh", callback_data="refresh_news"),
+                            InlineKeyboardButton(refresh_label, callback_data="refresh_news"),
                         ],
                         [
-                            InlineKeyboardButton("🔖 Save Digest", callback_data=f"save_digest_{digest_id}"),
+                            InlineKeyboardButton(save_label, callback_data=f"save_digest_{digest_id}"),
                         ]
                     ]
                     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -206,10 +210,10 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         [
                             InlineKeyboardButton("👍", callback_data=f"rate_up_{digest_id}"),
                             InlineKeyboardButton("👎", callback_data=f"rate_down_{digest_id}"),
-                            InlineKeyboardButton("🔄 Refresh", callback_data="refresh_news"),
+                            InlineKeyboardButton(refresh_label, callback_data="refresh_news"),
                         ],
                         [
-                            InlineKeyboardButton("🔖 Save Digest", callback_data=f"save_digest_{digest_id}"),
+                            InlineKeyboardButton(save_label, callback_data=f"save_digest_{digest_id}"),
                         ]
                     ]
                     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -756,15 +760,19 @@ async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         import hashlib
         digest_id = hashlib.md5(digest[:100].encode()).hexdigest()[:8]
         
+        # Define button labels based on language
+        refresh_label = "🔄 Обновить" if user_lang == 'ru' else "🔄 Refresh"
+        save_label = "🔖 Сохранить" if user_lang == 'ru' else "🔖 Save Digest"
+        
         # Send the digest with buttons
         keyboard = [
             [
                 InlineKeyboardButton("👍", callback_data=f"rate_up_{digest_id}"),
                 InlineKeyboardButton("👎", callback_data=f"rate_down_{digest_id}"),
-                InlineKeyboardButton("🔄 Refresh", callback_data="refresh_news"),
+                InlineKeyboardButton(refresh_label, callback_data="refresh_news"),
             ],
             [
-                InlineKeyboardButton("🔖 Save Digest", callback_data=f"save_digest_{digest_id}"),
+                InlineKeyboardButton(save_label, callback_data=f"save_digest_{digest_id}"),
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
