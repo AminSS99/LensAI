@@ -168,10 +168,12 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         from .scrapers.hackernews import fetch_hackernews
         from .scrapers.techcrunch import fetch_techcrunch
         from .scrapers.ai_blogs import fetch_ai_blogs
+        from .scrapers.theverge import fetch_theverge
+        from .scrapers.github_trending import fetch_github_trending
         from .summarizer import summarize_news
         
         # Get user preferences from database (or use defaults)
-        sources = ['hackernews', 'techcrunch', 'ai_blogs']  # Default sources
+        sources = ['hackernews', 'techcrunch', 'ai_blogs', 'theverge', 'github']  # Default all sources
         try:
             from .database import get_user
             user = get_user(telegram_id)
@@ -192,6 +194,12 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if 'ai_blogs' in sources:
             tasks.append(fetch_ai_blogs(3))
+        
+        if 'theverge' in sources:
+            tasks.append(asyncio.to_thread(fetch_theverge, 8))
+        
+        if 'github' in sources:
+            tasks.append(asyncio.to_thread(fetch_github_trending, 5))
             
         results = await asyncio.gather(*tasks, return_exceptions=True)
         
@@ -284,12 +292,11 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 else:
                     await update.message.reply_text(chunk, disable_web_page_preview=True)
         
-        if len(digest) > 4000:
-            chunks = [digest[i:i+4000] for i in range(0, len(digest), 4000)]
-            for i, chunk in enumerate(chunks):
-                await send_chunk(chunk, is_last=(i == len(chunks) - 1))
-        else:
-            await send_chunk(digest, is_last=True)
+        # Smart message splitting to avoid breaking UTF-8, URLs, or markdown
+        from .message_utils import split_message
+        chunks = split_message(digest)
+        for i, chunk in enumerate(chunks):
+            await send_chunk(chunk, is_last=(i == len(chunks) - 1))
             
     except Exception as e:
         await update.message.reply_text(t('error_fetching', user_lang, error=str(e)[:100]))
@@ -404,7 +411,7 @@ async def sources_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_lang = get_user_language(telegram_id)
     
     # Try to get user preferences from database, use defaults if not available
-    sources = ['hackernews', 'techcrunch', 'ai_blogs']  # Default all enabled
+    sources = ['hackernews', 'techcrunch', 'ai_blogs', 'theverge', 'github']  # Default all enabled
     try:
         from .database import get_user, create_or_update_user
         user = get_user(telegram_id)
@@ -427,6 +434,14 @@ async def sources_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton(
             f"{'✅' if 'ai_blogs' in sources else '❌'} AI Blogs",
             callback_data='toggle_ai_blogs'
+        )],
+        [InlineKeyboardButton(
+            f"{'✅' if 'theverge' in sources else '❌'} The Verge",
+            callback_data='toggle_theverge'
+        )],
+        [InlineKeyboardButton(
+            f"{'✅' if 'github' in sources else '❌'} GitHub Trending",
+            callback_data='toggle_github'
         )],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -467,6 +482,14 @@ async def toggle_source_callback(update: Update, context: ContextTypes.DEFAULT_T
         [InlineKeyboardButton(
             f"{'✅' if 'ai_blogs' in new_sources else '❌'} AI Blogs",
             callback_data='toggle_ai_blogs'
+        )],
+        [InlineKeyboardButton(
+            f"{'✅' if 'theverge' in new_sources else '❌'} The Verge",
+            callback_data='toggle_theverge'
+        )],
+        [InlineKeyboardButton(
+            f"{'✅' if 'github' in new_sources else '❌'} GitHub Trending",
+            callback_data='toggle_github'
         )],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -1051,19 +1074,40 @@ async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
+        # Send the digest with buttons (split if needed)
+        from .message_utils import split_message
+        chunks = split_message(digest)
+        
         try:
-            await query.message.reply_text(
-                digest,
-                parse_mode='Markdown',
-                disable_web_page_preview=True,
-                reply_markup=reply_markup
-            )
+            for i, chunk in enumerate(chunks):
+                # Add buttons only to the last chunk
+                if i == len(chunks) - 1:
+                    await query.message.reply_text(
+                        chunk,
+                        parse_mode='Markdown',
+                        disable_web_page_preview=True,
+                        reply_markup=reply_markup
+                    )
+                else:
+                    await query.message.reply_text(
+                        chunk,
+                        parse_mode='Markdown',
+                        disable_web_page_preview=True
+                    )
         except Exception:
-            await query.message.reply_text(
-                digest,
-                disable_web_page_preview=True,
-                reply_markup=reply_markup
-            )
+            # Fallback without markdown if parsing fails
+            for i, chunk in enumerate(chunks):
+                if i == len(chunks) - 1:
+                    await query.message.reply_text(
+                        chunk,
+                        disable_web_page_preview=True,
+                        reply_markup=reply_markup
+                    )
+                else:
+                    await query.message.reply_text(
+                        chunk,
+                        disable_web_page_preview=True
+                    )
             
     except Exception as e:
         error_text = f"❌ Ошибка: {str(e)[:50]}" if user_lang == 'ru' else f"❌ Error: {str(e)[:50]}"
@@ -1277,12 +1321,11 @@ Keep responses under 300 words unless more detail is needed.{lang_instruction}""
             except Exception:
                 await update.message.reply_text(text, disable_web_page_preview=True)
         
-        if len(answer) > 4000:
-            chunks = [answer[i:i+4000] for i in range(0, len(answer), 4000)]
-            for chunk in chunks:
-                await send_answer(chunk)
-        else:
-            await send_answer(answer)
+        # Smart message splitting to avoid breaking UTF-8, URLs, or markdown
+        from .message_utils import split_message
+        chunks = split_message(answer)
+        for chunk in chunks:
+            await send_answer(chunk)
             
     except Exception as e:
         await update.message.reply_text(t('ai_error', user_lang, error=str(e)[:100]))
@@ -1359,33 +1402,27 @@ async def send_digest_to_user(telegram_id: int, digest: str):
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     try:
-        if len(digest) > 4000:
-            chunks = [digest[i:i+4000] for i in range(0, len(digest), 4000)]
-            for i, chunk in enumerate(chunks):
-                # Add buttons only to the last chunk
-                if i == len(chunks) - 1:
-                    await bot.send_message(
-                        chat_id=telegram_id,
-                        text=chunk,
-                        parse_mode='Markdown',
-                        disable_web_page_preview=True,
-                        reply_markup=reply_markup
-                    )
-                else:
-                    await bot.send_message(
-                        chat_id=telegram_id,
-                        text=chunk,
-                        parse_mode='Markdown',
-                        disable_web_page_preview=True
-                    )
-        else:
-            await bot.send_message(
-                chat_id=telegram_id,
-                text=digest,
-                parse_mode='Markdown',
-                disable_web_page_preview=True,
-                reply_markup=reply_markup
-            )
+        # Smart message splitting to avoid breaking UTF-8, URLs, or markdown
+        from .message_utils import split_message
+        chunks = split_message(digest)
+        
+        for i, chunk in enumerate(chunks):
+            # Add buttons only to the last chunk
+            if i == len(chunks) - 1:
+                await bot.send_message(
+                    chat_id=telegram_id,
+                    text=chunk,
+                    parse_mode='Markdown',
+                    disable_web_page_preview=True,
+                    reply_markup=reply_markup
+                )
+            else:
+                await bot.send_message(
+                    chat_id=telegram_id,
+                    text=chunk,
+                    parse_mode='Markdown',
+                    disable_web_page_preview=True
+                )
         return True
     except Exception as e:
         print(f"Error sending to user {telegram_id}: {e}")

@@ -49,24 +49,30 @@ Use /settime to change it!""",
 📰 **News**
 • /news - Get your personalized news digest
 • /search <topic> - Search news by topic
-• /sources - Toggle news sources
+• /sources - Toggle news sources on/off
 
 🔖 **Saved Articles**
 • /save <url> - Save an article
-• /saved - View saved articles
-• /clear\\_saved - Clear all saved
+• /saved - View all saved articles
+• /filter <category> - Filter by category (ai, security, crypto, startups, hardware, software, tech)
+• /recap - Weekly recap of saved articles
+• /clear_saved - Clear all saved articles
 
 ⚙️ **Settings**
-• /settime HH:MM - Set daily digest time
+• /schedule - Set daily digest time
 • /language - Change response language
 • /status - Check your settings
 
 💬 **Chat**
 Just type any question and I'll answer using AI!
 
+📤 **Share**
+• /share - Share the bot with friends
+
 💡 **Tips:**
 - Send me any URL to save it
-- Use buttons below for quick access""",
+- Use buttons below for quick access
+- Click individual save buttons in digests""",
         
         'settime_prompt': "⏰ Please provide a time in HH:MM format.\nExample: `/settime 14:45`",
         'settime_invalid': "❌ Invalid time format. Please use HH:MM (24-hour format).\nExamples: 09:00, 14:45, 18:30",
@@ -175,24 +181,30 @@ Use /sources to toggle sources""",
 📰 **Новости**
 • /news - Получить персональный дайджест
 • /search <тема> - Поиск по теме
-• /sources - Настроить источники
+• /sources - Настроить источники новостей
 
 🔖 **Сохранённые статьи**
 • /save <ссылка> - Сохранить статью
-• /saved - Просмотреть сохранённые
-• /clear\\_saved - Очистить все
+• /saved - Просмотреть все сохранённые
+• /filter <категория> - Фильтр по категории (ai, security, crypto, startups, hardware, software, tech)
+• /recap - Недельный обзор сохранённых
+• /clear_saved - Очистить все сохранённые
 
 ⚙️ **Настройки**
-• /settime ЧЧ:ММ - Время ежедневного дайджеста
+• /schedule - Время ежедневного дайджеста
 • /language - Изменить язык
 • /status - Проверить настройки
 
 💬 **Чат**
 Просто напишите любой вопрос и я отвечу с помощью ИИ!
 
+📤 **Поделиться**
+• /share - Поделиться ботом с друзьями
+
 💡 **Советы:**
 - Отправьте мне URL чтобы сохранить
-- Используйте кнопки ниже для быстрого доступа""",
+- Используйте кнопки ниже для быстрого доступа
+- Нажимайте кнопки сохранения в дайджестах""",
         
         'settime_prompt': "⏰ Укажите время в формате ЧЧ:ММ.\nПример: `/settime 14:45`",
         'settime_invalid': "❌ Неверный формат времени. Используйте ЧЧ:ММ (24-часовой формат).\nПримеры: 09:00, 14:45, 18:30",

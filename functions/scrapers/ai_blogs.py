@@ -9,6 +9,14 @@ from typing import List, Dict, Any
 from datetime import datetime
 import asyncio
 
+try:
+    from ..resilience import retry_with_backoff
+except ImportError:
+    def retry_with_backoff(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+
 
 # AI Blog URLs and their scraping configurations
 AI_BLOGS = {
@@ -125,6 +133,7 @@ async def scrape_blog(client: httpx.AsyncClient, blog_key: str, limit: int = 5) 
         return []
 
 
+@retry_with_backoff(max_retries=2, base_delay=1.0)
 async def fetch_ai_blogs(limit_per_blog: int = 5) -> List[Dict[str, Any]]:
     """
     Fetch latest posts from all AI company blogs.

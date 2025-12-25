@@ -8,10 +8,19 @@ from typing import List, Dict, Any
 from datetime import datetime
 import xml.etree.ElementTree as ET
 
+try:
+    from ..resilience import retry_with_backoff
+except ImportError:
+    def retry_with_backoff(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+
 
 VERGE_RSS_URL = "https://www.theverge.com/rss/index.xml"
 
 
+@retry_with_backoff(max_retries=2, base_delay=1.0)
 def fetch_theverge(limit: int = 10) -> List[Dict[str, Any]]:
     """
     Fetch latest articles from The Verge RSS feed.

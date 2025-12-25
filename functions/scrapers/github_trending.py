@@ -8,10 +8,19 @@ from typing import List, Dict, Any
 from datetime import datetime
 from bs4 import BeautifulSoup
 
+try:
+    from ..resilience import retry_with_backoff
+except ImportError:
+    def retry_with_backoff(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+
 
 GITHUB_TRENDING_URL = "https://github.com/trending"
 
 
+@retry_with_backoff(max_retries=2, base_delay=1.0)
 def fetch_github_trending(limit: int = 10, language: str = None) -> List[Dict[str, Any]]:
     """
     Fetch trending repositories from GitHub.

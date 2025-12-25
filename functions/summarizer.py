@@ -7,6 +7,8 @@ import os
 from typing import List, Dict, Any
 from openai import AsyncOpenAI
 import asyncio
+from .resilience import retry_with_backoff
+from .fallback_digest import create_simple_digest, create_raw_list
 
 
 # DeepSeek uses OpenAI-compatible API
@@ -120,6 +122,7 @@ Create an engaging Telegram-friendly digest with the most important stories."""
 async def summarize_news(news_items: List[Dict[str, Any]], max_items: int = 30, language: str = 'en') -> str:
     """
     Summarize a list of news items into a formatted digest.
+    Uses DeepSeek AI with fallback to simple formatting if AI fails.
     
     Args:
         news_items: List of news items from scrapers
@@ -137,8 +140,31 @@ async def summarize_news(news_items: List[Dict[str, Any]], max_items: int = 30, 
     # Limit items to control API costs
     items_to_summarize = news_items[:max_items]
     
+    # Try AI summarization first
+    try:
+        digest = await _ai_summarize(items_to_summarize, language)
+        return digest
+    except Exception as e:
+        print(f"AI summarization failed: {e}. Falling back to simple digest.")
+        # Fallback to simple digest without AI
+        try:
+            return create_simple_digest(items_to_summarize, language)
+        except Exception as e2:
+            print(f"Simple digest failed: {e2}. Falling back to raw list.")
+            # Last resort: raw list
+            return create_raw_list(items_to_summarize, language)
+
+
+@retry_with_backoff(max_retries=2, base_delay=1.0, max_delay=5.0)
+async def _ai_summarize(news_items: List[Dict[str, Any]], language: str) -> str:
+    """
+    Internal function to call DeepSeek AI with retry logic.
+    
+    Raises:
+        Exception if AI summarization fails after retries
+    """
     # Format news for the prompt
-    news_content = format_news_for_prompt(items_to_summarize)
+    news_content = format_news_for_prompt(news_items)
     
     # Language-specific prompts
     if language == 'ru':
@@ -165,25 +191,29 @@ async def summarize_news(news_items: List[Dict[str, Any]], max_items: int = 30, 
         system_prompt = SYSTEM_PROMPT
         user_prompt = USER_PROMPT_TEMPLATE.format(news_content=news_content)
     
+    client = get_async_client()
+    
+    # Add timeout to prevent hanging
     try:
-        client = get_async_client()
-        
-        response = await client.chat.completions.create(
-            model="deepseek-chat",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            temperature=0.7,
-            max_tokens=1500
+        response = await asyncio.wait_for(
+            client.chat.completions.create(
+                model="deepseek-chat",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.7,
+                max_tokens=1500
+            ),
+            timeout=45.0  # 45 second timeout
         )
         
         return response.choices[0].message.content
         
+    except asyncio.TimeoutError:
+        raise Exception("DeepSeek API timeout after 45 seconds")
     except Exception as e:
-        print(f"Error summarizing news: {e}")
-        # Fallback to basic formatting
-        return create_fallback_digest(items_to_summarize[:10])
+        raise Exception(f"DeepSeek API error: {str(e)}")
 
 
 def create_fallback_digest(news_items: List[Dict[str, Any]]) -> str:

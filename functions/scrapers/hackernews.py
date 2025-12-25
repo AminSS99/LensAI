@@ -7,6 +7,19 @@ import httpx
 from typing import List, Dict, Any
 from datetime import datetime, timedelta
 
+try:
+    from ..resilience import retry_with_backoff
+except ImportError:
+    # Fallback for when running standalone
+    from functools import wraps
+    def retry_with_backoff(*args, **kwargs):
+        def decorator(func):
+            @wraps(func)
+            def wrapper(*args, **kwargs):
+                return func(*args, **kwargs)
+            return wrapper
+        return decorator
+
 
 HN_API_BASE = "https://hacker-news.firebaseio.com/v0"
 
@@ -41,6 +54,7 @@ def is_tech_related(story: Dict[str, Any]) -> bool:
     return any(keyword in title_lower for keyword in TECH_KEYWORDS)
 
 
+@retry_with_backoff(max_retries=2, base_delay=1.0)
 async def fetch_hackernews(limit: int = 30) -> List[Dict[str, Any]]:
     """
     Fetch top tech stories from Hacker News.

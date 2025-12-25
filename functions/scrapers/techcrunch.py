@@ -9,6 +9,14 @@ from typing import List, Dict, Any
 from datetime import datetime
 import time
 
+try:
+    from ..resilience import retry_with_backoff
+except ImportError:
+    def retry_with_backoff(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+
 
 TECHCRUNCH_RSS = "https://techcrunch.com/feed/"
 
@@ -23,6 +31,7 @@ def parse_date(date_struct) -> str:
     return datetime.now().isoformat()
 
 
+@retry_with_backoff(max_retries=2, base_delay=1.0)
 def fetch_techcrunch(limit: int = 20) -> List[Dict[str, Any]]:
     """
     Fetch latest articles from TechCrunch RSS feed.

@@ -70,7 +70,7 @@ def create_or_update_user(
             'username': username,
             'schedule_time': schedule_time or "18:00",
             'timezone': timezone,
-            'sources': ['hackernews', 'techcrunch', 'ai_blogs'],
+            'sources': ['hackernews', 'techcrunch', 'ai_blogs', 'theverge', 'github'],
             'created_at': datetime.utcnow(),
             'updated_at': datetime.utcnow(),
             'is_active': True
