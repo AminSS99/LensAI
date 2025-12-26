@@ -649,8 +649,13 @@ async def filter_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text(t('filter_prompt', user_lang), parse_mode='Markdown')
         return
-    
+        
     category = context.args[0].lower()
+    
+    # Validation: Check max length
+    if len(category) > 20:
+        await update.message.reply_text("❌ Category name too long.")
+        return
     if category not in valid_categories:
         await update.message.reply_text(t('filter_prompt', user_lang), parse_mode='Markdown')
         return
@@ -806,7 +811,17 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     
-    query = ' '.join(context.args).lower()
+    query = ' '.join(context.args)
+    
+    # Validation
+    if len(query) > 100:
+        await update.message.reply_text("❌ Search query too long (max 100 chars).")
+        return
+        
+    if len(query) < 2:
+        await update.message.reply_text("❌ Search query too short.")
+        return
+    
     add_search_history(telegram_id, query)
     
     await update.message.reply_text(t('searching', user_lang, query=query), parse_mode='Markdown')
@@ -1208,6 +1223,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Skip if message is too short
     if not user_message or len(user_message) < 2:
+        return
+        
+    # Validation: Message length for AI
+    if len(user_message) > 1000:
+        await update.message.reply_text("❌ Message too long (max 1000 chars).")
         return
     
     # Handle button presses - REMOVED (now using command menu only)

@@ -39,7 +39,7 @@ def telegram_webhook(request: Request):
         # Create bot application and process update synchronously
         application = create_bot_application()
         
-        async def process():
+        async def process() -> None:
             try:
                 # Initialize with timeout
                 print("Initializing bot application...")
