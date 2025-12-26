@@ -26,8 +26,9 @@ def parse_date(date_struct) -> str:
     if date_struct:
         try:
             return datetime(*date_struct[:6]).isoformat()
-        except:
-            pass
+        except Exception as e:
+            print(f"Error parsing date '{date_struct}': {e}")
+            return datetime.now().isoformat() # Ensure a string is returned in case of error
     return datetime.now().isoformat()
 
 

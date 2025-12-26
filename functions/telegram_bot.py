@@ -702,7 +702,7 @@ async def recap_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 saved_date = datetime.fromisoformat(saved_at.replace('Z', '+00:00'))
                 if saved_date.replace(tzinfo=None) > week_ago:
                     weekly_articles.append(article)
-            except:
+            except Exception:
                 pass
     
     if not weekly_articles:
@@ -1210,46 +1210,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not user_message or len(user_message) < 2:
         return
     
-    # Handle button presses - check for both English and Russian labels
-    # News button
-    if user_message in ["📰 Get News", "📰 Новости", t('btn_news', 'en'), t('btn_news', 'ru')]:
-        await news_command(update, context)
-        return
-    # Search button
-    elif user_message in ["🔍 Search", "🔍 Поиск", t('btn_search', 'en'), t('btn_search', 'ru')]:
-        await update.message.reply_text(
-            t('search_prompt', user_lang),
-            parse_mode='Markdown'
-        )
-        return
-    # Saved button
-    elif user_message in ["🔖 Saved", "🔖 Сохранённые", t('btn_saved', 'en'), t('btn_saved', 'ru')]:
-        await saved_command(update, context)
-        return
-    # Status button
-    elif user_message in ["📊 Status", "📊 Статус", t('btn_status', 'en'), t('btn_status', 'ru')]:
-        await status_command(update, context)
-        return
-    # Settings button
-    elif user_message in ["⚙️ Settings", "⚙️ Настройки", t('btn_settings', 'en'), t('btn_settings', 'ru')]:
-        await sources_command(update, context)
-        return
-    # Language button
-    elif user_message in ["🌐 Language", "🌐 Язык", t('btn_language', 'en'), t('btn_language', 'ru')]:
-        await language_command(update, context)
-        return
-    # Schedule button
-    elif user_message in ["⏰ Schedule", "⏰ Расписание", t('btn_schedule', 'en'), t('btn_schedule', 'ru')]:
-        await schedule_command(update, context)
-        return
-    # Help button
-    elif user_message in ["❓ Help", "❓ Помощь", t('btn_help', 'en'), t('btn_help', 'ru')]:
-        await help_command(update, context)
-        return
-    # Share button
-    elif user_message in ["📤 Share", "📤 Поделиться", t('btn_share', 'en'), t('btn_share', 'ru')]:
-        await share_command(update, context)
-        return
+    # Handle button presses - REMOVED (now using command menu only)
+    # The big persistent keyboard has been disabled, so these checks are no longer needed.
+    # Users should use the /slash commands from the menu.
     
     # Check if it's a URL to save
     if user_message.startswith('http://') or user_message.startswith('https://'):
@@ -1286,7 +1249,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             messages=[
                 {
                     "role": "system", 
-                    "content": f"""You are a helpful tech news assistant. Users may ask you:
+                    "content": f"""You are a helpful tech news assistant. 
+Current Date: {datetime.now().strftime('%Y-%m-%d')}
+Users may ask you:
 - Questions about tech news, AI developments, or industry trends
 - To explain what a news item means
 - For more details about a technology or company
