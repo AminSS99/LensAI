@@ -30,23 +30,11 @@ def get_bot_token() -> str:
 
 def get_main_keyboard(lang: str = 'en'):
     """Get the main persistent keyboard with quick action buttons."""
-    from telegram import ReplyKeyboardMarkup, KeyboardButton
-    from .translations import t
+    from telegram import ReplyKeyboardRemove
     
-    # Cleaner 2-column layout for better UX
-    keyboard = [
-        [KeyboardButton(t('btn_news', lang)), KeyboardButton(t('btn_search', lang))],
-        [KeyboardButton(t('btn_saved', lang)), KeyboardButton(t('btn_status', lang))],
-        [KeyboardButton(t('btn_language', lang)), KeyboardButton(t('btn_settings', lang))],
-        [KeyboardButton(t('btn_schedule', lang)), KeyboardButton(t('btn_help', lang))],
-        [KeyboardButton(t('btn_share', lang))]  # Single button for sharing
-    ]
-    return ReplyKeyboardMarkup(
-        keyboard, 
-        resize_keyboard=True,  # Make buttons smaller and fit screen
-        is_persistent=True,     # Keep keyboard always visible
-        one_time_keyboard=False  # Don't hide after use
-    )
+    # Return ReplyKeyboardRemove to hide the big keyboard buttons
+    # Users will now use the ≡ Menu button (bottom left) for all commands
+    return ReplyKeyboardRemove()
 
 
 # ============ COMMAND HANDLERS ============
