@@ -33,17 +33,19 @@ def get_main_keyboard(lang: str = 'en'):
     from telegram import ReplyKeyboardMarkup, KeyboardButton
     from .translations import t
     
+    # Cleaner 2-column layout for better UX
     keyboard = [
         [KeyboardButton(t('btn_news', lang)), KeyboardButton(t('btn_search', lang))],
         [KeyboardButton(t('btn_saved', lang)), KeyboardButton(t('btn_status', lang))],
         [KeyboardButton(t('btn_language', lang)), KeyboardButton(t('btn_settings', lang))],
         [KeyboardButton(t('btn_schedule', lang)), KeyboardButton(t('btn_help', lang))],
-        [KeyboardButton(t('btn_share', lang))]
+        [KeyboardButton(t('btn_share', lang))]  # Single button for sharing
     ]
     return ReplyKeyboardMarkup(
         keyboard, 
-        resize_keyboard=True,  # Make buttons smaller
-        is_persistent=True     # Keep keyboard visible
+        resize_keyboard=True,  # Make buttons smaller and fit screen
+        is_persistent=True,     # Keep keyboard always visible
+        one_time_keyboard=False  # Don't hide after use
     )
 
 
@@ -69,8 +71,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_message = t('welcome', user_lang, username=username)
     await update.message.reply_text(
         welcome_message, 
-        parse_mode='Markdown',
-        reply_markup=get_main_keyboard(user_lang)
+        parse_mode='Markdown'
+        # No reply_markup - using native bot commands instead
     )
 
 
@@ -1333,11 +1335,75 @@ Keep responses under 300 words unless more detail is needed.{lang_instruction}""
 
 # ============ BOT SETUP ============
 
+async def setup_bot_commands(application: Application):
+    """Set up bot commands for the native Telegram command menu."""
+    from telegram import BotCommand, MenuButtonCommands
+    
+    # English commands
+    commands_en = [
+        BotCommand("start", "Start the bot"),
+        BotCommand("news", "Get AI news digest"),
+        BotCommand("saved", "View saved articles"),
+        BotCommand("search", "Search articles"),
+        BotCommand("filter", "Filter saved by category"),
+        BotCommand("recap", "Weekly saved articles recap"),
+        BotCommand("status", "View your settings"),
+        BotCommand("language", "Change language"),
+        BotCommand("sources", "Toggle news sources"),
+        BotCommand("schedule", "Set digest schedule"),
+        BotCommand("share", "Share bot with friends"),
+        BotCommand("help", "Show help"),
+    ]
+    
+    # Russian commands
+    commands_ru = [
+        BotCommand("start", "Запустить бота"),
+        BotCommand("news", "Получить дайджест новостей"),
+        BotCommand("saved", "Сохранённые статьи"),
+        BotCommand("search", "Поиск статей"),
+        BotCommand("filter", "Фильтр по категориям"),
+        BotCommand("recap", "Еженедельная сводка"),
+        BotCommand("status", "Настройки"),
+        BotCommand("language", "Язык"),
+        BotCommand("sources", "Источники новостей"),
+        BotCommand("schedule", "Расписание"),
+        BotCommand("share", "Поделиться ботом"),
+        BotCommand("help", "Помощь"),
+    ]
+    
+    # Set commands for different languages
+    await application.bot.set_my_commands(commands_en, language_code="en")
+    await application.bot.set_my_commands(commands_ru, language_code="ru")
+    
+    # Set menu button to show commands (creates the blue "Menu" button at bottom-left)
+    await application.bot.set_chat_menu_button(menu_button=MenuButtonCommands())
+    
+    print("Bot commands and menu button registered successfully")
+
 def create_bot_application() -> Application:
-    """Create and configure the Telegram bot application."""
+    """Create and configure the Telegram bot application with HTTP timeouts."""
+    from telegram.request import HTTPXRequest
+    
     token = get_bot_token()
     
-    application = Application.builder().token(token).build()
+    # Configure HTTP request with aggressive timeouts directly
+    # HTTPXRequest takes timeout parameters directly in this version
+    request = HTTPXRequest(
+        connect_timeout=5.0,    # 5s to establish connection
+        read_timeout=20.0,      # 20s to read response
+        write_timeout=10.0,     # 10s to send request
+        pool_timeout=5.0,       # 5s to get connection from pool
+        connection_pool_size=100
+    )
+    
+    # Build application with custom HTTP request configuration
+    # Note: Cannot set http_version when using custom request
+    application = (
+        Application.builder()
+        .token(token)
+        .request(request)
+        .build()
+    )
     
     # Add command handlers
     application.add_handler(CommandHandler("start", start_command))
@@ -1369,6 +1435,9 @@ def create_bot_application() -> Application:
     
     # Add message handler for buttons and Q&A (handles any text that isn't a command)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    
+    # Set up bot commands for native Telegram menu (will be called after initialization)
+    application.post_init = setup_bot_commands
     
     return application
 
