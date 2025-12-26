@@ -6,6 +6,7 @@ Contains all HTTP and scheduled function handlers.
 import os
 import json
 import asyncio
+import traceback
 from datetime import datetime
 import functions_framework
 from flask import Request
@@ -17,7 +18,10 @@ from flask import Request
 def telegram_webhook(request: Request):
     """
     HTTP Cloud Function for Telegram webhook.
-    Receives updates from Telegram and processes them.
+    Processes updates synchronously with timeout protection.
+    
+    IMPORTANT: Always returns 200 OK to prevent Telegram retries,
+    even if processing fails or times out.
     """
     from telegram import Update
     from .telegram_bot import create_bot_application
@@ -32,23 +36,56 @@ def telegram_webhook(request: Request):
         if not update_data:
             return 'No data', 400
         
-        # Create bot application and process update
+        # Create bot application and process update synchronously
         application = create_bot_application()
         
-        # Run async processing
         async def process():
-            await application.initialize()
-            update = Update.de_json(update_data, application.bot)
-            await application.process_update(update)
-            await application.shutdown()
+            try:
+                # Initialize with timeout
+                print("Initializing bot application...")
+                await asyncio.wait_for(
+                    application.initialize(),
+                    timeout=10.0
+                )
+                print("Bot initialized successfully")
+                
+                update = Update.de_json(update_data, application.bot)
+                print(f"Processing update from user {update.effective_user.id if update.effective_user else 'unknown'}")
+                
+                # Process with timeout (120s to allow for slow AI summarization)
+                await asyncio.wait_for(
+                    application.process_update(update),
+                    timeout=120.0
+                )
+                print("Update processed successfully")
+                
+            except asyncio.TimeoutError:
+                print(f"⚠️ Update processing timed out")
+                traceback.print_exc()
+            except Exception as e:
+                print(f"❌ Error processing update: {e}")
+                traceback.print_exc()
+            finally:
+                try:
+                    print("Shutting down bot application...")
+                    await asyncio.wait_for(
+                        application.shutdown(),
+                        timeout=5.0
+                    )
+                    print("Bot shutdown complete")
+                except Exception as e:
+                    print(f"Error during shutdown: {e}")
         
         asyncio.run(process())
         
+        # Always return 200 OK to Telegram (even if processing failed)
+        # This prevents infinite retries from Telegram
         return 'OK', 200
         
     except Exception as e:
         print(f"Webhook error: {e}")
-        return str(e), 500
+        traceback.print_exc()
+        return 'OK', 200  # Return OK to prevent retries
 
 
 # ============ SCHEDULED DIGEST FUNCTION ============
