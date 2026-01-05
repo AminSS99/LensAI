@@ -162,22 +162,35 @@ async def summarize_news(news_items: List[Dict[str, Any]], max_items: int = 30, 
             return "📭 Сегодня новостей нет. Проверьте позже!"
         return "📭 No tech news found today. Check back later!"
     
-    # Limit items to control API costs
-    items_to_summarize = news_items[:max_items]
+    # Shuffle to get variety, then limit
+    import random
+    shuffled_items = news_items.copy()
+    random.shuffle(shuffled_items)
+    items_to_summarize = shuffled_items[:max_items]
+    
+    # Get current date for header
+    current_date = datetime.now(BAKU_TZ)
+    if language == 'ru':
+        date_header = f"🔥 Технодайджест | {current_date.strftime('%d.%m.%Y')}\n\n"
+    else:
+        date_header = f"🔥 Techdigest | {current_date.strftime('%Y-%m-%d')}\n\n"
     
     # Try AI summarization first
     try:
         digest = await _ai_summarize(items_to_summarize, language)
+        # Prepend our own date header (AI might ignore the date instruction)
+        if not digest.startswith("🔥"):
+            digest = date_header + digest
         return digest
     except Exception as e:
         print(f"AI summarization failed: {e}. Falling back to simple digest.")
         # Fallback to simple digest without AI
         try:
-            return create_simple_digest(items_to_summarize, language)
+            return date_header + create_simple_digest(items_to_summarize, language)
         except Exception as e2:
             print(f"Simple digest failed: {e2}. Falling back to raw list.")
             # Last resort: raw list
-            return create_raw_list(items_to_summarize, language)
+            return date_header + create_raw_list(items_to_summarize, language)
 
 
 @retry_with_backoff(max_retries=2, base_delay=1.0, max_delay=5.0)
