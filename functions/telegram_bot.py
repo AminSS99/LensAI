@@ -6,7 +6,7 @@ Handles all Telegram bot interactions and commands.
 import os
 import re
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, 
@@ -16,6 +16,9 @@ from telegram.ext import (
     filters,
     ContextTypes
 )
+
+# Baku timezone (UTC+4)
+BAKU_TZ = timezone(timedelta(hours=4))
 
 
 def get_bot_token() -> str:
@@ -1270,7 +1273,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 {
                     "role": "system", 
                     "content": f"""You are a helpful tech news assistant. 
-Current Date: {datetime.now().strftime('%Y-%m-%d')}
+Current Date: {datetime.now(BAKU_TZ).strftime('%Y-%m-%d')}
 Users may ask you:
 - Questions about tech news, AI developments, or industry trends
 - To explain what a news item means

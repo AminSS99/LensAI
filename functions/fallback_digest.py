@@ -4,7 +4,14 @@ Creates simple, formatted digests without AI when DeepSeek API fails.
 """
 
 from typing import List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+# Baku timezone (UTC+4)
+BAKU_TZ = timezone(timedelta(hours=4))
+
+def get_current_date_baku() -> str:
+    """Get current date in Baku timezone."""
+    return datetime.now(BAKU_TZ)
 
 
 def get_source_emoji(source: str) -> str:
@@ -98,11 +105,12 @@ def create_simple_digest(news_items: List[Dict[str, Any]], language: str = 'en')
     categorized = categorize_news(items_to_show)
     
     # Build digest
+    current_date = get_current_date_baku()
     if language == 'ru':
-        header = f"📰 **Дайджест технологических новостей**\n_{datetime.now().strftime('%d.%m.%Y')}_\n\n"
+        header = f"📰 **Дайджест технологических новостей**\n_{current_date.strftime('%d.%m.%Y')}_\n\n"
         footer = "\n\n_💡 Дайджест создан автоматически_"
     else:
-        header = f"📰 **Tech News Digest**\n_{datetime.now().strftime('%Y-%m-%d')}_\n\n"
+        header = f"📰 **Tech News Digest**\n_{current_date.strftime('%Y-%m-%d')}_\n\n"
         footer = "\n\n_💡 Automatically curated digest_"
     
     digest_parts = [header]

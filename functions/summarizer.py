@@ -1,3 +1,4 @@
+```
 """
 DeepSeek Summarization Module
 Uses DeepSeek API to summarize and format tech news digest.
@@ -5,10 +6,18 @@ Uses DeepSeek API to summarize and format tech news digest.
 
 import os
 from typing import List, Dict, Any
+from datetime import datetime, timezone, timedelta
 from openai import AsyncOpenAI
 import asyncio
 from .resilience import retry_with_backoff
 from .fallback_digest import create_simple_digest, create_raw_list
+
+# Baku timezone (UTC+4)
+BAKU_TZ = timezone(timedelta(hours=4))
+
+def get_current_date_baku() -> str:
+    """Get current date in Baku timezone."""
+    return datetime.now(BAKU_TZ).strftime('%Y-%m-%d')
 
 
 # DeepSeek uses OpenAI-compatible API
@@ -39,6 +48,10 @@ SOURCE_EMOJIS = {
     'DeepMind': '🔬',
     'Product Hunt': '🚀',
     'OpenAI': '🤖',
+    'DeepSeek': '🔍',
+    'Qwen': '🔮',
+    'Minimax': '🎯',
+    'Kimi': '🌙',
 }
 
 
@@ -95,21 +108,30 @@ def estimate_read_time(title: str, summary: str = "") -> int:
     return min(read_time, 15)
 
 
-SYSTEM_PROMPT = """You are a tech news curator and summarizer. Your job is to:
+def get_system_prompt() -> str:
+    """Generate system prompt with current date."""
+    current_date = get_current_date_baku()
+    return f"""You are LensAI, a professional tech news curator. Today's date is {current_date}.
+
+Your task:
 1. Analyze the provided tech news items
-2. Identify the most important and impactful stories
-3. Create a concise, well-organized digest
+2. Select the most important and impactful stories (avoid old/repeated news)
+3. Create a well-organized digest
 
-Format your response as a Telegram message using these guidelines:
-- Use emojis to make it visually appealing
-- Group news by category (🔥 Top Stories, 🤖 AI News, 🛠️ New Tools, 💼 Industry News)
-- Keep each summary to 1-2 sentences
-- Include the source, read time (e.g. "~3 min"), and make URLs clickable
-- Be conversational and engaging
-- Maximum 10 items in total, prioritize quality over quantity
-- End with a brief one-liner insight or observation
+FORMAT RULES (follow exactly every time):
+- Start with: "🔭 **LensAI Digest — {current_date}**"
+- Group by category: 🔥 Top Stories, 🤖 AI News, 🛠️ New Tools, 💼 Industry
+- Each item: brief 1-2 sentence summary with source, ~read time, and clickable URL
+- Maximum 10 items total
+- End with: "💡 **Insight:** [one-liner observation about today's news]"
 
-Target length: 500-800 words"""
+STYLE (consistent every time):
+- Professional but approachable tone
+- Use present tense for current events
+- Emojis for visual appeal (but don't overdo it)
+- Be concise: 500-800 words
+
+IMPORTANT: Skip any news that seems outdated or has been repeated recently."""
 
 
 USER_PROMPT_TEMPLATE = """Here are today's tech news items. Please create a curated digest:
@@ -168,27 +190,34 @@ async def _ai_summarize(news_items: List[Dict[str, Any]], language: str) -> str:
     
     # Language-specific prompts
     if language == 'ru':
-        system_prompt = """Ты куратор и редактор технических новостей. Твоя задача:
-1. Проанализировать предоставленные технические новости
-2. Выбрать самые важные и значимые истории
-3. Создать краткий, хорошо организованный дайджест НА РУССКОМ ЯЗЫКЕ
+        current_date = get_current_date_baku()
+        system_prompt = f"""Ты LensAI — профессиональный куратор технических новостей. Сегодня {current_date}.
 
-Формат ответа для Telegram:
-- Используй эмодзи для визуальной привлекательности
-- Группируй новости по категориям (🔥 Главное, 🤖 ИИ Новости, 🛠️ Инструменты, 💼 Индустрия)
-- Краткое описание каждой новости в 1-2 предложениях
-- Указывай источник, время чтения (например "~3 мин") и делай ссылки кликабельными
-- Максимум 10 новостей, приоритет качеству
-- В конце добавь краткий инсайт или наблюдение
+Твоя задача:
+1. Проанализировать технические новости
+2. Выбрать самые важные (избегай устаревших/повторяющихся)
+3. Создать организованный дайджест НА РУССКОМ ЯЗЫКЕ
 
-ВАЖНО: Весь текст должен быть НА РУССКОМ ЯЗЫКЕ!"""
+ФОРМАТ (следуй точно каждый раз):
+- Начни с: "🔭 **LensAI Дайджест — {current_date}**"
+- Группируй: 🔥 Главное, 🤖 ИИ, 🛠️ Инструменты, 💼 Индустрия
+- Каждая новость: 1-2 предложения + источник + ~время чтения + ссылка
+- Максимум 10 новостей
+- Заверши: "💡 **Инсайт:** [наблюдение о сегодняшних новостях]"
+
+СТИЛЬ (постоянный):
+- Профессиональный, но дружелюбный тон
+- Эмодзи для привлекательности (в меру)
+- 500-800 слов
+
+ВАЖНО: Пропускай устаревшие или повторяющиеся новости."""
         user_prompt = f"""Вот сегодняшние технические новости. Создай дайджест НА РУССКОМ ЯЗЫКЕ:
 
 {news_content}
 
 Создай увлекательный дайджест для Telegram НА РУССКОМ ЯЗЫКЕ."""
     else:
-        system_prompt = SYSTEM_PROMPT
+        system_prompt = get_system_prompt()
         user_prompt = USER_PROMPT_TEMPLATE.format(news_content=news_content)
     
     client = get_async_client()

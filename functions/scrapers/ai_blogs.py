@@ -20,11 +20,11 @@ except ImportError:
 
 # AI Blog URLs and their scraping configurations
 AI_BLOGS = {
-    # OpenAI blog blocks automated scraping (403 Forbidden)
+    # OpenAI blocks automated scraping (403 Forbidden)
     # 'openai': {
-    #     'url': 'https://openai.com/blog',
+    #     'url': 'https://openai.com/news/',
     #     'name': 'OpenAI',
-    #     'selector': 'a[href*="/index/"]',  # Blog post links
+    #     'selector': 'a[href*="/index/"]',
     # },
     'anthropic': {
         'url': 'https://www.anthropic.com/news',
@@ -45,7 +45,24 @@ AI_BLOGS = {
         'url': 'https://deepmind.google/discover/blog/',
         'name': 'DeepMind',
         'selector': 'a[href*="/blog/"]',
-    }
+    },
+    # New AI sources
+    'deepseek': {
+        'url': 'https://www.deepseek.com/',
+        'name': 'DeepSeek',
+        'selector': 'a[href*="/news"], a[href*="/blog"], article a',
+    },
+    'qwen': {
+        'url': 'https://qwenlm.github.io/blog/',
+        'name': 'Qwen',
+        'selector': 'article a, .post-link, a[href*="/blog/"]',
+    },
+    # xAI blocks automated scraping (403 Forbidden)
+    # 'xai': {
+    #     'url': 'https://x.ai/',
+    #     'name': 'xAI',
+    #     'selector': 'a[href*="/blog"], a[href*="/news"], article a',
+    # },
 }
 
 # Common headers to avoid being blocked

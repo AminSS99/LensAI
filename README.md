@@ -26,7 +26,7 @@ LensAI is an AI-powered **tech news aggregator** that delivers personalized dail
 
 ### Key Highlights
 
-- 📰 **Multi-source aggregation** — Hacker News, TechCrunch, AI company blogs, The Verge, GitHub Trending
+- 📰 **Multi-source aggregation** — Hacker News, TechCrunch, AI company blogs (Anthropic, DeepSeek, Qwen, Google AI, Mistral, DeepMind), The Verge, GitHub Trending
 - 🤖 **AI summarization** — DeepSeek creates digestible, curated digests
 - 🔖 **Article saving** — Save interesting articles to your personal collection
 - 💬 **Q&A Chat** — Ask any tech question and get AI-powered answers
@@ -40,7 +40,7 @@ LensAI is an AI-powered **tech news aggregator** that delivers personalized dail
 
 | Feature | Description |
 |---------|-------------|
-| 📰 **News Scraping** | Fetches from Hacker News, TechCrunch, AI blogs (Anthropic, OpenAI, Mistral, DeepMind), The Verge, GitHub Trending |
+| 📰 **News Scraping** | Fetches from Hacker News, TechCrunch, AI blogs (Anthropic, DeepSeek, Qwen, Google AI, Mistral, DeepMind), The Verge, GitHub Trending |
 | 🧠 **AI Summarization** | Uses DeepSeek to create engaging, categorized news digests |
 | 🛡️ **AI Fallback** | 3-tier degradation: AI → Simple digest → Raw list (never fails!) |
 | 🔄 **Retry Logic** | All scrapers retry 2x with exponential backoff for resilience |
