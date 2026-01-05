@@ -1,4 +1,3 @@
-```
 """
 DeepSeek Summarization Module
 Uses DeepSeek API to summarize and format tech news digest.
