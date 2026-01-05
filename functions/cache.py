@@ -85,3 +85,14 @@ def get_digest_timestamp() -> Optional[str]:
 def is_digest_cached() -> bool:
     """Check if we have a valid cached digest."""
     return get_cached_digest() is not None
+
+
+def clear_cached_digest():
+    """Clear the cached digest to force fresh fetch."""
+    db = get_firestore_client()
+    if not db:
+        return
+    try:
+        db.collection('cache').document('news_digest').delete()
+    except Exception as e:
+        print(f"Cache clear error: {e}")

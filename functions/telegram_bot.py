@@ -994,11 +994,15 @@ async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle refresh button press - fetch fresh news digest."""
     from .user_storage import get_user_language
     from .translations import t
+    from .cache import clear_cached_digest
     
     query = update.callback_query
     
     telegram_id = update.effective_user.id
     user_lang = get_user_language(telegram_id)
+    
+    # Clear cache to force fresh fetch
+    clear_cached_digest()
     
     # Acquire distributed lock
     from .distributed_lock import DistributedLock

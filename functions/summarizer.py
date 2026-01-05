@@ -110,27 +110,31 @@ def estimate_read_time(title: str, summary: str = "") -> int:
 def get_system_prompt() -> str:
     """Generate system prompt with current date."""
     current_date = get_current_date_baku()
-    return f"""You are LensAI, a professional tech news curator. Today's date is {current_date}.
+    return f"""You are a professional tech news digest creator. Today is {current_date}.
 
-Your task:
-1. Analyze the provided tech news items
-2. Select the most important and impactful stories (avoid old/repeated news)
-3. Create a well-organized digest
+Create a Telegram digest following this EXACT format:
 
-FORMAT RULES (follow exactly every time):
-- Start with: "🔭 **LensAI Digest — {current_date}**"
-- Group by category: 🔥 Top Stories, 🤖 AI News, 🛠️ New Tools, 💼 Industry
-- Each item: brief 1-2 sentence summary with source, ~read time, and clickable URL
-- Maximum 10 items total
-- End with: "💡 **Insight:** [one-liner observation about today's news]"
+HEADER:
+🔥 Techdigest | {current_date}
 
-STYLE (consistent every time):
-- Professional but approachable tone
-- Use present tense for current events
-- Emojis for visual appeal (but don't overdo it)
-- Be concise: 500-800 words
+CATEGORIES (use ### for headers):
+### 🔥 Top Stories
+### 🤖 AI News  
+### 🛠️ Tools
+### 💼 Industry
 
-IMPORTANT: Skip any news that seems outdated or has been repeated recently."""
+EACH ITEM FORMAT:
+• **Title** — brief 1-sentence summary. (Source) ~X min | [Read](url)
+
+RULES:
+- Maximum 8-10 items total
+- Keep summaries to ONE sentence
+- Use bullet points (•) not asterisks
+- Put the link text as just "Read" or "Читать"
+- NO intro paragraph, start directly with first category
+- End with: 💡 **Insight:** one brief observation
+
+IMPORTANT: Skip old or repeated news. Be concise."""
 
 
 USER_PROMPT_TEMPLATE = """Here are today's tech news items. Please create a curated digest:
@@ -190,31 +194,35 @@ async def _ai_summarize(news_items: List[Dict[str, Any]], language: str) -> str:
     # Language-specific prompts
     if language == 'ru':
         current_date = get_current_date_baku()
-        system_prompt = f"""Ты LensAI — профессиональный куратор технических новостей. Сегодня {current_date}.
+        date_formatted = datetime.now(BAKU_TZ).strftime('%d.%m.%Y')
+        system_prompt = f"""Ты создатель профессионального дайджеста новостей. Сегодня {date_formatted}.
 
-Твоя задача:
-1. Проанализировать технические новости
-2. Выбрать самые важные (избегай устаревших/повторяющихся)
-3. Создать организованный дайджест НА РУССКОМ ЯЗЫКЕ
+Создай дайджест для Telegram СТРОГО по этому формату:
 
-ФОРМАТ (следуй точно каждый раз):
-- Начни с: "🔭 **LensAI Дайджест — {current_date}**"
-- Группируй: 🔥 Главное, 🤖 ИИ, 🛠️ Инструменты, 💼 Индустрия
-- Каждая новость: 1-2 предложения + источник + ~время чтения + ссылка
-- Максимум 10 новостей
-- Заверши: "💡 **Инсайт:** [наблюдение о сегодняшних новостях]"
+ЗАГОЛОВОК:
+🔥 Технодайджест | {date_formatted}
 
-СТИЛЬ (постоянный):
-- Профессиональный, но дружелюбный тон
-- Эмодзи для привлекательности (в меру)
-- 500-800 слов
+КАТЕГОРИИ (используй ### для заголовков):
+### 🔥 Главное
+### 🤖 ИИ Новости
+### 🛠️ Инструменты
+### 💼 Индустрия
 
-ВАЖНО: Пропускай устаревшие или повторяющиеся новости."""
-        user_prompt = f"""Вот сегодняшние технические новости. Создай дайджест НА РУССКОМ ЯЗЫКЕ:
+ФОРМАТ КАЖДОЙ НОВОСТИ:
+• **Заголовок** — краткое описание в 1 предложение. (Источник) ~X мин | [Читать](url)
 
-{news_content}
+ПРАВИЛА:
+- Максимум 8-10 новостей
+- Описание в ОДНО предложение
+- Используй буллеты (•) не звёздочки
+- Ссылка просто "Читать"
+- БЕЗ вступительного абзаца, сразу с первой категории
+- В конце: 💡 **Инсайт:** краткое наблюдение
 
-Создай увлекательный дайджест для Telegram НА РУССКОМ ЯЗЫКЕ."""
+ВАЖНО: Пропускай старые или повторяющиеся новости. Будь кратким."""
+        user_prompt = f"""Вот сегодняшние новости. Создай дайджест НА РУССКОМ:
+
+{news_content}"""
     else:
         system_prompt = get_system_prompt()
         user_prompt = USER_PROMPT_TEMPLATE.format(news_content=news_content)
