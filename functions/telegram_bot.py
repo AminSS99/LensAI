@@ -59,7 +59,11 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         print(f"Database not available (running locally?): {e}")
     
-    welcome_message = t('welcome', user_lang, username=username)
+    # Escape username for Markdown
+    from .security_utils import escape_markdown_v1
+    safe_username = escape_markdown_v1(username)
+    
+    welcome_message = t('welcome', user_lang, username=safe_username)
     await update.message.reply_text(
         welcome_message, 
         parse_mode='Markdown'
@@ -573,11 +577,15 @@ async def saved_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Format date
         date_str = saved_at[:10] if saved_at else ''
         
+        # Escape title for Markdown security
+        from .security_utils import escape_markdown_v1
+        safe_title = escape_markdown_v1(title)
+        
         # Build message line
         if url.startswith('http'):
-            message += f"{i}. {emoji} [{title}]({url})"
+            message += f"{i}. {emoji} [{safe_title}]({url})"
         else:
-            message += f"{i}. {emoji} {title}"
+            message += f"{i}. {emoji} {safe_title}"
         
         if date_str:
             message += f" `{date_str}`"
@@ -827,7 +835,11 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     add_search_history(telegram_id, query)
     
-    await update.message.reply_text(t('searching', user_lang, query=query), parse_mode='Markdown')
+    # Escape query for display
+    from .security_utils import escape_markdown_v1
+    safe_query = escape_markdown_v1(query)
+    
+    await update.message.reply_text(t('searching', user_lang, query=safe_query), parse_mode='Markdown')
     
     try:
         # Fetch news
@@ -850,12 +862,18 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         
         # Format results
-        message = t('search_results', user_lang, query=query, count=len(results))
+        message = t('search_results', user_lang, query=safe_query, count=len(results))
         for i, article in enumerate(results[:10], 1):
             title = article.get('title', '')[:60]
+            # Escape title for security
+            safe_title = escape_markdown_v1(title)
+            
             url = article.get('url', '')
             source = article.get('source', '')
-            message += f"{i}. [{title}]({url}) _{source}_\n"
+            # Escape source for security
+            safe_source = escape_markdown_v1(source)
+            
+            message += f"{i}. [{safe_title}]({url}) _{safe_source}_\n"
         
         await update.message.reply_text(
             message,
