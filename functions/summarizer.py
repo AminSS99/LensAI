@@ -114,9 +114,6 @@ def get_system_prompt() -> str:
 
 Create a Telegram digest following this EXACT format:
 
-HEADER:
-🔥 Techdigest | {current_date}
-
 CATEGORIES (use ### for headers):
 ### 🔥 Top Stories
 ### 🤖 AI News  
@@ -131,7 +128,7 @@ RULES:
 - Keep summaries to ONE sentence
 - Use bullet points (•) not asterisks
 - Put the link text as just "Read" or "Читать"
-- NO intro paragraph, start directly with first category
+- NO intro paragraph, NO title/header, start directly with first category
 - End with: 💡 **Insight:** one brief observation
 
 IMPORTANT: Skip old or repeated news. Be concise."""
@@ -178,10 +175,8 @@ async def summarize_news(news_items: List[Dict[str, Any]], max_items: int = 30, 
     # Try AI summarization first
     try:
         digest = await _ai_summarize(items_to_summarize, language)
-        # Prepend our own date header (AI might ignore the date instruction)
-        if not digest.startswith("🔥"):
-            digest = date_header + digest
-        return digest
+        # Always prepend our own date header to ensure accuracy
+        return date_header + digest
     except Exception as e:
         print(f"AI summarization failed: {e}. Falling back to simple digest.")
         # Fallback to simple digest without AI
@@ -212,9 +207,6 @@ async def _ai_summarize(news_items: List[Dict[str, Any]], language: str) -> str:
 
 Создай дайджест для Telegram СТРОГО по этому формату:
 
-ЗАГОЛОВОК:
-🔥 Технодайджест | {date_formatted}
-
 КАТЕГОРИИ (используй ### для заголовков):
 ### 🔥 Главное
 ### 🤖 ИИ Новости
@@ -229,7 +221,7 @@ async def _ai_summarize(news_items: List[Dict[str, Any]], language: str) -> str:
 - Описание в ОДНО предложение
 - Используй буллеты (•) не звёздочки
 - Ссылка просто "Читать"
-- БЕЗ вступительного абзаца, сразу с первой категории
+- БЕЗ вступительного абзаца, БЕЗ заголовка с датой, сразу с первой категории
 - В конце: 💡 **Инсайт:** краткое наблюдение
 
 ВАЖНО: Пропускай старые или повторяющиеся новости. Будь кратким."""
