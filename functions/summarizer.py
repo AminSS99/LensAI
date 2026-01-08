@@ -168,9 +168,9 @@ async def summarize_news(news_items: List[Dict[str, Any]], max_items: int = 30, 
     # Get current date for header
     current_date = datetime.now(BAKU_TZ)
     if language == 'ru':
-        date_header = f"🔥 Технодайджест | {current_date.strftime('%d.%m.%Y')}\n\n"
+        date_header = f"🔥 Новости технологий | {current_date.strftime('%d.%m.%Y')}\n\n"
     else:
-        date_header = f"🔥 Techdigest | {current_date.strftime('%Y-%m-%d')}\n\n"
+        date_header = f"🔥 Tech News | {current_date.strftime('%Y-%m-%d')}\n\n"
     
     # Try AI summarization first
     try:
@@ -259,7 +259,7 @@ async def _ai_summarize(news_items: List[Dict[str, Any]], language: str) -> str:
 
 def create_fallback_digest(news_items: List[Dict[str, Any]]) -> str:
     """Create a simple digest without AI if API fails."""
-    lines = ["📰 *Tech News Digest*\\n"]
+    lines = ["📰 *Tech News*\\n"]
     
     for item in news_items:
         source = item.get('source', 'News')

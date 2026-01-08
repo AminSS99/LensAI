@@ -5,7 +5,7 @@ Firestore-based cache with TTL for news digests.
 
 import time
 from typing import Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 try:
     from google.cloud import firestore
 except ImportError:
@@ -58,7 +58,7 @@ def set_cached_digest(digest: str, ttl_minutes: int = 15):
         db.collection('cache').document('news_digest').set({
             'content': digest,
             'expires_at': expiry,
-            'created_at': datetime.now().isoformat(),
+            'created_at': datetime.now(timezone.utc).isoformat(),
             'updated_at': firestore.SERVER_TIMESTAMP if firestore else datetime.now()
         })
     except Exception as e:

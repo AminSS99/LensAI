@@ -8,7 +8,7 @@ MESSAGES = {
     'en': {
         # Existing keys
         'gathering_news': "🔄 **Gathering fresh news from all sources...**\n\n⏱️ This usually takes 1-3 minutes. I'll send your digest as soon as it's ready!\n\n_Fetching from Hacker News, TechCrunch, and AI blogs..._",
-        'cached_news': "📰 **Cached News Digest**\n_Last updated: {timestamp}_\n\n",
+        'cached_news': "📰 **Tech News**\n_Last updated: {timestamp}_\n\n",
         'no_news': "😕 No news found. Please try again later.",
         'error_fetching': "❌ Error fetching news: {error}",
         'thinking': "🤔 _Thinking..._",
@@ -140,7 +140,7 @@ Use /sources to toggle sources""",
     'ru': {
         # Existing keys
         'gathering_news': "🔄 **Собираю свежие новости...**\n\n⏱️ Это обычно занимает 1-3 минуты. Отправлю дайджест, как только будет готов!\n\n_Загружаю с Hacker News, TechCrunch и AI блогов..._",
-        'cached_news': "📰 **Кэшированный дайджест**\n_Обновлено: {timestamp}_\n\n",
+        'cached_news': "📰 **Новости технологий**\n_Обновлено: {timestamp}_\n\n",
         'no_news': "😕 Новости не найдены. Попробуйте позже.",
         'error_fetching': "❌ Ошибка загрузки: {error}",
         'thinking': "🤔 _Думаю..._",

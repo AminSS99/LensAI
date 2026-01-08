@@ -97,7 +97,20 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cached_digest = get_cached_digest()
         timestamp = get_digest_timestamp()
         
-        header = t('cached_news', user_lang, timestamp=timestamp[:16] if timestamp else 'recently')
+        
+        # Format timestamp to Baku time
+        timestamp_str = 'recently'
+        if timestamp:
+            try:
+                dt = datetime.fromisoformat(timestamp)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                dt_baku = dt.astimezone(BAKU_TZ)
+                timestamp_str = dt_baku.strftime('%Y-%m-%d %H:%M')
+            except ValueError:
+                timestamp_str = timestamp[:16]
+        
+        header = t('cached_news', user_lang, timestamp=timestamp_str)
         
         # Generate digest ID for buttons
         import hashlib

@@ -5,7 +5,7 @@ Fetches top stories from Hacker News using the official API.
 
 import httpx
 from typing import List, Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 try:
     from ..resilience import retry_with_backoff
@@ -83,7 +83,7 @@ async def fetch_hackernews(limit: int = 30) -> List[Dict[str, Any]]:
                     'comments': story.get('descendants', 0),
                     'source': 'Hacker News',
                     'hn_id': story_id,
-                    'time': datetime.fromtimestamp(story.get('time', 0)).isoformat()
+                    'time': datetime.fromtimestamp(story.get('time', 0), timezone.utc).isoformat()
                 })
                 
                 if len(stories) >= limit:
@@ -136,7 +136,7 @@ def _fetch_hackernews_sync_impl(limit: int = 30) -> List[Dict[str, Any]]:
                         'comments': story.get('descendants', 0),
                         'source': 'Hacker News',
                         'hn_id': story_id,
-                        'time': datetime.fromtimestamp(story.get('time', 0)).isoformat()
+                    'time': datetime.fromtimestamp(story.get('time', 0), timezone.utc).isoformat()
                     })
                     
                     if len(stories) >= limit:

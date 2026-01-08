@@ -107,10 +107,10 @@ def create_simple_digest(news_items: List[Dict[str, Any]], language: str = 'en')
     # Build digest
     current_date = get_current_date_baku()
     if language == 'ru':
-        header = f"📰 **Дайджест технологических новостей**\n_{current_date.strftime('%d.%m.%Y')}_\n\n"
+        header = f"📰 **Новости технологий**\n_{current_date.strftime('%d.%m.%Y')}_\n\n"
         footer = "\n\n_💡 Дайджест создан автоматически_"
     else:
-        header = f"📰 **Tech News Digest**\n_{current_date.strftime('%Y-%m-%d')}_\n\n"
+        header = f"📰 **Tech News**\n_{current_date.strftime('%Y-%m-%d')}_\n\n"
         footer = "\n\n_💡 Automatically curated digest_"
     
     digest_parts = [header]
