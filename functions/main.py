@@ -90,11 +90,13 @@ def telegram_webhook(request: Request):
 
 # ============ SCHEDULED DIGEST FUNCTION ============
 
-@functions_framework.http
-def scheduled_digest(request: Request):
+async def process_scheduled_digest(target_time: str = None) -> dict:
     """
-    HTTP Cloud Function triggered by Cloud Scheduler.
-    Sends digests to users scheduled for the current time.
+    Core logic for processing scheduled digests.
+    Can be called by Cloud Scheduler or local JobQueue.
+    
+    Args:
+        target_time: Optional time string HH:MM. If None, current Baku time is used.
     """
     from .database import get_users_for_time, save_digest
     from .telegram_bot import send_digest_to_user
@@ -108,89 +110,99 @@ def scheduled_digest(request: Request):
     # Get current time in HH:MM format (Baku timezone - UTC+4)
     from datetime import timezone, timedelta
     baku_tz = timezone(timedelta(hours=4))
-    current_time = datetime.now(baku_tz).strftime("%H:00")  # Always use :00 for top-of-hour
     
-    # For testing, allow time override via query param
-    if request.args.get('time'):
-        current_time = request.args.get('time')
+    if target_time:
+        current_time = target_time
+    else:
+        current_time = datetime.now(baku_tz).strftime("%H:00")
     
     print(f"Running scheduled digest for time: {current_time}")
     
-    try:
-        # Get users scheduled for this time
-        users = get_users_for_time(current_time)
-        
-        if not users:
-            return json.dumps({'message': f'No users scheduled for {current_time}', 'sent': 0}), 200
-        
-        async def process_digest():
-            # Fetch news from all sources concurrently
-            tasks = []
-            tasks.append(fetch_hackernews(12))
-            tasks.append(asyncio.to_thread(fetch_techcrunch, 8))
-            tasks.append(fetch_ai_blogs(3))
-            tasks.append(asyncio.to_thread(fetch_theverge, 5))
-            tasks.append(asyncio.to_thread(fetch_github_trending, 5))
-            
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            
-            all_news = []
-            for res in results:
-                if isinstance(res, list):
-                    all_news.extend(res)
-                elif isinstance(res, Exception):
-                    print(f"Error fetching news: {res}")
-            
-            if not all_news:
-                return {'message': 'No news available', 'sent': 0}
-            
-            # Import user language function
-            from .user_storage import get_user_language
-            
-            # Group users by language
-            users_by_lang = {}
-            for user in users:
-                telegram_id = user.get('telegram_id')
+    users = get_users_for_time(current_time)
+    
+    if not users:
+        return {'message': f'No users scheduled for {current_time}', 'sent': 0}
+    
+    # Fetch news from all sources concurrently
+    tasks = []
+    tasks.append(fetch_hackernews(12))
+    tasks.append(asyncio.to_thread(fetch_techcrunch, 8))
+    tasks.append(fetch_ai_blogs(3))
+    tasks.append(asyncio.to_thread(fetch_theverge, 5))
+    tasks.append(asyncio.to_thread(fetch_github_trending, 5))
+    
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    
+    all_news = []
+    for res in results:
+        if isinstance(res, list):
+            all_news.extend(res)
+        elif isinstance(res, Exception):
+            print(f"Error fetching news: {res}")
+    
+    if not all_news:
+        return {'message': 'No news available', 'sent': 0}
+    
+    # Import user language function
+    from .user_storage import get_user_language
+    
+    # Group users by language
+    users_by_lang = {}
+    for user in users:
+        telegram_id = user.get('telegram_id')
+        if telegram_id:
+            lang = get_user_language(telegram_id)
+            if lang not in users_by_lang:
+                users_by_lang[lang] = []
+            users_by_lang[lang].append(user)
+    
+    # Generate digests for each language (cache to avoid duplicate API calls)
+    digests_by_lang = {}
+    for lang in users_by_lang.keys():
+        print(f"Generating digest for language: {lang}")
+        digests_by_lang[lang] = await summarize_news(all_news, language=lang)
+    
+    # Send to all scheduled users with their language-specific digest
+    sent_count = 0
+    errors = []
+    
+    for lang, lang_users in users_by_lang.items():
+        digest = digests_by_lang[lang]
+        for user in lang_users:
+            telegram_id = user.get('telegram_id')
+            try:
                 if telegram_id:
-                    lang = get_user_language(telegram_id)
-                    if lang not in users_by_lang:
-                        users_by_lang[lang] = []
-                    users_by_lang[lang].append(user)
-            
-            # Generate digests for each language (cache to avoid duplicate API calls)
-            digests_by_lang = {}
-            for lang in users_by_lang.keys():
-                print(f"Generating digest for language: {lang}")
-                digests_by_lang[lang] = await summarize_news(all_news, language=lang)
-            
-            # Send to all scheduled users with their language-specific digest
-            sent_count = 0
-            errors = []
-            
-            for lang, lang_users in users_by_lang.items():
-                digest = digests_by_lang[lang]
-                for user in lang_users:
-                    telegram_id = user.get('telegram_id')
-                    try:
-                        if telegram_id:
-                            success = await send_digest_to_user(telegram_id, digest)
-                            if success:
-                                save_digest(telegram_id, digest)
-                                sent_count += 1
-                            else:
-                                errors.append(telegram_id)
-                    except Exception as e:
-                        print(f"Error sending to {telegram_id}: {e}")
+                    success = await send_digest_to_user(telegram_id, digest)
+                    if success:
+                        save_digest(telegram_id, digest)
+                        sent_count += 1
+                    else:
                         errors.append(telegram_id)
-                        
-            return {
-                'message': f'Digest sent for {current_time}',
-                'sent': sent_count,
-                'total_users': len(users),
-                'errors': errors
-            }
+            except Exception as e:
+                print(f"Error sending to {telegram_id}: {e}")
+                errors.append(telegram_id)
+                
+    return {
+        'message': f'Digest sent for {current_time}',
+        'sent': sent_count,
+        'total_users': len(users),
+        'errors': errors
+    }
 
-        result = asyncio.run(process_digest())
+
+@functions_framework.http
+def scheduled_digest(request: Request):
+    """
+    HTTP Cloud Function triggered by Cloud Scheduler.
+    Sends digests to users scheduled for the current time.
+    """
+    try:
+        # Check for manual time override
+        target_time = None
+        if request.args.get('time'):
+            target_time = request.args.get('time')
+            
+        result = asyncio.run(process_scheduled_digest(target_time))
         return json.dumps(result), 200
         
     except Exception as e:
