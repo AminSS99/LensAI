@@ -196,20 +196,15 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         tasks = []
         
         if 'hackernews' in sources:
-            tasks.append(fetch_hackernews(15))
-        
+            tasks.append(fetch_hackernews(15)) # Fetch more for variety
         if 'techcrunch' in sources:
-            # wrap sync function
             tasks.append(asyncio.to_thread(fetch_techcrunch, 10))
-        
         if 'ai_blogs' in sources:
-            tasks.append(fetch_ai_blogs(3))
-        
+            tasks.append(fetch_ai_blogs(5))
         if 'theverge' in sources:
             tasks.append(asyncio.to_thread(fetch_theverge, 8))
-        
         if 'github' in sources:
-            tasks.append(asyncio.to_thread(fetch_github_trending, 5))
+            tasks.append(asyncio.to_thread(fetch_github_trending, 8))
             
         results = await asyncio.gather(*tasks, return_exceptions=True)
         
@@ -219,13 +214,28 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 all_news.extend(res)
             elif isinstance(res, Exception):
                 print(f"Error fetching news: {res}")
-        
+                
         if not all_news:
             await update.message.reply_text(t('no_news', user_lang))
             return
+            
+        # Shuffle and limit items here (moved from summarizer)
+        import random
+        random.shuffle(all_news)
+        items_to_summarize = all_news[:10] # Limit to 10 items for direct command
         
-        # Summarize with DeepSeek (in user's language)
-        digest = await summarize_news(all_news, language=user_lang)
+        digest = await summarize_news(items_to_summarize, language=user_lang)
+        
+        # Initialize refresh session
+        try:
+            from .user_storage import update_refresh_session, get_article_hash
+            seen_hashes = [get_article_hash(item) for item in items_to_summarize]
+            update_refresh_session(telegram_id, {
+                'attempts': 0,
+                'seen_hashes': seen_hashes
+            })
+        except Exception as e:
+            print(f"Error init session: {e}")
         
         # Cache the digest for 15 minutes
         set_cached_digest(digest, ttl_minutes=15)
@@ -1023,7 +1033,7 @@ async def rating_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle refresh button press - fetch fresh news digest."""
-    from .user_storage import get_user_language
+    from .user_storage import get_user_language, get_refresh_session, update_refresh_session, get_article_hash
     from .translations import t
     from .cache import clear_cached_digest
     
@@ -1032,6 +1042,16 @@ async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     telegram_id = update.effective_user.id
     user_lang = get_user_language(telegram_id)
     
+    # Check refresh limits
+    session = get_refresh_session(telegram_id)
+    attempts = session.get('attempts', 0)
+    
+    if attempts >= 2:
+        # Limit reached
+        await query.answer()
+        await query.message.reply_text(t('refresh_limit', user_lang), parse_mode='Markdown')
+        return
+
     # Clear cache to force fresh fetch
     clear_cached_digest()
     
@@ -1057,13 +1077,13 @@ async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         from .scrapers.github_trending import fetch_github_trending
         from .summarizer import summarize_news
         
-        # Fetch fresh news concurrently
+        # Fetch fresh news concurrently (fetch MORE to ensure freshness)
         tasks = []
-        tasks.append(fetch_hackernews(12))
-        tasks.append(asyncio.to_thread(fetch_techcrunch, 8))
-        tasks.append(fetch_ai_blogs(3))
-        tasks.append(asyncio.to_thread(fetch_theverge, 5))
-        tasks.append(asyncio.to_thread(fetch_github_trending, 5))
+        tasks.append(fetch_hackernews(20))
+        tasks.append(asyncio.to_thread(fetch_techcrunch, 15))
+        tasks.append(fetch_ai_blogs(6))
+        tasks.append(asyncio.to_thread(fetch_theverge, 10))
+        tasks.append(asyncio.to_thread(fetch_github_trending, 10))
         
         results = await asyncio.gather(*tasks, return_exceptions=True)
         
@@ -1078,8 +1098,40 @@ async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             error_text = "❌ Не удалось получить новости." if user_lang == 'ru' else "❌ Could not fetch news."
             await query.message.reply_text(error_text)
             return
+            
+        # Filter out seen articles
+        seen_hashes = set(session.get('seen_hashes', []))
+        fresh_news = []
+        new_hashes = []
         
-        digest = await summarize_news(all_news, language=user_lang)
+        for item in all_news:
+            h = get_article_hash(item)
+            if h not in seen_hashes:
+                fresh_news.append(item)
+        
+        # If not enough fresh news, maybe recycle some random ones but prioritize fresh
+        items_to_summarize = []
+        if len(fresh_news) < 5:
+            # Fallback: take all fresh + some random old ones that aren't in current session context if possible
+            # For now just use what we have plus random if really empty
+            items_to_summarize = fresh_news
+            if len(items_to_summarize) < 3: # Very low
+                 import random
+                 random.shuffle(all_news)
+                 items_to_summarize.extend(all_news[:5-len(items_to_summarize)])
+        else:
+            import random
+            random.shuffle(fresh_news)
+            items_to_summarize = fresh_news[:10]
+            
+        # Update session
+        new_seen = seen_hashes.union({get_article_hash(i) for i in items_to_summarize})
+        update_refresh_session(telegram_id, {
+            'attempts': attempts + 1,
+            'seen_hashes': list(new_seen)
+        })
+        
+        digest = await summarize_news(items_to_summarize, language=user_lang)
         
         # Generate unique digest ID
         import hashlib

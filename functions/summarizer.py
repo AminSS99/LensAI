@@ -159,11 +159,9 @@ async def summarize_news(news_items: List[Dict[str, Any]], max_items: int = 30, 
             return "📭 Сегодня новостей нет. Проверьте позже!"
         return "📭 No tech news found today. Check back later!"
     
-    # Shuffle to get variety, then limit
-    import random
-    shuffled_items = news_items.copy()
-    random.shuffle(shuffled_items)
-    items_to_summarize = shuffled_items[:max_items]
+    # Summary logic updated: No shuffling or limiting here.
+    # The caller (main.py, telegram_bot.py) is responsible for selecting the items.
+    items_to_summarize = news_items 
     
     # Get current date for header
     current_date = datetime.now(BAKU_TZ)

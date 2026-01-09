@@ -28,6 +28,7 @@ MESSAGES = {
         'article_exists': "ℹ️ Article already saved!",
         'cleared_saved': "🗑️ All saved articles cleared!",
         'ai_error': "❌ Sorry, I couldn't process that: {error}",
+        'refresh_limit': "✅ **You're all caught up!**\n\nI've generated 2 digests for you and you've seen the top news. Check back later for more updates!",
         
         # New keys for full coverage
         'welcome': """👋 Welcome to *Tech News Bot*, {username}!
@@ -160,6 +161,7 @@ Use /sources to toggle sources""",
         'article_exists': "ℹ️ Статья уже сохранена!",
         'cleared_saved': "🗑️ Все сохранённые статьи удалены!",
         'ai_error': "❌ Не удалось обработать запрос: {error}",
+        'refresh_limit': "✅ **Вы узнали всё главное!**\n\nЯ уже сделал для вас 2 уникальных дайджеста. Заходите позже за новыми новостями!",
         
         # New keys for full coverage
         'welcome': """👋 Добро пожаловать в *Tech News Bot*, {username}!

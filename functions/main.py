@@ -257,11 +257,22 @@ def fetch_news(request: Request):
                     # Log error but continue
                     print(f"Error fetching source: {res}")
             
-            if summarize and all_news:
-                digest = await summarize_news(all_news)
+            if not all_news:
+                return {
+                    'articles': [],
+                    'count': 0
+                }
+
+            # Shuffle and limit items for both summarized and non-summarized output
+            import random
+            random.shuffle(all_news)
+            processed_news = all_news[:30] # Limit to 30 items for consistency
+            
+            if summarize:
+                digest = await summarize_news(processed_news)
                 return {
                     'digest': digest,
-                    'article_count': len(all_news)
+                    'article_count': len(processed_news)
                 }
             else:
                 return {

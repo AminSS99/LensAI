@@ -7,7 +7,8 @@ Falls back to local file storage for development if Firestore is unavailable.
 import os
 import json
 from typing import Dict, List, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
+import time
 
 # Local storage directory (fallback)
 STORAGE_DIR = os.path.join(os.path.dirname(__file__), '.user_data')
@@ -391,3 +392,88 @@ def get_article_stats(article_url: str) -> Dict[str, int]:
             
     return {'up': 0, 'down': 0}
 
+
+# ============ REFRESH SESSION MANAGEMENT ============
+
+def get_refresh_session(telegram_id: int) -> Dict[str, Any]:
+    """
+    Get current refresh session for a user.
+    Used to track attempts and seen articles to avoid duplicates.
+    Example return: {'attempts': 1, 'seen_hashes': ['hash1', 'hash2'], 'timestamp': '...'}
+    """
+    db = get_firestore_client()
+    if db:
+        try:
+            doc = db.collection('refresh_sessions').document(str(telegram_id)).get()
+            if doc.exists:
+                data = doc.to_dict()
+                # Check if session is expired (e.g., older than 2 hours)
+                timestamp = data.get('timestamp')
+                if timestamp:
+                    # Parse timestamp depending on type (datetime vs string)
+                    if isinstance(timestamp, datetime):
+                        ts = timestamp.timestamp()
+                    else:
+                        try:
+                            ts = datetime.fromisoformat(str(timestamp)).timestamp()
+                        except ValueError:
+                            ts = 0
+                            
+                    # 2 hour expiry
+                    if time.time() - ts > 7200:
+                        return {}
+                return data
+        except Exception:
+            pass
+            
+    # Local fallback
+    data = _load_local_data(telegram_id)
+    session = data.get('refresh_session', {})
+    
+    # Check expiry for local data too
+    timestamp = session.get('timestamp')
+    if timestamp:
+        try:
+            ts = datetime.fromisoformat(str(timestamp)).timestamp()
+            if time.time() - ts > 7200:
+                return {}
+        except ValueError:
+            pass
+            
+    return session
+
+
+def update_refresh_session(telegram_id: int, updates: Dict[str, Any]):
+    """Update refresh session data."""
+    db = get_firestore_client()
+    
+    # Ensure timestamp is set
+    cur_time = datetime.now(timezone.utc)
+    updates['timestamp'] = cur_time
+    
+    if db:
+        try:
+            from google.cloud import firestore
+            db.collection('refresh_sessions').document(str(telegram_id)).set(updates, merge=True)
+            return
+        except Exception:
+            pass
+            
+    # Local fallback
+    data = _load_local_data(telegram_id)
+    session = data.get('refresh_session', {})
+    session.update(updates)
+    
+    # Store timestamp as string for JSON
+    session['timestamp'] = cur_time.isoformat()
+    
+    data['refresh_session'] = session
+    _save_local_data(telegram_id, data)
+
+
+def get_article_hash(item: Dict[str, Any]) -> str:
+    """Generate a consistent hash for an article item."""
+    import hashlib
+    # Use URL if available, otherwise title
+    key = item.get('url', item.get('title', ''))
+    return hashlib.md5(key.encode('utf-8')).hexdigest()
