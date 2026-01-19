@@ -119,6 +119,22 @@ def get_users_for_time(schedule_time: str) -> List[Dict[str, Any]]:
     return [user.to_dict() for user in users]
 
 
+def get_all_active_users() -> List[Dict[str, Any]]:
+    """
+    Get ALL active users regardless of schedule time.
+    Used for one-time notifications and broadcasts.
+    
+    Returns:
+        List of all active users
+    """
+    db = get_db()
+    users = db.collection('users')\
+        .where(filter=FieldFilter('is_active', '==', True))\
+        .stream()
+    
+    return [user.to_dict() for user in users]
+
+
 def toggle_user_source(telegram_id: int, source: str) -> List[str]:
     """
     Toggle a news source for a user.
