@@ -17,23 +17,34 @@ load_dotenv()
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 
-# Localized apology messages
+# Localized apology messages with explanation
 APOLOGY_MESSAGES = {
-    'en': """🔔 **Important Notice**
+    'en': """🔔 **Important Notice from LensAI**
 
-We apologize! Our bot wasn't working properly this week.
+We sincerely apologize! Our bot wasn't working properly this week.
 
-Here are the tech news highlights you may have missed:
+🔧 **What happened?**
+We experienced technical issues with our scheduled digest delivery system. The automatic news delivery feature was not sending digests at scheduled times due to a configuration problem with our cloud infrastructure.
+
+We've now fixed the issue and everything is back to normal!
+
+📰 **Here's your weekly tech news summary - everything you may have missed:**
 
 """,
-    'ru': """🔔 **Важное уведомление**
+    'ru': """🔔 **Важное уведомление от LensAI**
 
-Приносим извинения! Наш бот работал некорректно на этой неделе.
+Приносим искренние извинения! Наш бот работал некорректно на этой неделе.
 
-Вот главные технологические новости, которые вы могли пропустить:
+🔧 **Что произошло?**
+У нас возникли технические проблемы с системой доставки запланированных дайджестов. Функция автоматической доставки новостей не отправляла дайджесты по расписанию из-за проблемы с конфигурацией нашей облачной инфраструктуры.
+
+Мы уже исправили проблему, и всё снова работает нормально!
+
+📰 **Вот ваша еженедельная сводка технологических новостей - всё, что вы могли пропустить:**
 
 """
 }
+
 
 
 async def send_one_time_notification():
