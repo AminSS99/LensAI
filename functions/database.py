@@ -15,7 +15,8 @@ def get_db() -> firestore.Client:
     """Get Firestore client."""
     # In Cloud Functions, this uses default credentials
     # For local development, set GOOGLE_APPLICATION_CREDENTIALS env var
-    return firestore.Client()
+    # Explicitly set project to avoid Windows console encoding issues
+    return firestore.Client(project='lensai-481910')
 
 
 # ============ USER OPERATIONS ============
