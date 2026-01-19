@@ -787,6 +787,31 @@ async def share_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(t('share_bot', user_lang), parse_mode='Markdown')
 
 
+async def trends_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /trends command - show weekly topic trends."""
+    from .user_storage import get_user_language
+    from .trend_analysis import format_trends_message
+    
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+    
+    # Show loading message
+    loading_text = "📊 Анализирую тренды..." if user_lang == 'ru' else "📊 Analyzing trends..."
+    await update.message.reply_text(loading_text)
+    
+    try:
+        trends_message = format_trends_message(user_lang)
+        await update.message.reply_text(
+            trends_message,
+            parse_mode='Markdown',
+            disable_web_page_preview=True
+        )
+    except Exception as e:
+        print(f"Error in trends command: {e}")
+        error_text = "❌ Ошибка при анализе трендов." if user_lang == 'ru' else "❌ Error analyzing trends."
+        await update.message.reply_text(error_text)
+
+
 async def delete_article_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle delete article button press."""
     from .user_storage import get_user_language, get_saved_articles, delete_saved_article
@@ -1415,6 +1440,7 @@ async def setup_bot_commands(application: Application):
         BotCommand("sources", "Toggle news sources"),
         BotCommand("schedule", "Set digest schedule"),
         BotCommand("share", "Share bot with friends"),
+        BotCommand("trends", "Weekly topic trends"),
         BotCommand("help", "Show help"),
     ]
     
@@ -1431,6 +1457,7 @@ async def setup_bot_commands(application: Application):
         BotCommand("sources", "Источники новостей"),
         BotCommand("schedule", "Расписание"),
         BotCommand("share", "Поделиться ботом"),
+        BotCommand("trends", "Тренды недели"),
         BotCommand("help", "Помощь"),
     ]
     
@@ -1486,6 +1513,7 @@ def create_bot_application() -> Application:
     application.add_handler(CommandHandler("filter", filter_command))
     application.add_handler(CommandHandler("recap", recap_command))
     application.add_handler(CommandHandler("share", share_command))
+    application.add_handler(CommandHandler("trends", trends_command))
     
     # Add callback query handlers for inline buttons
     application.add_handler(CallbackQueryHandler(toggle_source_callback, pattern='^toggle_'))

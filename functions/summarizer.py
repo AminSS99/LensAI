@@ -146,6 +146,11 @@ async def summarize_news(news_items: List[Dict[str, Any]], max_items: int = 30, 
     Summarize a list of news items into a formatted digest.
     Uses DeepSeek AI with fallback to simple formatting if AI fails.
     
+    Now includes:
+    - Smart deduplication (merges similar stories)
+    - Topic clustering (groups by category)
+    - Trend recording (tracks topic popularity)
+    
     Args:
         news_items: List of news items from scrapers
         max_items: Maximum items to send to API (to control token usage)
@@ -159,9 +164,33 @@ async def summarize_news(news_items: List[Dict[str, Any]], max_items: int = 30, 
             return "📭 Сегодня новостей нет. Проверьте позже!"
         return "📭 No tech news found today. Check back later!"
     
-    # Summary logic updated: No shuffling or limiting here.
-    # The caller (main.py, telegram_bot.py) is responsible for selecting the items.
-    items_to_summarize = news_items 
+    # Step 1: Deduplicate articles from different sources
+    try:
+        from .deduplication import deduplicate_articles
+        items_to_summarize = deduplicate_articles(news_items, threshold=0.45)
+        print(f"Deduplication: {len(news_items)} -> {len(items_to_summarize)} articles")
+    except Exception as e:
+        print(f"Deduplication failed: {e}")
+        items_to_summarize = news_items
+    
+    # Step 2: Cluster articles by topic
+    try:
+        from .topic_clustering import cluster_articles, get_topic_counts
+        clusters = cluster_articles(items_to_summarize)
+        topic_counts = get_topic_counts(items_to_summarize)
+        print(f"Clustered into topics: {list(topic_counts.keys())}")
+    except Exception as e:
+        print(f"Clustering failed: {e}")
+        clusters = None
+        topic_counts = None
+    
+    # Step 3: Record trends for future analysis
+    try:
+        if topic_counts:
+            from .trend_analysis import record_daily_topics
+            record_daily_topics(topic_counts)
+    except Exception as e:
+        print(f"Trend recording failed: {e}")
     
     # Get current date for header
     current_date = datetime.now(BAKU_TZ)
