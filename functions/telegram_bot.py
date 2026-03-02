@@ -77,7 +77,7 @@ def get_main_keyboard(lang: str = 'en'):
     from telegram import ReplyKeyboardRemove
     
     # Return ReplyKeyboardRemove to hide the big keyboard buttons
-    # Users will now use the в‰Ў Menu button (bottom left) for all commands
+    # Users now use the Telegram Menu button for all commands
     return ReplyKeyboardRemove()
 
 
@@ -189,7 +189,7 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Check if already generating using distributed lock
     from .distributed_lock import is_locked
     if is_locked('news_generation', telegram_id):
-        wait_text = "вЏі Р”Р°Р№РґР¶РµСЃС‚ СѓР¶Рµ РіРµРЅРµСЂРёСЂСѓРµС‚СЃСЏ, РїРѕР¶Р°Р»СѓР№СЃС‚Р° РїРѕРґРѕР¶РґРёС‚Рµ..." if user_lang == 'ru' else "вЏі Digest is already being generated, please wait..."
+        wait_text = "⏳ Дайджест уже генерируется, пожалуйста подождите..." if user_lang == 'ru' else "⏳ Digest is already being generated, please wait..."
         await update.message.reply_text(wait_text)
         return
     
@@ -205,7 +205,7 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if not lock.acquire():
         # Lock already held
-        wait_text = "вЏі Р”Р°Р№РґР¶РµСЃС‚ СѓР¶Рµ РіРµРЅРµСЂРёСЂСѓРµС‚СЃСЏ, РїРѕР¶Р°Р»СѓР№СЃС‚Р° РїРѕРґРѕР¶РґРёС‚Рµ..." if user_lang == 'ru' else "вЏі Digest is already being generated, please wait..."
+        wait_text = "⏳ Дайджест уже генерируется, пожалуйста подождите..." if user_lang == 'ru' else "⏳ Digest is already being generated, please wait..."
         await update.message.reply_text(wait_text)
         return
     
@@ -353,19 +353,19 @@ async def schedule_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for j in range(2):
             if i + j < len(times):
                 time = times[i + j]
-                check = "вњ“ " if time == current_time else ""
+                check = "✓ " if time == current_time else ""
                 row.append(InlineKeyboardButton(f"{check}{time}", callback_data=f"schedule_{time}"))
         keyboard.append(row)
     
     # Add disable option
-    disable_text = "вќЊ РћС‚РєР»СЋС‡РёС‚СЊ" if user_lang == 'ru' else "вќЊ Disable"
+    disable_text = "🚫 Отключить" if user_lang == 'ru' else "🚫 Disable"
     keyboard.append([InlineKeyboardButton(disable_text, callback_data="schedule_disable")])
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    header = "вЏ° *Р’С‹Р±РµСЂРёС‚Рµ РІСЂРµРјСЏ РґР»СЏ РµР¶РµРґРЅРµРІРЅРѕРіРѕ РґР°Р№РґР¶РµСЃС‚Р°:*" if user_lang == 'ru' else "вЏ° *Choose time for daily digest:*"
+    header = "⏰ *Выберите время для ежедневного дайджеста:*" if user_lang == 'ru' else "⏰ *Choose time for daily digest:*"
     if current_time:
-        current_text = f"\n\n_РўРµРєСѓС‰РµРµ РІСЂРµРјСЏ: {current_time}_" if user_lang == 'ru' else f"\n\n_Current time: {current_time}_"
+        current_text = f"\n\n_Текущее время: {current_time}_" if user_lang == 'ru' else f"\n\n_Current time: {current_time}_"
         header += current_text
     
     await update.message.reply_text(
@@ -395,7 +395,7 @@ async def schedule_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
         
-        msg = "вњ… Р•Р¶РµРґРЅРµРІРЅС‹Р№ РґР°Р№РґР¶РµСЃС‚ РѕС‚РєР»СЋС‡РµРЅ." if user_lang == 'ru' else "вњ… Daily digest disabled."
+        msg = "✅ Ежедневный дайджест отключен." if user_lang == 'ru' else "✅ Daily digest disabled."
         await query.edit_message_text(msg, parse_mode='Markdown')
         return
     
@@ -409,9 +409,9 @@ async def schedule_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     if user_lang == 'ru':
-        msg = f"вњ… Р•Р¶РµРґРЅРµРІРЅС‹Р№ РґР°Р№РґР¶РµСЃС‚ Р·Р°РїР»Р°РЅРёСЂРѕРІР°РЅ РЅР° *{selected_time}*!\n\nР’С‹ Р±СѓРґРµС‚Рµ РїРѕР»СѓС‡Р°С‚СЊ РїРµСЂСЃРѕРЅР°Р»СЊРЅС‹Рµ РЅРѕРІРѕСЃС‚Рё С‚РµС…РЅРѕР»РѕРіРёР№ РІ СЌС‚Рѕ РІСЂРµРјСЏ РєР°Р¶РґС‹Р№ РґРµРЅСЊ."
+        msg = f"✅ Ежедневный дайджест запланирован на *{selected_time}*!\n\nВы будете получать персональные новости технологий в это время каждый день."
     else:
-        msg = f"вњ… Daily digest scheduled for *{selected_time}*!\n\nYou will receive personalized tech news at this time every day."
+        msg = f"✅ Daily digest scheduled for *{selected_time}*!\n\nYou will receive personalized tech news at this time every day."
     
     await query.edit_message_text(msg, parse_mode='Markdown')
 
@@ -444,23 +444,23 @@ async def sources_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Create inline keyboard for toggling sources
     keyboard = [
         [InlineKeyboardButton(
-            f"{'вњ…' if 'hackernews' in sources else 'вќЊ'} Hacker News",
+            f"{'✅' if 'hackernews' in sources else '❌'} Hacker News",
             callback_data='toggle_hackernews'
         )],
         [InlineKeyboardButton(
-            f"{'вњ…' if 'techcrunch' in sources else 'вќЊ'} TechCrunch",
+            f"{'✅' if 'techcrunch' in sources else '❌'} TechCrunch",
             callback_data='toggle_techcrunch'
         )],
         [InlineKeyboardButton(
-            f"{'вњ…' if 'ai_blogs' in sources else 'вќЊ'} AI Blogs",
+            f"{'✅' if 'ai_blogs' in sources else '❌'} AI Blogs",
             callback_data='toggle_ai_blogs'
         )],
         [InlineKeyboardButton(
-            f"{'вњ…' if 'theverge' in sources else 'вќЊ'} The Verge",
+            f"{'✅' if 'theverge' in sources else '❌'} The Verge",
             callback_data='toggle_theverge'
         )],
         [InlineKeyboardButton(
-            f"{'вњ…' if 'github' in sources else 'вќЊ'} GitHub Trending",
+            f"{'✅' if 'github' in sources else '❌'} GitHub Trending",
             callback_data='toggle_github'
         )],
     ]
@@ -492,23 +492,23 @@ async def toggle_source_callback(update: Update, context: ContextTypes.DEFAULT_T
     # Update keyboard
     keyboard = [
         [InlineKeyboardButton(
-            f"{'вњ…' if 'hackernews' in new_sources else 'вќЊ'} Hacker News",
+            f"{'✅' if 'hackernews' in new_sources else '❌'} Hacker News",
             callback_data='toggle_hackernews'
         )],
         [InlineKeyboardButton(
-            f"{'вњ…' if 'techcrunch' in new_sources else 'вќЊ'} TechCrunch",
+            f"{'✅' if 'techcrunch' in new_sources else '❌'} TechCrunch",
             callback_data='toggle_techcrunch'
         )],
         [InlineKeyboardButton(
-            f"{'вњ…' if 'ai_blogs' in new_sources else 'вќЊ'} AI Blogs",
+            f"{'✅' if 'ai_blogs' in new_sources else '❌'} AI Blogs",
             callback_data='toggle_ai_blogs'
         )],
         [InlineKeyboardButton(
-            f"{'вњ…' if 'theverge' in new_sources else 'вќЊ'} The Verge",
+            f"{'✅' if 'theverge' in new_sources else '❌'} The Verge",
             callback_data='toggle_theverge'
         )],
         [InlineKeyboardButton(
-            f"{'вњ…' if 'github' in new_sources else 'вќЊ'} GitHub Trending",
+            f"{'✅' if 'github' in new_sources else '❌'} GitHub Trending",
             callback_data='toggle_github'
         )],
     ]
@@ -553,7 +553,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     sources_text = '\n'.join([f"  вЂў {source_names.get(s, s)}" for s in sources])
     if not sources:
-        sources_text = '  No sources selected' if user_lang == 'en' else '  РќРµС‚ РІС‹Р±СЂР°РЅРЅС‹С… РёСЃС‚РѕС‡РЅРёРєРѕРІ'
+        sources_text = '  No sources selected' if user_lang == 'en' else '  Нет выбранных источников'
 
     quiet_hours = user.get('quiet_hours')
     if quiet_hours and quiet_hours.get('start') and quiet_hours.get('end'):
@@ -591,8 +591,8 @@ async def saved_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Category emoji mapping
     cat_emoji = {
-        'ai': 'рџ¤–', 'security': 'рџ”’', 'crypto': 'рџ’°', 'startups': 'рџљЂ',
-        'hardware': 'рџ’»', 'software': 'рџ“±', 'tech': 'рџ”§'
+        'ai': '🤖', 'security': '🔒', 'crypto': '💰', 'startups': '🚀',
+        'hardware': '💻', 'software': '📱', 'tech': '🔧'
     }
     
     message = t('saved_header', user_lang)
@@ -606,7 +606,7 @@ async def saved_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         saved_at = article.get('saved_at', '')
         
         # Get category emoji
-        emoji = cat_emoji.get(category, 'рџ”§')
+        emoji = cat_emoji.get(category, '🔧')
         
         # Format date
         date_str = saved_at[:10] if saved_at else ''
@@ -627,7 +627,7 @@ async def saved_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Create delete button - use URL hash for unique ID
         url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
-        delete_label = "рџ—‘пёЏ" if user_lang == 'en' else "рџ—‘пёЏ"
+        delete_label = "🗑️"
         keyboard.append([InlineKeyboardButton(f"{delete_label} {i}. {title[:25]}...", callback_data=f"del_{url_hash}")])
     
     message += t('saved_footer', user_lang)
@@ -699,7 +699,7 @@ async def filter_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Validation: Check max length
     if len(category) > 20:
-        await update.message.reply_text("вќЊ Category name too long.")
+        await update.message.reply_text("❌ Category name too long.")
         return
     if category not in valid_categories:
         await update.message.reply_text(t('filter_prompt', user_lang), parse_mode='Markdown')
@@ -761,8 +761,8 @@ async def recap_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Category emoji mapping
     cat_emoji = {
-        'ai': 'рџ¤–', 'security': 'рџ”’', 'crypto': 'рџ’°', 'startups': 'рџљЂ',
-        'hardware': 'рџ’»', 'software': 'рџ“±', 'tech': 'рџ”§'
+        'ai': '🤖', 'security': '🔒', 'crypto': '💰', 'startups': '🚀',
+        'hardware': '💻', 'software': '📱', 'tech': '🔧'
     }
     
     message = t('recap_header', user_lang)
@@ -772,7 +772,7 @@ async def recap_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         title = article.get('title', 'Untitled')[:50]
         url = article.get('url', '')
         category = article.get('category', 'tech')
-        emoji = cat_emoji.get(category, 'рџ”§')
+        emoji = cat_emoji.get(category, '🔧')
         
         if url.startswith('http'):
             message += f"{i}. {emoji} [{title}]({url})\n"
@@ -807,7 +807,7 @@ async def trends_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_lang = get_user_language(telegram_id)
     
     # Show loading message
-    loading_text = "рџ“Љ РђРЅР°Р»РёР·РёСЂСѓСЋ С‚СЂРµРЅРґС‹..." if user_lang == 'ru' else "рџ“Љ Analyzing trends..."
+    loading_text = "📊 Анализирую тренды..." if user_lang == 'ru' else "📊 Analyzing trends..."
     await update.message.reply_text(loading_text)
     
     try:
@@ -819,7 +819,7 @@ async def trends_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     except Exception as e:
         print(f"Error in trends command: {e}")
-        error_text = "вќЊ РћС€РёР±РєР° РїСЂРё Р°РЅР°Р»РёР·Рµ С‚СЂРµРЅРґРѕРІ." if user_lang == 'ru' else "вќЊ Error analyzing trends."
+        error_text = "❌ Ошибка при анализе трендов." if user_lang == 'ru' else "❌ Error analyzing trends."
         await update.message.reply_text(error_text)
 
 
@@ -1082,11 +1082,11 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Validation
     if len(query) > 100:
-        await update.message.reply_text("вќЊ Search query too long (max 100 chars).")
+        await update.message.reply_text("❌ Search query too long (max 100 chars).")
         return
         
     if len(query) < 2:
-        await update.message.reply_text("вќЊ Search query too short.")
+        await update.message.reply_text("❌ Search query too short.")
         return
     
     add_search_history(telegram_id, query)
@@ -1150,8 +1150,8 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ============ LANGUAGE ============
 
 LANGUAGES = {
-    'en': 'рџ‡¬рџ‡§ English',
-    'ru': 'рџ‡·рџ‡є Р СѓСЃСЃРєРёР№'
+    'en': '🇬🇧 English',
+    'ru': '🇷🇺 Русский'
 }
 
 async def language_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1164,11 +1164,11 @@ async def language_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     keyboard = []
     for code, name in LANGUAGES.items():
-        check = "вњ“ " if code == current_lang else ""
+        check = "✓ " if code == current_lang else ""
         keyboard.append([InlineKeyboardButton(f"{check}{name}", callback_data=f"lang_{code}")])
     
     # Azerbaijani - coming soon
-    keyboard.append([InlineKeyboardButton("рџ‡¦рџ‡ї AzЙ™rbaycan (TezliklЙ™)", callback_data="lang_coming_soon")])
+    keyboard.append([InlineKeyboardButton("🇦🇿 Azərbaycan (Tezliklə)", callback_data="lang_coming_soon")])
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
@@ -1209,17 +1209,17 @@ async def language_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Rebuild the keyboard with updated checkmark
     keyboard = []
     for code, name in LANGUAGES.items():
-        check = "вњ“ " if code == lang_code else ""
+        check = "✓ " if code == lang_code else ""
         keyboard.append([InlineKeyboardButton(f"{check}{name}", callback_data=f"lang_{code}")])
     
     # Azerbaijani - coming soon
-    keyboard.append([InlineKeyboardButton("рџ‡¦рџ‡ї AzЙ™rbaycan (TezliklЙ™)", callback_data="lang_coming_soon")])
+    keyboard.append([InlineKeyboardButton("🇦🇿 Azərbaycan (Tezliklə)", callback_data="lang_coming_soon")])
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     # Update the message with the new keyboard showing the checkmark on selected language
     await query.edit_message_text(
-        t('select_language', lang_code) + f"\n\nвњ… {LANGUAGES[lang_code]}",
+        t('select_language', lang_code) + f"\n\n✅ {LANGUAGES[lang_code]}",
         reply_markup=reply_markup,
         parse_mode='Markdown'
     )
@@ -1513,7 +1513,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     # Validation: Message length for AI
     if len(user_message) > 1000:
-        await update.message.reply_text("вќЊ Message too long (max 1000 chars).")
+        await update.message.reply_text("❌ Message too long (max 1000 chars).")
         return
     
     # Handle button presses - REMOVED (now using command menu only)
@@ -1622,24 +1622,24 @@ async def setup_bot_commands(application: Application):
     
     # Russian commands
     commands_ru = [
-        BotCommand("start", "Р—Р°РїСѓСЃС‚РёС‚СЊ Р±РѕС‚Р°"),
-        BotCommand("news", "РџРѕР»СѓС‡РёС‚СЊ РґР°Р№РґР¶РµСЃС‚ РЅРѕРІРѕСЃС‚РµР№"),
-        BotCommand("saved", "РЎРѕС…СЂР°РЅС‘РЅРЅС‹Рµ СЃС‚Р°С‚СЊРё"),
-        BotCommand("search", "РџРѕРёСЃРє СЃС‚Р°С‚РµР№"),
+        BotCommand("start", "Запустить бота"),
+        BotCommand("news", "Получить дайджест новостей"),
+        BotCommand("saved", "Сохранённые статьи"),
+        BotCommand("search", "Поиск статей"),
         BotCommand("semsearch", "Умный поиск"),
-        BotCommand("filter", "Р¤РёР»СЊС‚СЂ РїРѕ РєР°С‚РµРіРѕСЂРёСЏРј"),
-        BotCommand("recap", "Р•Р¶РµРЅРµРґРµР»СЊРЅР°СЏ СЃРІРѕРґРєР°"),
-        BotCommand("status", "РќР°СЃС‚СЂРѕР№РєРё"),
-        BotCommand("language", "РЇР·С‹Рє"),
-        BotCommand("sources", "РСЃС‚РѕС‡РЅРёРєРё РЅРѕРІРѕСЃС‚РµР№"),
-        BotCommand("schedule", "Р Р°СЃРїРёСЃР°РЅРёРµ"),
+        BotCommand("filter", "Фильтр по категориям"),
+        BotCommand("recap", "Еженедельная сводка"),
+        BotCommand("status", "Настройки"),
+        BotCommand("language", "Язык"),
+        BotCommand("sources", "Источники новостей"),
+        BotCommand("schedule", "Расписание"),
         BotCommand("timezone", "Часовой пояс"),
         BotCommand("quiet_hours", "Тихие часы"),
         BotCommand("trendalerts", "Тренд-уведомления"),
         BotCommand("admin_status", "Статус системы"),
-        BotCommand("share", "РџРѕРґРµР»РёС‚СЊСЃСЏ Р±РѕС‚РѕРј"),
-        BotCommand("trends", "РўСЂРµРЅРґС‹ РЅРµРґРµР»Рё"),
-        BotCommand("help", "РџРѕРјРѕС‰СЊ"),
+        BotCommand("share", "Поделиться ботом"),
+        BotCommand("trends", "Тренды недели"),
+        BotCommand("help", "Помощь"),
     ]
     
     # Set commands for different languages
