@@ -47,9 +47,14 @@ def get_admin_ids() -> set:
 
 def get_digest_reply_markup(digest_id: str, user_lang: str) -> InlineKeyboardMarkup:
     """Build shared inline keyboard for digest actions."""
-    refresh_label = "Refresh"
-    save_label = "Save Digest"
-    why_label = "Why It Matters"
+    if user_lang == "ru":
+        refresh_label = "Обновить"
+        save_label = "Сохранить"
+        why_label = "Почему это важно"
+    else:
+        refresh_label = "Refresh"
+        save_label = "Save Digest"
+        why_label = "Why It Matters"
 
     keyboard = [
         [
@@ -1678,6 +1683,7 @@ def create_bot_application() -> Application:
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("news", news_command))
+    application.add_handler(CommandHandler("schedule", schedule_command))
     application.add_handler(CommandHandler("settime", settime_command))
     application.add_handler(CommandHandler("sources", sources_command))
     application.add_handler(CommandHandler("status", status_command))
