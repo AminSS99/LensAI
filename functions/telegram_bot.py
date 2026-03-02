@@ -58,8 +58,8 @@ def get_digest_reply_markup(digest_id: str, user_lang: str) -> InlineKeyboardMar
 
     keyboard = [
         [
-            InlineKeyboardButton("рџ‘Ќ", callback_data=f"rate_up_{digest_id}"),
-            InlineKeyboardButton("рџ‘Ћ", callback_data=f"rate_down_{digest_id}"),
+            InlineKeyboardButton("👍", callback_data=f"rate_up_{digest_id}"),
+            InlineKeyboardButton("👎", callback_data=f"rate_down_{digest_id}"),
             InlineKeyboardButton(refresh_label, callback_data="refresh_news"),
         ],
         [
