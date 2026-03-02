@@ -5,13 +5,22 @@ Implements a Firestore-based distributed lock to prevent duplicate processing ac
 
 from datetime import datetime, timedelta
 from typing import Optional
+try:
+    from google.cloud import firestore as g_firestore
+except Exception:
+    g_firestore = None
 
 
 def get_firestore_client():
     """Get Firestore client or None if not available."""
     try:
-        from google.cloud import firestore
-        return firestore.Client()
+        if g_firestore is None:
+            return None
+        import os
+        project_id = os.environ.get("FIRESTORE_PROJECT_ID") or os.environ.get("GOOGLE_CLOUD_PROJECT")
+        if project_id:
+            return g_firestore.Client(project=project_id)
+        return g_firestore.Client()
     except Exception:
         return None
 
@@ -46,37 +55,38 @@ class DistributedLock:
             return True
             
         try:
-            from google.cloud import firestore
-            
             lock_ref = self.db.collection('locks').document(self.lock_id)
-            lock_doc = lock_ref.get()
-            
             now = datetime.utcnow()
             expires_at = now + timedelta(seconds=self.ttl_seconds)
-            
-            # Check if lock exists and is still valid
-            if lock_doc.exists:
-                lock_data = lock_doc.to_dict()
-                lock_expires = lock_data.get('expires_at')
-                
-                if lock_expires and lock_expires.replace(tzinfo=None) > now:
-                    # Lock is still valid - cannot acquire
-                    return False
-            
-            # Either lock doesn't exist or has expired - acquire it
-            lock_ref.set({
-                'user_id': self.user_id,
-                'lock_name': self.lock_name,
-                'acquired_at': firestore.SERVER_TIMESTAMP,
-                'expires_at': expires_at
-            })
-            
-            return True
+
+            if g_firestore is None:
+                return False
+
+            @g_firestore.transactional
+            def acquire_transaction(transaction, ref):
+                snap = ref.get(transaction=transaction)
+                if snap.exists:
+                    data = snap.to_dict()
+                    lock_expires = data.get('expires_at')
+                    if lock_expires and lock_expires.replace(tzinfo=None) > now:
+                        return False
+
+                transaction.set(ref, {
+                    'user_id': self.user_id,
+                    'lock_name': self.lock_name,
+                    'acquired_at': g_firestore.SERVER_TIMESTAMP,
+                    'expires_at': expires_at,
+                    'updated_at': g_firestore.SERVER_TIMESTAMP
+                })
+                return True
+
+            transaction = self.db.transaction()
+            return acquire_transaction(transaction, lock_ref)
             
         except Exception as e:
             print(f"Lock acquire error: {e}")
-            # On error, assume we can proceed (fail-open)
-            return True
+            # Fail closed in production to avoid duplicate processing.
+            return False
     
     def release(self):
         """Release the lock."""
@@ -130,9 +140,13 @@ def is_locked(lock_name: str, user_id: int) -> bool:
             
         lock_data = lock_doc.to_dict()
         lock_expires = lock_data.get('expires_at')
-        
-        if lock_expires and lock_expires.replace(tzinfo=None) > datetime.utcnow():
-            return True
+
+        if lock_expires:
+            try:
+                if lock_expires.replace(tzinfo=None) > datetime.utcnow():
+                    return True
+            except Exception:
+                return False
             
         return False
         

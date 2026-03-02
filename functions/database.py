@@ -8,15 +8,29 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 from google.cloud import firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
-from google.oauth2 import service_account
+from .security_utils import stable_hash
+
+
+_UNSET = object()
+
+
+def get_firestore_project_id() -> Optional[str]:
+    """
+    Resolve Firestore project ID from environment.
+    
+    Prefers FIRESTORE_PROJECT_ID, then GOOGLE_CLOUD_PROJECT.
+    """
+    return os.environ.get("FIRESTORE_PROJECT_ID") or os.environ.get("GOOGLE_CLOUD_PROJECT")
 
 
 def get_db() -> firestore.Client:
     """Get Firestore client."""
     # In Cloud Functions, this uses default credentials
     # For local development, set GOOGLE_APPLICATION_CREDENTIALS env var
-    # Explicitly set project to avoid Windows console encoding issues
-    return firestore.Client(project='lensai-481910')
+    project_id = get_firestore_project_id()
+    if project_id:
+        return firestore.Client(project=project_id)
+    return firestore.Client()
 
 
 # ============ USER OPERATIONS ============
@@ -31,8 +45,10 @@ def get_user(telegram_id: int) -> Optional[Dict[str, Any]]:
 def create_or_update_user(
     telegram_id: int,
     username: str = None,
-    schedule_time: str = None,
-    timezone: str = "Asia/Baku"
+    schedule_time: Any = _UNSET,
+    timezone: Optional[str] = None,
+    is_active: Optional[bool] = None,
+    quiet_hours: Optional[Dict[str, str]] = None
 ) -> Dict[str, Any]:
     """
     Create or update a user.
@@ -40,8 +56,10 @@ def create_or_update_user(
     Args:
         telegram_id: User's Telegram ID
         username: Telegram username
-        schedule_time: Time for daily digest (HH:MM format)
+        schedule_time: Time for daily digest (HH:MM format), None to disable
         timezone: User's timezone
+        is_active: Explicit active state override
+        quiet_hours: Optional dict with keys start/end (HH:MM)
         
     Returns:
         User document data
@@ -57,25 +75,36 @@ def create_or_update_user(
         update_data = {'updated_at': datetime.utcnow()}
         if username:
             update_data['username'] = username
-        if schedule_time:
+        if schedule_time is not _UNSET:
             update_data['schedule_time'] = schedule_time
-        if timezone:
+            if is_active is None:
+                update_data['is_active'] = bool(schedule_time)
+        if timezone is not None:
             update_data['timezone'] = timezone
+        if is_active is not None:
+            update_data['is_active'] = is_active
+        if quiet_hours is not None:
+            update_data['quiet_hours'] = quiet_hours
         
         user_ref.update(update_data)
         return {**existing.to_dict(), **update_data}
     else:
         # Create new user
+        resolved_schedule = "18:00" if schedule_time is _UNSET else schedule_time
+        resolved_timezone = timezone or "Asia/Baku"
+        resolved_active = bool(resolved_schedule) if is_active is None else is_active
         user_data = {
             'telegram_id': telegram_id,
             'username': username,
-            'schedule_time': schedule_time or "18:00",
-            'timezone': timezone,
+            'schedule_time': resolved_schedule,
+            'timezone': resolved_timezone,
             'sources': ['hackernews', 'techcrunch', 'ai_blogs', 'theverge', 'github'],
             'created_at': datetime.utcnow(),
             'updated_at': datetime.utcnow(),
-            'is_active': True
+            'is_active': resolved_active
         }
+        if quiet_hours is not None:
+            user_data['quiet_hours'] = quiet_hours
         user_ref.set(user_data)
         return user_data
 
@@ -96,8 +125,37 @@ def set_user_schedule(telegram_id: int, schedule_time: str) -> bool:
     
     user_ref.update({
         'schedule_time': schedule_time,
+        'is_active': bool(schedule_time),
         'updated_at': datetime.utcnow()
     })
+    return True
+
+
+def set_user_timezone(telegram_id: int, timezone_name: str) -> bool:
+    """Set user's timezone string (IANA format, e.g., Europe/Berlin)."""
+    db = get_db()
+    user_ref = db.collection('users').document(str(telegram_id))
+    user_ref.set({
+        'timezone': timezone_name,
+        'updated_at': datetime.utcnow()
+    }, merge=True)
+    return True
+
+
+def set_user_quiet_hours(telegram_id: int, quiet_hours: Optional[Dict[str, str]]) -> bool:
+    """
+    Set quiet hours for a user.
+    
+    quiet_hours format:
+      {'start': '23:00', 'end': '07:00'}
+    or None to disable.
+    """
+    db = get_db()
+    user_ref = db.collection('users').document(str(telegram_id))
+    user_ref.set({
+        'quiet_hours': quiet_hours,
+        'updated_at': datetime.utcnow()
+    }, merge=True)
     return True
 
 
@@ -149,7 +207,10 @@ def toggle_user_source(telegram_id: int, source: str) -> List[str]:
     """
     db = get_db()
     user_ref = db.collection('users').document(str(telegram_id))
-    user = user_ref.get().to_dict()
+    user_doc = user_ref.get()
+    user = user_doc.to_dict() if user_doc.exists else None
+    if not user:
+        user = create_or_update_user(telegram_id)
     
     sources = user.get('sources', [])
     
@@ -188,7 +249,7 @@ def save_articles(articles: List[Dict[str, Any]]) -> int:
             continue
         
         # Use URL hash as document ID for deduplication
-        doc_id = str(hash(url))
+        doc_id = stable_hash(url)
         doc_ref = db.collection('articles').document(doc_id)
         
         # Check if already exists

@@ -8,6 +8,7 @@ import json
 import asyncio
 import traceback
 from datetime import datetime
+from zoneinfo import ZoneInfo
 import functions_framework
 from flask import Request
 
@@ -60,10 +61,10 @@ def telegram_webhook(request: Request):
                 print("Update processed successfully")
                 
             except asyncio.TimeoutError:
-                print(f"⚠️ Update processing timed out")
+                print("WARNING: Update processing timed out")
                 traceback.print_exc()
             except Exception as e:
-                print(f"❌ Error processing update: {e}")
+                print(f"ERROR: Error processing update: {e}")
                 traceback.print_exc()
             finally:
                 try:
@@ -90,6 +91,65 @@ def telegram_webhook(request: Request):
 
 # ============ SCHEDULED DIGEST FUNCTION ============
 
+def _is_within_quiet_hours(local_dt: datetime, quiet_hours: dict) -> bool:
+    """Check if local datetime falls inside configured quiet hours."""
+    if not quiet_hours or not isinstance(quiet_hours, dict):
+        return False
+
+    start = quiet_hours.get("start")
+    end = quiet_hours.get("end")
+    if not start or not end:
+        return False
+
+    try:
+        start_h, start_m = map(int, start.split(":"))
+        end_h, end_m = map(int, end.split(":"))
+    except Exception:
+        return False
+
+    now_minutes = local_dt.hour * 60 + local_dt.minute
+    start_minutes = start_h * 60 + start_m
+    end_minutes = end_h * 60 + end_m
+
+    # Same start/end means disabled.
+    if start_minutes == end_minutes:
+        return False
+
+    # Handles both normal and overnight ranges.
+    if start_minutes < end_minutes:
+        return start_minutes <= now_minutes < end_minutes
+    return now_minutes >= start_minutes or now_minutes < end_minutes
+
+
+def _is_user_due_now(user: dict, now_utc: datetime) -> bool:
+    """
+    Decide whether user should receive digest now (timezone + quiet-hours aware).
+    """
+    if not user.get("is_active", False):
+        return False
+
+    schedule_time = user.get("schedule_time")
+    if not schedule_time:
+        return False
+
+    timezone_name = user.get("timezone") or "Asia/Baku"
+    try:
+        user_tz = ZoneInfo(timezone_name)
+    except Exception:
+        user_tz = ZoneInfo("UTC")
+
+    local_now = now_utc.astimezone(user_tz)
+    local_hhmm = local_now.strftime("%H:%M")
+    local_hh00 = local_now.strftime("%H:00")
+
+    if schedule_time not in {local_hhmm, local_hh00}:
+        return False
+
+    if _is_within_quiet_hours(local_now, user.get("quiet_hours")):
+        return False
+
+    return True
+
 async def process_scheduled_digest(target_time: str = None) -> dict:
     """
     Core logic for processing scheduled digests.
@@ -98,7 +158,7 @@ async def process_scheduled_digest(target_time: str = None) -> dict:
     Args:
         target_time: Optional time string HH:MM. If None, current Baku time is used.
     """
-    from .database import get_users_for_time, save_digest
+    from .database import get_users_for_time, get_all_active_users, save_digest
     from .telegram_bot import send_digest_to_user
     from .scrapers.hackernews import fetch_hackernews
     from .scrapers.techcrunch import fetch_techcrunch
@@ -107,18 +167,19 @@ async def process_scheduled_digest(target_time: str = None) -> dict:
     from .scrapers.github_trending import fetch_github_trending
     from .summarizer import summarize_news
     
-    # Get current time in HH:MM format (Baku timezone - UTC+4)
-    from datetime import timezone, timedelta
-    baku_tz = timezone(timedelta(hours=4))
-    
     if target_time:
+        # Manual override mode: keep legacy behavior.
         current_time = target_time
+        users = get_users_for_time(current_time)
     else:
-        current_time = datetime.now(baku_tz).strftime("%H:00")
+        # Automatic mode: timezone-aware per-user scheduling.
+        from datetime import timezone as dt_timezone
+        now_utc = datetime.now(dt_timezone.utc)
+        current_time = now_utc.strftime("%H:00")
+        active_users = get_all_active_users()
+        users = [u for u in active_users if _is_user_due_now(u, now_utc)]
     
     print(f"Running scheduled digest for time: {current_time}")
-    
-    users = get_users_for_time(current_time)
     
     if not users:
         return {'message': f'No users scheduled for {current_time}', 'sent': 0}
@@ -172,7 +233,7 @@ async def process_scheduled_digest(target_time: str = None) -> dict:
             telegram_id = user.get('telegram_id')
             try:
                 if telegram_id:
-                    success = await send_digest_to_user(telegram_id, digest)
+                    success = await send_digest_to_user(telegram_id, digest, articles_meta=all_news[:20])
                     if success:
                         save_digest(telegram_id, digest)
                         sent_count += 1
@@ -187,6 +248,70 @@ async def process_scheduled_digest(target_time: str = None) -> dict:
         'sent': sent_count,
         'total_users': len(users),
         'errors': errors
+    }
+
+
+async def process_weekly_trend_alerts() -> dict:
+    """Send weekly trend alerts to opted-in users."""
+    from telegram import Bot
+    from .database import get_all_active_users
+    from .trend_analysis import calculate_weekly_trends, format_trends_message
+    from .telegram_bot import get_bot_token
+    from .user_storage import get_user_preferences, get_user_language
+
+    trends = calculate_weekly_trends()
+    if not trends:
+        return {"message": "No trend data available", "sent": 0}
+
+    rising_changes = [d.get("change", 0.0) for d in trends.values() if d.get("trend") == "rising"]
+    max_rising_change = max(rising_changes) if rising_changes else 0.0
+
+    users = get_all_active_users()
+    if not users:
+        return {"message": "No active users", "sent": 0}
+
+    bot = Bot(token=get_bot_token())
+    sent = 0
+    skipped = 0
+    errors = []
+
+    for user in users:
+        telegram_id = user.get("telegram_id")
+        if not telegram_id:
+            continue
+
+        prefs = get_user_preferences(telegram_id) or {}
+        enabled = bool(prefs.get("trend_alerts_enabled", False))
+        threshold = int(prefs.get("trend_alert_threshold", 30))
+
+        if not enabled:
+            skipped += 1
+            continue
+
+        if max_rising_change < threshold:
+            skipped += 1
+            continue
+
+        user_lang = get_user_language(telegram_id)
+        message = format_trends_message(user_lang)
+
+        try:
+            await bot.send_message(
+                chat_id=telegram_id,
+                text=message,
+                parse_mode="Markdown",
+                disable_web_page_preview=True,
+            )
+            sent += 1
+        except Exception as e:
+            errors.append({"telegram_id": telegram_id, "error": str(e)})
+
+    return {
+        "message": "Weekly trend alerts processed",
+        "sent": sent,
+        "skipped": skipped,
+        "max_rising_change": round(max_rising_change, 1),
+        "errors": errors[:25],
     }
 
 
@@ -207,6 +332,20 @@ def scheduled_digest(request: Request):
         
     except Exception as e:
         print(f"Scheduled digest error: {e}")
+        return json.dumps({'error': str(e)}), 500
+
+
+@functions_framework.http
+def weekly_trend_alerts(request: Request):
+    """
+    HTTP Cloud Function for weekly trend alerts.
+    Intended to be called by Cloud Scheduler once per week.
+    """
+    try:
+        result = asyncio.run(process_weekly_trend_alerts())
+        return json.dumps(result), 200
+    except Exception as e:
+        print(f"Weekly trend alert error: {e}")
         return json.dumps({'error': str(e)}), 500
 
 
@@ -276,8 +415,8 @@ def fetch_news(request: Request):
                 }
             else:
                 return {
-                    'articles': all_news,
-                    'count': len(all_news)
+                    'articles': processed_news,
+                    'count': len(processed_news)
                 }
 
         result = asyncio.run(fetch_async())

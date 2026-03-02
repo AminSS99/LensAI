@@ -7,10 +7,54 @@ import httpx
 from typing import List, Dict, Any
 from datetime import datetime
 import xml.etree.ElementTree as ET
+from bs4 import BeautifulSoup
 
 
 # Product Hunt has an RSS feed for their front page
 PRODUCTHUNT_RSS_URL = "https://www.producthunt.com/feed"
+PRODUCTHUNT_WEB_URL = "https://www.producthunt.com/"
+
+
+def _scrape_producthunt_html(client: httpx.Client, limit: int) -> List[Dict[str, Any]]:
+    """Fallback HTML scraper when RSS is empty/unavailable."""
+    try:
+        response = client.get(PRODUCTHUNT_WEB_URL)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        products = []
+        seen_urls = set()
+
+        # Product cards usually contain links under posts.
+        for link in soup.select("a[href*='/posts/']"):
+            href = link.get("href", "")
+            if not href:
+                continue
+            if href.startswith("/"):
+                href = f"https://www.producthunt.com{href}"
+            if href in seen_urls:
+                continue
+            seen_urls.add(href)
+
+            title = link.get_text(" ", strip=True)
+            if not title or len(title) < 3:
+                continue
+
+            products.append({
+                "title": title[:200],
+                "url": href,
+                "summary": "",
+                "source": "Product Hunt",
+                "time": datetime.now().isoformat(),
+            })
+
+            if len(products) >= limit:
+                break
+
+        return products
+    except Exception as e:
+        print(f"Product Hunt HTML fallback error: {e}")
+        return []
 
 
 def fetch_producthunt(limit: int = 10) -> List[Dict[str, Any]]:
@@ -62,7 +106,37 @@ def fetch_producthunt(limit: int = 10) -> List[Dict[str, Any]]:
                         'source': 'Product Hunt',
                         'time': pub_date.text if pub_date is not None else datetime.now().isoformat(),
                     })
-            
+
+            # Product Hunt feed can be Atom instead of RSS.
+            if not products:
+                atom_ns = {'atom': 'http://www.w3.org/2005/Atom'}
+                entries = root.findall('.//atom:entry', atom_ns)
+                for entry in entries[:limit]:
+                    title = entry.find('atom:title', atom_ns)
+                    link = entry.find('atom:link', atom_ns)
+                    summary = entry.find('atom:summary', atom_ns) or entry.find('atom:content', atom_ns)
+                    published = entry.find('atom:published', atom_ns) or entry.find('atom:updated', atom_ns)
+
+                    if title is None or link is None:
+                        continue
+
+                    href = link.get('href', '')
+                    desc_text = ''
+                    if summary is not None and summary.text:
+                        import re
+                        desc_text = re.sub(r'<[^>]+>', '', summary.text)[:200]
+
+                    products.append({
+                        'title': title.text or '',
+                        'url': href,
+                        'summary': desc_text,
+                        'source': 'Product Hunt',
+                        'time': published.text if published is not None else datetime.now().isoformat(),
+                    })
+
+            if not products:
+                products = _scrape_producthunt_html(client, limit)
+
             print(f"Product Hunt: Fetched {len(products)} products")
             return products
             

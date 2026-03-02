@@ -1,0 +1,3 @@
+interface:
+  display_name: "LensAI Ops"
+  short_description: "Maintain and deploy LensAI on local and GCP"

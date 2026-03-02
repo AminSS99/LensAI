@@ -2,6 +2,11 @@
 import sys
 sys.path.insert(0, 'functions')
 
+try:
+    sys.stdout.reconfigure(encoding='utf-8')
+except Exception:
+    pass
+
 from scrapers.theverge import fetch_theverge
 from scrapers.github_trending import fetch_github_trending
 from scrapers.producthunt import fetch_producthunt

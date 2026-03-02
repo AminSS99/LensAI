@@ -9,6 +9,7 @@ import json
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timezone
 import time
+from .security_utils import stable_hash
 
 # Local storage directory (fallback)
 STORAGE_DIR = os.path.join(os.path.dirname(__file__), '.user_data')
@@ -60,6 +61,9 @@ def get_firestore_client():
     """Get Firestore client or None if not available."""
     try:
         from google.cloud import firestore
+        project_id = os.environ.get("FIRESTORE_PROJECT_ID") or os.environ.get("GOOGLE_CLOUD_PROJECT")
+        if project_id:
+            return firestore.Client(project=project_id)
         return firestore.Client()
     except Exception:
         return None
@@ -116,10 +120,16 @@ def save_article(telegram_id: int, title: str, url: str, source: str = "", categ
     if db:
         try:
             # Use a subcollection 'saved_articles' inside the user document
-            doc_ref = db.collection('users').document(str(telegram_id)).collection('saved_articles').document(str(hash(url)))
-            
-            # Check if exists
+            user_articles = db.collection('users').document(str(telegram_id)).collection('saved_articles')
+            doc_ref = user_articles.document(stable_hash(url))
+
+            # Check deterministic ID first.
             if doc_ref.get().exists:
+                return False
+
+            # Backward compatibility: check old docs by URL field.
+            existing = list(user_articles.where('url', '==', url).limit(1).stream())
+            if existing:
                 return False
                 
             doc_ref.set(article_data)
@@ -182,8 +192,14 @@ def delete_saved_article(telegram_id: int, url: str) -> bool:
     db = get_firestore_client()
     if db:
         try:
-            doc_ref = db.collection('users').document(str(telegram_id)).collection('saved_articles').document(str(hash(url)))
+            user_articles = db.collection('users').document(str(telegram_id)).collection('saved_articles')
+            doc_ref = user_articles.document(stable_hash(url))
             doc_ref.delete()
+
+            # Backward compatibility cleanup for old hash IDs.
+            old_docs = user_articles.where('url', '==', url).stream()
+            for old_doc in old_docs:
+                old_doc.reference.delete()
             return True
         except Exception as e:
             print(f"Firestore delete error: {e}")
@@ -477,3 +493,55 @@ def get_article_hash(item: Dict[str, Any]) -> str:
     # Use URL if available, otherwise title
     key = item.get('url', item.get('title', ''))
     return hashlib.md5(key.encode('utf-8')).hexdigest()
+
+
+# ============ TEMP DIGEST STORAGE ============
+
+def save_temp_digest(
+    digest_id: str,
+    telegram_id: int,
+    content: str,
+    articles_meta: Optional[List[Dict[str, Any]]] = None,
+    ttl_hours: int = 24
+) -> bool:
+    """
+    Store full digest content for callback actions (save/why/rating profile updates).
+    """
+    db = get_firestore_client()
+    if not db:
+        return False
+
+    try:
+        from google.cloud import firestore
+        expires_at = datetime.now(timezone.utc).timestamp() + (ttl_hours * 3600)
+        db.collection('digests_temp').document(digest_id).set({
+            'content': content,
+            'user_id': telegram_id,
+            'articles_meta': articles_meta or [],
+            'created_at': firestore.SERVER_TIMESTAMP,
+            'expires_at': expires_at
+        }, merge=True)
+        return True
+    except Exception as e:
+        print(f"Temp digest store error: {e}")
+        return False
+
+
+def get_temp_digest(digest_id: str) -> Optional[Dict[str, Any]]:
+    """Fetch stored temporary digest context."""
+    db = get_firestore_client()
+    if not db:
+        return None
+
+    try:
+        doc = db.collection('digests_temp').document(digest_id).get()
+        if not doc.exists:
+            return None
+        data = doc.to_dict()
+        expires_at = data.get('expires_at')
+        if isinstance(expires_at, (int, float)) and time.time() > expires_at:
+            return None
+        return data
+    except Exception as e:
+        print(f"Temp digest read error: {e}")
+        return None

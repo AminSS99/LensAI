@@ -48,12 +48,12 @@ def retry_with_backoff(
                     
                     if attempt == max_retries:
                         # Final attempt failed, raise the exception
-                        print(f"❌ {func.__name__} failed after {max_retries} retries: {e}")
+                        print(f"ERROR: {func.__name__} failed after {max_retries} retries: {e}")
                         raise
                     
                     # Calculate delay with exponential backoff
                     delay = min(base_delay * (exponential_base ** attempt), max_delay)
-                    print(f"⚠️ {func.__name__} attempt {attempt + 1} failed: {e}. Retrying in {delay:.1f}s...")
+                    print(f"WARNING: {func.__name__} attempt {attempt + 1} failed: {e}. Retrying in {delay:.1f}s...")
                     time.sleep(delay)
             
             # Should never reach here, but just in case
@@ -71,12 +71,12 @@ def retry_with_backoff(
                     
                     if attempt == max_retries:
                         # Final attempt failed, raise the exception
-                        print(f"❌ {func.__name__} failed after {max_retries} retries: {e}")
+                        print(f"ERROR: {func.__name__} failed after {max_retries} retries: {e}")
                         raise
                     
                     # Calculate delay with exponential backoff
                     delay = min(base_delay * (exponential_base ** attempt), max_delay)
-                    print(f"⚠️ {func.__name__} attempt {attempt + 1} failed: {e}. Retrying in {delay:.1f}s...")
+                    print(f"WARNING: {func.__name__} attempt {attempt + 1} failed: {e}. Retrying in {delay:.1f}s...")
                     await asyncio.sleep(delay)
             
             # Should never reach here, but just in case
@@ -110,7 +110,7 @@ def safe_call(func: Callable[..., T], *args, default: Optional[T] = None, **kwar
     try:
         return func(*args, **kwargs)
     except Exception as e:
-        print(f"⚠️ {func.__name__} failed: {e}. Returning default value.")
+        print(f"WARNING: {func.__name__} failed: {e}. Returning default value.")
         return default
 
 
@@ -130,7 +130,7 @@ async def safe_call_async(func: Callable[..., T], *args, default: Optional[T] = 
     try:
         return await func(*args, **kwargs)
     except Exception as e:
-        print(f"⚠️ {func.__name__} failed: {e}. Returning default value.")
+        print(f"WARNING: {func.__name__} failed: {e}. Returning default value.")
         return default
 
 

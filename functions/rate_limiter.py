@@ -1,4 +1,4 @@
-"""
+﻿"""
 Rate Limiting Module
 Prevents abuse by limiting requests per user using Firestore for persistence.
 """
@@ -6,12 +6,21 @@ Prevents abuse by limiting requests per user using Firestore for persistence.
 import time
 from typing import Dict, Tuple, Optional, Any
 from datetime import datetime, timedelta
+try:
+    from google.cloud import firestore as g_firestore
+except Exception:
+    g_firestore = None
 
 def get_firestore_client():
     """Get Firestore client or None if not available."""
     try:
-        from google.cloud import firestore
-        return firestore.Client()
+        if g_firestore is None:
+            return None
+        import os
+        project_id = os.environ.get("FIRESTORE_PROJECT_ID") or os.environ.get("GOOGLE_CLOUD_PROJECT")
+        if project_id:
+            return g_firestore.Client(project=project_id)
+        return g_firestore.Client()
     except Exception:
         return None
 
@@ -50,8 +59,11 @@ def check_rate_limit(user_id: int, action: str = 'default') -> Tuple[bool, str]:
     doc_ref = db.collection('rate_limits').document(doc_id)
     
     try:
+        if g_firestore is None:
+            return True, "Firestore SDK unavailable"
+
         # Transactional update to ensure consistency
-        @firestore.transactional
+        @g_firestore.transactional
         def update_rate_limit(transaction, doc_ref):
             snapshot = doc_ref.get(transaction=transaction)
             now_ts = time.time()
@@ -89,18 +101,19 @@ def check_rate_limit(user_id: int, action: str = 'default') -> Tuple[bool, str]:
             return True, max_requests - len(timestamps)
 
         # Run transaction
-        from google.cloud import firestore
         trans = db.transaction()
         allowed, result = update_rate_limit(trans, doc_ref)
         
         if not allowed:
-            return False, f"⏳ Rate limit reached. Please wait {result} seconds."
+            return False, f"Rate limit reached. Please wait {result} seconds."
             
         return True, f"Remaining: {result}"
         
     except Exception as e:
         print(f"Rate limit error: {e}")
-        # Fail open on error
+        # Fail closed for high-abuse actions.
+        if action in {"news", "search", "ai_chat", "save"}:
+            return False, "Rate limit check failed. Please try again in 30 seconds."
         return True, "Error checking limit"
 
 
@@ -126,3 +139,4 @@ def reset_limits(user_id: int):
             
     except Exception as e:
         print(f"Error resetting limits: {e}")
+

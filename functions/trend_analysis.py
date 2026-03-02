@@ -3,6 +3,7 @@ Trend Analysis Module
 Tracks topic popularity over time and generates trend reports.
 """
 
+import os
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timedelta, timezone
 from collections import defaultdict
@@ -16,7 +17,10 @@ def get_firestore_client():
     """Get Firestore client or None if not available."""
     try:
         from google.cloud import firestore
-        return firestore.Client(project='lensai-481910')
+        project_id = os.environ.get("FIRESTORE_PROJECT_ID") or os.environ.get("GOOGLE_CLOUD_PROJECT")
+        if project_id:
+            return firestore.Client(project=project_id)
+        return firestore.Client()
     except Exception:
         return None
 
