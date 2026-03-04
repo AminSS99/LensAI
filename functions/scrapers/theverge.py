@@ -6,7 +6,7 @@ Fetches latest tech news from The Verge using their RSS feed.
 import httpx
 from typing import List, Dict, Any
 from datetime import datetime
-import xml.etree.ElementTree as ET
+from defusedxml.ElementTree import fromstring
 
 try:
     from ..resilience import retry_with_backoff
@@ -39,8 +39,8 @@ def fetch_theverge(limit: int = 10) -> List[Dict[str, Any]]:
             response = client.get(VERGE_RSS_URL, headers=headers)
             response.raise_for_status()
             
-            # Parse XML/Atom feed
-            root = ET.fromstring(response.content)
+            # Parse XML/Atom feed securely
+            root = fromstring(response.content)
             
             # The Verge uses Atom format
             namespace = {'atom': 'http://www.w3.org/2005/Atom'}

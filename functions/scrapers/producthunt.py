@@ -6,6 +6,7 @@ Fetches trending products from Product Hunt RSS feed.
 import httpx
 from typing import List, Dict, Any
 from datetime import datetime
+from defusedxml.ElementTree import fromstring
 import xml.etree.ElementTree as ET
 from bs4 import BeautifulSoup
 
@@ -80,8 +81,8 @@ def fetch_producthunt(limit: int = 10) -> List[Dict[str, Any]]:
                 print(f"Product Hunt RSS returned {response.status_code}")
                 return []
             
-            # Parse RSS feed
-            root = ET.fromstring(response.content)
+            # Parse RSS feed securely
+            root = fromstring(response.content)
             
             products = []
             items = root.findall('.//item')
