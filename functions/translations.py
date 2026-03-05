@@ -136,7 +136,11 @@ Use /sources to toggle sources""",
         'btn_settings': "⚙️ Settings",
         'btn_schedule': "⏰ Schedule",
         'btn_help': "❓ Help",
+
+        'export_empty': "📂 *No saved articles to export!*\n\nStart saving articles first to use this feature.",
+        'export_caption': "📁 *Export Successful!*\n\nHere are your {count} saved articles in Markdown format.",
         'btn_share': "📤 Share",
+
     },
     'ru': {
         # Existing keys
@@ -269,7 +273,11 @@ _Работает локально - настройки сохранятся п�
         'btn_settings': "⚙️ Настройки",
         'btn_schedule': "⏰ Расписание",
         'btn_help': "❓ Помощь",
+
+        'export_empty': "📂 *Нет сохранённых статей для экспорта!*\n\nСначала сохраните статьи, чтобы использовать эту функцию.",
+        'export_caption': "📁 *Экспорт завершен!*\n\nВот ваши сохранённые статьи ({count} шт.) в формате Markdown.",
         'btn_share': "📤 Поделиться",
+
     }
 }
 

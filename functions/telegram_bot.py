@@ -644,6 +644,47 @@ async def saved_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(message, disable_web_page_preview=True, reply_markup=reply_markup)
 
 
+
+async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /export command - export saved articles to a Markdown file."""
+    from .user_storage import get_saved_articles, get_user_language
+    from .translations import t
+    import io
+
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+    articles = get_saved_articles(telegram_id, limit=500)
+
+    if not articles:
+        await update.message.reply_text(t('export_empty', user_lang), parse_mode='Markdown')
+        return
+
+    # Format articles into Markdown
+    lines = ["# " + ("Saved Articles" if user_lang == 'en' else "Сохраненные статьи"), ""]
+    for i, article in enumerate(articles, 1):
+        title = article.get('title', 'Untitled')
+        url = article.get('url', '')
+        category = article.get('category', 'tech')
+        date_str = article.get('saved_at', '')[:10]
+
+        line = f"{i}. [{title}]({url}) - *{category}*"
+        if date_str:
+            line += f" ({date_str})"
+        lines.append(line)
+
+    markdown_content = "\n".join(lines)
+
+    # Create file-like object
+    file_obj = io.BytesIO(markdown_content.encode('utf-8'))
+    file_obj.name = "saved_articles.md"
+
+    await update.message.reply_document(
+        document=file_obj,
+        filename="saved_articles.md",
+        caption=t('export_caption', user_lang, count=len(articles))
+    )
+
+
 async def save_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /save command - save an article."""
     from .user_storage import save_article, get_user_language, categorize_article
@@ -1603,6 +1644,7 @@ async def setup_bot_commands(application: Application):
         BotCommand("start", "Start the bot"),
         BotCommand("news", "Get AI news digest"),
         BotCommand("saved", "View saved articles"),
+        BotCommand("export", "Export saved articles"),
         BotCommand("search", "Search articles"),
         BotCommand("semsearch", "Semantic search saved"),
         BotCommand("filter", "Filter saved by category"),
@@ -1625,6 +1667,7 @@ async def setup_bot_commands(application: Application):
         BotCommand("start", "Запустить бота"),
         BotCommand("news", "Получить дайджест новостей"),
         BotCommand("saved", "Сохранённые статьи"),
+        BotCommand("export", "Экспорт статей"),
         BotCommand("search", "Поиск статей"),
         BotCommand("semsearch", "Умный поиск"),
         BotCommand("filter", "Фильтр по категориям"),
@@ -1691,6 +1734,7 @@ def create_bot_application() -> Application:
     # New feature commands
     application.add_handler(CommandHandler("saved", saved_command))
     application.add_handler(CommandHandler("save", save_command))
+    application.add_handler(CommandHandler("export", export_command))
     application.add_handler(CommandHandler("clear_saved", clear_saved_command))
     application.add_handler(CommandHandler("clear", clear_saved_command))  # Alias for /clear_saved
     application.add_handler(CommandHandler("search", search_command))
