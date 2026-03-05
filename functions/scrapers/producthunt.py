@@ -6,7 +6,7 @@ Fetches trending products from Product Hunt RSS feed.
 import httpx
 from typing import List, Dict, Any
 from datetime import datetime
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET
 from bs4 import BeautifulSoup
 
 
