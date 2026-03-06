@@ -681,6 +681,94 @@ async def clear_saved_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     await update.message.reply_text(t('cleared_saved', user_lang))
 
 
+async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /export command - export all saved articles to a Markdown file."""
+    from .user_storage import get_saved_articles, get_user_language
+    from .translations import t
+    import io
+    from datetime import datetime
+
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+
+    # Send loading message
+    loading_msg = await update.message.reply_text(t('export_loading', user_lang), parse_mode='Markdown')
+
+    try:
+        # Fetch a large number of saved articles (limit 1000)
+        articles = get_saved_articles(telegram_id, limit=1000)
+
+        if not articles:
+            await loading_msg.edit_text(t('export_empty', user_lang), parse_mode='Markdown')
+            return
+
+        # Build the Markdown string
+        date_str = datetime.now(BAKU_TZ).strftime("%Y-%m-%d")
+        md_lines = [
+            f"# LensAI Saved Articles Export",
+            f"*Generated on {date_str}*",
+            "",
+            f"**Total articles:** {len(articles)}",
+            "---",
+            ""
+        ]
+
+        # Category emoji mapping for the export
+        cat_emoji = {
+            'ai': '🤖', 'security': '🔒', 'crypto': '💰', 'startups': '🚀',
+            'hardware': '💻', 'software': '📱', 'tech': '🔧'
+        }
+
+        for i, article in enumerate(articles, 1):
+            title = article.get('title', 'Untitled')
+            url = article.get('url', '')
+            category = article.get('category', 'tech')
+            saved_at = article.get('saved_at', '')
+            source = article.get('source', '')
+
+            emoji = cat_emoji.get(category, '🔧')
+
+            # Formatting saved_at nicely
+            date_formatted = ""
+            if saved_at:
+                try:
+                    # ISO string parsing
+                    dt = datetime.fromisoformat(saved_at.replace('Z', '+00:00'))
+                    date_formatted = dt.strftime("%Y-%m-%d %H:%M")
+                except ValueError:
+                    date_formatted = saved_at[:16]
+
+            # Title as header
+            md_lines.append(f"### {i}. {emoji} {title}")
+            md_lines.append(f"- **URL:** [Link]({url})" if url else "- **URL:** None")
+            if source:
+                md_lines.append(f"- **Source:** {source}")
+            md_lines.append(f"- **Category:** {category.capitalize()}")
+            if date_formatted:
+                md_lines.append(f"- **Saved at:** {date_formatted}")
+            md_lines.append("") # Empty line after each article
+
+        md_content = "\n".join(md_lines)
+
+        # Convert to bytes
+        file_bytes = md_content.encode('utf-8')
+        bio = io.BytesIO(file_bytes)
+        bio.name = f"lensai_export_{date_str}.md"
+
+        # Send the file
+        await update.message.reply_document(
+            document=bio,
+            caption=t('export_ready', user_lang)
+        )
+
+        # Delete the loading message
+        await loading_msg.delete()
+
+    except Exception as e:
+        print(f"Export error: {e}")
+        error_text = f"❌ Error: {str(e)[:100]}"
+        await loading_msg.edit_text(error_text)
+
 async def filter_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /filter command - filter saved articles by category."""
     from .user_storage import get_saved_articles, get_user_language
@@ -1607,6 +1695,7 @@ async def setup_bot_commands(application: Application):
         BotCommand("semsearch", "Semantic search saved"),
         BotCommand("filter", "Filter saved by category"),
         BotCommand("recap", "Weekly saved articles recap"),
+        BotCommand("export", "Export saved articles"),
         BotCommand("status", "View your settings"),
         BotCommand("language", "Change language"),
         BotCommand("sources", "Toggle news sources"),
@@ -1629,6 +1718,7 @@ async def setup_bot_commands(application: Application):
         BotCommand("semsearch", "Умный поиск"),
         BotCommand("filter", "Фильтр по категориям"),
         BotCommand("recap", "Еженедельная сводка"),
+        BotCommand("export", "Экспорт сохраненных статей"),
         BotCommand("status", "Настройки"),
         BotCommand("language", "Язык"),
         BotCommand("sources", "Источники новостей"),
@@ -1697,6 +1787,7 @@ def create_bot_application() -> Application:
     application.add_handler(CommandHandler("language", language_command))
     application.add_handler(CommandHandler("filter", filter_command))
     application.add_handler(CommandHandler("recap", recap_command))
+    application.add_handler(CommandHandler("export", export_command))
     application.add_handler(CommandHandler("share", share_command))
     application.add_handler(CommandHandler("trends", trends_command))
     application.add_handler(CommandHandler("timezone", timezone_command))
