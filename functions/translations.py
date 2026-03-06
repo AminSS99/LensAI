@@ -57,6 +57,7 @@ Use /settime to change it!""",
 • /saved - View all saved articles
 • /filter <category> - Filter by category (ai, security, crypto, startups, hardware, software, tech)
 • /recap - Weekly recap of saved articles
+• /export - Export saved articles to Markdown
 • /clear_saved - Clear all saved articles
 
 ⚙️ **Settings**
@@ -117,6 +118,9 @@ Use /sources to toggle sources""",
         'recap_empty': "📊 **Weekly Recap**\n\nNo articles saved this week. Start saving articles to see your recap!",
         'article_deleted': "🗑️ Article deleted!",
         'article_saved_single': "✅ Article saved! Category: {category}",
+        'export_loading': "⏳ Preparing your export...",
+        'export_ready': "📄 Here is your exported articles document!",
+        'export_empty': "📂 You have no saved articles to export.",
         
         # Category labels
         'cat_ai': "🤖 AI",
@@ -190,6 +194,7 @@ Use /sources to toggle sources""",
 • /saved - Просмотреть все сохранённые
 • /filter <категория> - Фильтр по категории (ai, security, crypto, startups, hardware, software, tech)
 • /recap - Недельный обзор сохранённых
+• /export - Экспортировать сохранённые статьи
 • /clear_saved - Очистить все сохранённые
 
 ⚙️ **Настройки**
@@ -250,6 +255,9 @@ _Работает локально - настройки сохранятся п�
         'recap_empty': "📊 **Недельный обзор**\n\nНет сохранённых статей за неделю. Начните сохранять!",
         'article_deleted': "🗑️ Статья удалена!",
         'article_saved_single': "✅ Статья сохранена! Категория: {category}",
+        'export_loading': "⏳ Подготавливаю экспорт...",
+        'export_ready': "📄 Вот ваш документ с сохранёнными статьями!",
+        'export_empty': "📂 У вас нет сохранённых статей для экспорта.",
         
         # Category labels
         'cat_ai': "🤖 ИИ",
