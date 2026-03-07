@@ -670,6 +670,61 @@ async def save_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(t('article_exists', user_lang))
 
 
+async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /export command - export saved articles as Markdown file."""
+    from .user_storage import get_saved_articles, get_user_language
+    from .translations import t
+    import io
+
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+    articles = get_saved_articles(telegram_id, limit=500)
+
+    if not articles:
+        await update.message.reply_text(t('export_empty', user_lang), parse_mode='Markdown')
+        return
+
+    cat_emoji = {
+        'ai': '🤖', 'security': '🔒', 'crypto': '💰', 'startups': '🚀',
+        'hardware': '💻', 'software': '📱', 'tech': '🔧'
+    }
+
+    # Build markdown content
+    md_lines = [f"# Saved Articles ({len(articles)})\n"]
+    for i, article in enumerate(articles, 1):
+        title = article.get('title', 'Untitled')
+        url = article.get('url', '')
+        source = article.get('source', '')
+        category = article.get('category', 'tech')
+        saved_at = article.get('saved_at', '')
+
+        emoji = cat_emoji.get(category, '🔧')
+        date_str = saved_at[:10] if saved_at else ''
+
+        md_lines.append(f"## {i}. {emoji} {title}")
+        if url:
+            md_lines.append(f"**URL:** {url}")
+        if source:
+            md_lines.append(f"**Source:** {source}")
+        if category:
+            md_lines.append(f"**Category:** {category}")
+        if date_str:
+            md_lines.append(f"**Date:** {date_str}")
+        md_lines.append("")  # Empty line
+
+    md_content = "\n".join(md_lines)
+
+    # Create in-memory file
+    file_bytes = io.BytesIO(md_content.encode('utf-8'))
+    file_bytes.name = "saved_articles.md"
+
+    await update.message.reply_document(
+        document=file_bytes,
+        caption=t('export_caption', user_lang),
+        parse_mode='Markdown'
+    )
+
+
 async def clear_saved_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /clear_saved command."""
     from .user_storage import clear_saved_articles, get_user_language
@@ -1603,6 +1658,7 @@ async def setup_bot_commands(application: Application):
         BotCommand("start", "Start the bot"),
         BotCommand("news", "Get AI news digest"),
         BotCommand("saved", "View saved articles"),
+        BotCommand("export", "Export saved articles"),
         BotCommand("search", "Search articles"),
         BotCommand("semsearch", "Semantic search saved"),
         BotCommand("filter", "Filter saved by category"),
@@ -1625,6 +1681,7 @@ async def setup_bot_commands(application: Application):
         BotCommand("start", "Запустить бота"),
         BotCommand("news", "Получить дайджест новостей"),
         BotCommand("saved", "Сохранённые статьи"),
+        BotCommand("export", "Экспорт сохранённых статей"),
         BotCommand("search", "Поиск статей"),
         BotCommand("semsearch", "Умный поиск"),
         BotCommand("filter", "Фильтр по категориям"),
@@ -1691,6 +1748,7 @@ def create_bot_application() -> Application:
     # New feature commands
     application.add_handler(CommandHandler("saved", saved_command))
     application.add_handler(CommandHandler("save", save_command))
+    application.add_handler(CommandHandler("export", export_command))
     application.add_handler(CommandHandler("clear_saved", clear_saved_command))
     application.add_handler(CommandHandler("clear", clear_saved_command))  # Alias for /clear_saved
     application.add_handler(CommandHandler("search", search_command))
