@@ -6,7 +6,8 @@ Fetches latest tech news from The Verge using their RSS feed.
 import httpx
 from typing import List, Dict, Any
 from datetime import datetime
-import xml.etree.ElementTree as ET
+# Security: Use defusedxml to prevent XXE and Billion Laughs attacks when parsing untrusted RSS feeds
+import defusedxml.ElementTree as ET
 
 try:
     from ..resilience import retry_with_backoff

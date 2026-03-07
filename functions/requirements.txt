@@ -7,3 +7,4 @@ beautifulsoup4==4.*
 feedparser==6.*
 openai==1.*
 tzdata
+defusedxml==0.*
