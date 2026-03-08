@@ -27,6 +27,10 @@ MESSAGES = {
         'article_saved': "✅ Article saved! View with /saved",
         'article_exists': "ℹ️ Article already saved!",
         'cleared_saved': "🗑️ All saved articles cleared!",
+        'export_preparing': "⏳ **Preparing your export...**\n\nGathering all your saved articles...",
+        'export_empty': "🔖 **No articles to export!**\n\nYou haven't saved any articles yet. Use /save to add some first.",
+        'export_caption': "📚 **Your Saved Articles**\n\nHere is your export containing {count} articles.\nUse this file to read them later in any Markdown viewer or note-taking app.",
+
         'ai_error': "❌ Sorry, I couldn't process that: {error}",
         'refresh_limit': "✅ **You're all caught up!**\n\nI've generated 2 digests for you and you've seen the top news. Check back later for more updates!",
         
@@ -58,6 +62,7 @@ Use /settime to change it!""",
 • /filter <category> - Filter by category (ai, security, crypto, startups, hardware, software, tech)
 • /recap - Weekly recap of saved articles
 • /clear_saved - Clear all saved articles
+• /export - Export articles as Markdown file
 
 ⚙️ **Settings**
 • /schedule - Set daily digest time
@@ -160,6 +165,10 @@ Use /sources to toggle sources""",
         'article_saved': "✅ Статья сохранена! Смотреть: /saved",
         'article_exists': "ℹ️ Статья уже сохранена!",
         'cleared_saved': "🗑️ Все сохранённые статьи удалены!",
+        'export_preparing': "⏳ **Подготовка экспорта...**\n\nСобираю ваши сохранённые статьи...",
+        'export_empty': "🔖 **Нечего экспортировать!**\n\nУ вас пока нет сохранённых статей. Сначала добавьте их с помощью /save.",
+        'export_caption': "📚 **Ваши сохранённые статьи**\n\nВот ваш экспорт, содержащий {count} статей.\nИспользуйте этот файл для чтения в любом Markdown-приложении или заметках.",
+
         'ai_error': "❌ Не удалось обработать запрос: {error}",
         'refresh_limit': "✅ **Вы узнали всё главное!**\n\nЯ уже сделал для вас 2 уникальных дайджеста. Заходите позже за новыми новостями!",
         
@@ -191,6 +200,7 @@ Use /sources to toggle sources""",
 • /filter <категория> - Фильтр по категории (ai, security, crypto, startups, hardware, software, tech)
 • /recap - Недельный обзор сохранённых
 • /clear_saved - Очистить все сохранённые
+• /export - Экспорт статей в файл Markdown
 
 ⚙️ **Настройки**
 • /schedule - Время ежедневного дайджеста

@@ -670,6 +670,89 @@ async def save_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(t('article_exists', user_lang))
 
 
+
+async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /export command - export saved articles as markdown."""
+    from .user_storage import get_saved_articles, get_user_language
+    from .translations import t
+    import io
+    from datetime import datetime
+
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+
+    # Send waiting message
+    await update.message.reply_text(t('export_preparing', user_lang), parse_mode='Markdown')
+
+    # Fetch articles (up to 1000)
+    articles = get_saved_articles(telegram_id, limit=1000)
+
+    if not articles:
+        await update.message.reply_text(t('export_empty', user_lang), parse_mode='Markdown')
+        return
+
+    # Group by category
+    by_category = {}
+    for article in articles:
+        cat = article.get('category', 'tech')
+        if cat not in by_category:
+            by_category[cat] = []
+        by_category[cat].append(article)
+
+    # Build markdown content
+    md_lines = []
+    md_lines.append("# LensAI - Saved Articles Export")
+    md_lines.append(f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    md_lines.append(f"Total articles: {len(articles)}")
+    md_lines.append("")
+
+    cat_emoji = {
+        'ai': '🤖', 'security': '🔒', 'crypto': '💰', 'startups': '🚀',
+        'hardware': '💻', 'software': '📱', 'tech': '🔧'
+    }
+
+    for cat, items in sorted(by_category.items()):
+        emoji = cat_emoji.get(cat, '🔧')
+        cat_label = t(f'cat_{cat}', user_lang)
+        md_lines.append(f"## {emoji} {cat_label}")
+        md_lines.append("")
+
+        for item in items:
+            title = item.get('title', 'Untitled')
+            url = item.get('url', '')
+            saved_at = item.get('saved_at', '')[:10]
+            source = item.get('source', '')
+
+            if url.startswith('http'):
+                line = f"- [{title}]({url})"
+            else:
+                line = f"- {title}"
+
+            meta = []
+            if source: meta.append(f"Source: {source}")
+            if saved_at: meta.append(f"Saved: {saved_at}")
+
+            if meta:
+                line += f" ({', '.join(meta)})"
+            md_lines.append(line)
+        md_lines.append("")
+
+    md_text = chr(10).join(md_lines)
+
+    # Create file-like object
+    bio = io.BytesIO(md_text.encode('utf-8'))
+    bio.name = f"lensai_export_{datetime.now().strftime('%Y%m%d')}.md"
+
+    # Send document
+    try:
+        await update.message.reply_document(
+            document=bio,
+            caption=t('export_caption', user_lang, count=len(articles)),
+            parse_mode='Markdown'
+        )
+    except Exception as e:
+        await update.message.reply_text(f"Error exporting: {e}")
+
 async def clear_saved_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /clear_saved command."""
     from .user_storage import clear_saved_articles, get_user_language
@@ -1693,6 +1776,7 @@ def create_bot_application() -> Application:
     application.add_handler(CommandHandler("save", save_command))
     application.add_handler(CommandHandler("clear_saved", clear_saved_command))
     application.add_handler(CommandHandler("clear", clear_saved_command))  # Alias for /clear_saved
+    application.add_handler(CommandHandler("export", export_command))
     application.add_handler(CommandHandler("search", search_command))
     application.add_handler(CommandHandler("language", language_command))
     application.add_handler(CommandHandler("filter", filter_command))
