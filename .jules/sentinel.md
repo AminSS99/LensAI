@@ -1,0 +1,4 @@
+## 2025-03-08 - Fix XXE and Billion Laughs vulnerabilities in XML Parsing
+**Vulnerability:** Found `xml.etree.ElementTree` being used to parse untrusted RSS/XML feeds in scrapers (`theverge.py` and `producthunt.py`). This standard library module is vulnerable to XML External Entity (XXE) and billion laughs attacks, allowing denial of service or local file inclusion.
+**Learning:** Python's default `xml.etree` is unsafe for parsing any XML data from third-party sources (like RSS feeds). This is a common pitfall because the standard library documentation is sometimes overlooked.
+**Prevention:** Always use `defusedxml.ElementTree` instead of `xml.etree.ElementTree` when parsing any XML or RSS data that originates outside of the application's trusted boundaries. Make sure `defusedxml` is in the dependency list.
