@@ -670,6 +670,51 @@ async def save_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(t('article_exists', user_lang))
 
 
+async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /export command - send a document with all saved articles."""
+    from .user_storage import get_saved_articles, get_user_language
+    from .translations import t
+    import io
+
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+    articles = get_saved_articles(telegram_id, limit=1000)
+
+    if not articles:
+        await update.message.reply_text(t('export_empty', user_lang), parse_mode='Markdown')
+        return
+
+    # Build text file content
+    content_lines = []
+    content_lines.append(f"# {t('export_title', user_lang)}")
+    content_lines.append(f"Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC\n")
+
+    for idx, article in enumerate(articles, 1):
+        title = article.get('title', 'Untitled')
+        url = article.get('url', '')
+        category = article.get('category', 'tech')
+        saved_at = article.get('saved_at', '')[:10]
+
+        content_lines.append(f"## {idx}. {title}")
+        content_lines.append(f"URL: {url}")
+        content_lines.append(f"Category: {category}")
+        if saved_at:
+            content_lines.append(f"Saved: {saved_at}")
+        content_lines.append("")
+
+    file_content = "\n".join(content_lines)
+
+    # Create in-memory file
+    file_buffer = io.BytesIO(file_content.encode('utf-8'))
+    file_buffer.name = "lensai_saved_articles.md"
+
+    await update.message.reply_document(
+        document=file_buffer,
+        caption=t('export_success', user_lang, count=len(articles)),
+        parse_mode='Markdown'
+    )
+
+
 async def clear_saved_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /clear_saved command."""
     from .user_storage import clear_saved_articles, get_user_language
@@ -1607,6 +1652,7 @@ async def setup_bot_commands(application: Application):
         BotCommand("semsearch", "Semantic search saved"),
         BotCommand("filter", "Filter saved by category"),
         BotCommand("recap", "Weekly saved articles recap"),
+        BotCommand("export", "Export saved articles"),
         BotCommand("status", "View your settings"),
         BotCommand("language", "Change language"),
         BotCommand("sources", "Toggle news sources"),
@@ -1629,6 +1675,7 @@ async def setup_bot_commands(application: Application):
         BotCommand("semsearch", "Умный поиск"),
         BotCommand("filter", "Фильтр по категориям"),
         BotCommand("recap", "Еженедельная сводка"),
+        BotCommand("export", "Экспорт сохранённых статей"),
         BotCommand("status", "Настройки"),
         BotCommand("language", "Язык"),
         BotCommand("sources", "Источники новостей"),
@@ -1693,6 +1740,7 @@ def create_bot_application() -> Application:
     application.add_handler(CommandHandler("save", save_command))
     application.add_handler(CommandHandler("clear_saved", clear_saved_command))
     application.add_handler(CommandHandler("clear", clear_saved_command))  # Alias for /clear_saved
+    application.add_handler(CommandHandler("export", export_command))
     application.add_handler(CommandHandler("search", search_command))
     application.add_handler(CommandHandler("language", language_command))
     application.add_handler(CommandHandler("filter", filter_command))
