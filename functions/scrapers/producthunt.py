@@ -6,7 +6,9 @@ Fetches trending products from Product Hunt RSS feed.
 import httpx
 from typing import List, Dict, Any
 from datetime import datetime
-import xml.etree.ElementTree as ET
+# Using defusedxml to prevent XXE (XML External Entity) and Billion Laughs vulnerabilities
+import defusedxml.ElementTree as ET
+from xml.etree.ElementTree import ParseError
 from bs4 import BeautifulSoup
 
 
@@ -114,8 +116,13 @@ def fetch_producthunt(limit: int = 10) -> List[Dict[str, Any]]:
                 for entry in entries[:limit]:
                     title = entry.find('atom:title', atom_ns)
                     link = entry.find('atom:link', atom_ns)
-                    summary = entry.find('atom:summary', atom_ns) or entry.find('atom:content', atom_ns)
-                    published = entry.find('atom:published', atom_ns) or entry.find('atom:updated', atom_ns)
+                    summary = entry.find('atom:summary', atom_ns)
+                    if summary is None:
+                        summary = entry.find('atom:content', atom_ns)
+
+                    published = entry.find('atom:published', atom_ns)
+                    if published is None:
+                        published = entry.find('atom:updated', atom_ns)
 
                     if title is None or link is None:
                         continue
@@ -140,7 +147,7 @@ def fetch_producthunt(limit: int = 10) -> List[Dict[str, Any]]:
             print(f"Product Hunt: Fetched {len(products)} products")
             return products
             
-    except ET.ParseError as e:
+    except ParseError as e:
         print(f"Product Hunt XML parse error: {e}")
         return []
     except Exception as e:
