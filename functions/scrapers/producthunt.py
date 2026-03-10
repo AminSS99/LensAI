@@ -6,7 +6,8 @@ Fetches trending products from Product Hunt RSS feed.
 import httpx
 from typing import List, Dict, Any
 from datetime import datetime
-import xml.etree.ElementTree as ET
+from defusedxml import ElementTree as ET
+from defusedxml.common import DefusedXmlException
 from bs4 import BeautifulSoup
 
 
@@ -140,7 +141,7 @@ def fetch_producthunt(limit: int = 10) -> List[Dict[str, Any]]:
             print(f"Product Hunt: Fetched {len(products)} products")
             return products
             
-    except ET.ParseError as e:
+    except (ET.ParseError, DefusedXmlException) as e:
         print(f"Product Hunt XML parse error: {e}")
         return []
     except Exception as e:

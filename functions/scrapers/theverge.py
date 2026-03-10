@@ -6,7 +6,7 @@ Fetches latest tech news from The Verge using their RSS feed.
 import httpx
 from typing import List, Dict, Any
 from datetime import datetime
-import xml.etree.ElementTree as ET
+from defusedxml import ElementTree as ET
 
 try:
     from ..resilience import retry_with_backoff
