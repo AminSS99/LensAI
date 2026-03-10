@@ -183,8 +183,35 @@ def get_saved_articles(telegram_id: int, limit: int = 10, category: str = None) 
     
     if category:
         articles = [a for a in articles if a.get('category', 'tech') == category]
-        
+
     return list(reversed(articles[-limit:]))
+
+
+def get_all_saved_articles(telegram_id: int, category: str = None) -> List[Dict[str, Any]]:
+    """Get all saved articles for a user from Firestore (or local)."""
+    db = get_firestore_client()
+    if db:
+        try:
+            from google.cloud import firestore
+            from google.cloud.firestore_v1.base_query import FieldFilter
+
+            query = db.collection('users').document(str(telegram_id)).collection('saved_articles')
+
+            if category:
+                query = query.where(filter=FieldFilter('category', '==', category))
+
+            docs = query.order_by('saved_at', direction=firestore.Query.DESCENDING).stream()
+            return [doc.to_dict() for doc in docs]
+        except Exception as e:
+            print(f"Firestore get all error: {e}")
+
+    data = _load_local_data(telegram_id)
+    articles = data.get('saved_articles', [])
+
+    if category:
+        articles = [a for a in articles if a.get('category', 'tech') == category]
+
+    return list(reversed(articles))
 
 
 def delete_saved_article(telegram_id: int, url: str) -> bool:

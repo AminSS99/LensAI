@@ -670,6 +670,63 @@ async def save_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(t('article_exists', user_lang))
 
 
+async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /export command - export saved articles as a Markdown file."""
+    from .translations import t
+    from .user_storage import get_all_saved_articles, get_user_language
+    import io
+
+    def _clean_export_value(value) -> str:
+        if value is None:
+            return ""
+        if hasattr(value, "isoformat"):
+            value = value.isoformat()
+        return str(value).replace("\r", " ").replace("\n", " ").strip()
+
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+    articles = get_all_saved_articles(telegram_id)
+
+    if not articles:
+        await update.message.reply_text(t('export_empty', user_lang), parse_mode='Markdown')
+        return
+
+    lines = [
+        "# LensAI Saved Articles",
+        "",
+        f"Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}",
+        f"Total articles: {len(articles)}",
+        "",
+    ]
+
+    for index, article in enumerate(articles, 1):
+        title = _clean_export_value(article.get('title')) or "Untitled"
+        url = _clean_export_value(article.get('url'))
+        source = _clean_export_value(article.get('source'))
+        category = article.get('category', 'tech') or 'tech'
+        category_label = _clean_export_value(t(f'cat_{category}', user_lang))
+        saved_at = _clean_export_value(article.get('saved_at'))
+
+        lines.append(f"## {index}. {title}")
+        lines.append(f"- Category: {category_label}")
+        if source:
+            lines.append(f"- Source: {source}")
+        if saved_at:
+            lines.append(f"- Saved: {saved_at}")
+        if url:
+            lines.append(f"- URL: <{url}>")
+        lines.append("")
+
+    document = io.BytesIO("\n".join(lines).encode('utf-8'))
+    document.name = f"lensai_saved_articles_{datetime.now().strftime('%Y%m%d')}.md"
+
+    await update.message.reply_document(
+        document=document,
+        caption=t('export_caption', user_lang, count=len(articles)),
+        parse_mode='Markdown'
+    )
+
+
 async def clear_saved_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /clear_saved command."""
     from .user_storage import clear_saved_articles, get_user_language
@@ -1603,6 +1660,7 @@ async def setup_bot_commands(application: Application):
         BotCommand("start", "Start the bot"),
         BotCommand("news", "Get AI news digest"),
         BotCommand("saved", "View saved articles"),
+        BotCommand("export", "Export saved articles"),
         BotCommand("search", "Search articles"),
         BotCommand("semsearch", "Semantic search saved"),
         BotCommand("filter", "Filter saved by category"),
@@ -1625,6 +1683,7 @@ async def setup_bot_commands(application: Application):
         BotCommand("start", "Запустить бота"),
         BotCommand("news", "Получить дайджест новостей"),
         BotCommand("saved", "Сохранённые статьи"),
+        BotCommand("export", "Экспорт статей"),
         BotCommand("search", "Поиск статей"),
         BotCommand("semsearch", "Умный поиск"),
         BotCommand("filter", "Фильтр по категориям"),
@@ -1693,6 +1752,7 @@ def create_bot_application() -> Application:
     application.add_handler(CommandHandler("save", save_command))
     application.add_handler(CommandHandler("clear_saved", clear_saved_command))
     application.add_handler(CommandHandler("clear", clear_saved_command))  # Alias for /clear_saved
+    application.add_handler(CommandHandler("export", export_command))
     application.add_handler(CommandHandler("search", search_command))
     application.add_handler(CommandHandler("language", language_command))
     application.add_handler(CommandHandler("filter", filter_command))

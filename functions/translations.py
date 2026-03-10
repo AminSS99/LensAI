@@ -27,6 +27,8 @@ MESSAGES = {
         'article_saved': "✅ Article saved! View with /saved",
         'article_exists': "ℹ️ Article already saved!",
         'cleared_saved': "🗑️ All saved articles cleared!",
+        'export_empty': "🔖 **No saved articles to export yet!**\n\nSave an article first, then try `/export` again.",
+        'export_caption': "📚 **Saved Articles Export**\n\nExported {count} saved articles as a Markdown file.",
         'ai_error': "❌ Sorry, I couldn't process that: {error}",
         'refresh_limit': "✅ **You're all caught up!**\n\nI've generated 2 digests for you and you've seen the top news. Check back later for more updates!",
         
@@ -55,6 +57,7 @@ Use /settime to change it!""",
 🔖 **Saved Articles**
 • /save <url> - Save an article
 • /saved - View all saved articles
+• /export - Export saved articles as a Markdown file
 • /filter <category> - Filter by category (ai, security, crypto, startups, hardware, software, tech)
 • /recap - Weekly recap of saved articles
 • /clear_saved - Clear all saved articles
@@ -160,6 +163,8 @@ Use /sources to toggle sources""",
         'article_saved': "✅ Статья сохранена! Смотреть: /saved",
         'article_exists': "ℹ️ Статья уже сохранена!",
         'cleared_saved': "🗑️ Все сохранённые статьи удалены!",
+        'export_empty': "🔖 **Пока нечего экспортировать!**\n\nСначала сохраните статью, затем попробуйте `/export` снова.",
+        'export_caption': "📚 **Экспорт сохранённых статей**\n\nЭкспортировано {count} сохранённых статей в файл Markdown.",
         'ai_error': "❌ Не удалось обработать запрос: {error}",
         'refresh_limit': "✅ **Вы узнали всё главное!**\n\nЯ уже сделал для вас 2 уникальных дайджеста. Заходите позже за новыми новостями!",
         
@@ -188,6 +193,7 @@ Use /sources to toggle sources""",
 🔖 **Сохранённые статьи**
 • /save <ссылка> - Сохранить статью
 • /saved - Просмотреть все сохранённые
+• /export - Экспорт сохранённых статей в Markdown
 • /filter <категория> - Фильтр по категории (ai, security, crypto, startups, hardware, software, tech)
 • /recap - Недельный обзор сохранённых
 • /clear_saved - Очистить все сохранённые
