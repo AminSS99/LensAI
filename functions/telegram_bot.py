@@ -681,6 +681,46 @@ async def clear_saved_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     await update.message.reply_text(t('cleared_saved', user_lang))
 
 
+async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /export command - export saved articles as CSV."""
+    from .user_storage import get_all_saved_articles, get_user_language
+    from .translations import t
+    import csv
+    import io
+
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+    articles = get_all_saved_articles(telegram_id)
+
+    if not articles:
+        await update.message.reply_text(t('no_saved', user_lang), parse_mode='Markdown')
+        return
+
+    # Create CSV in memory
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['Title', 'URL', 'Source', 'Category', 'Saved At'])
+
+    for article in articles:
+        writer.writerow([
+            article.get('title', 'Untitled'),
+            article.get('url', ''),
+            article.get('source', ''),
+            article.get('category', ''),
+            article.get('saved_at', '')
+        ])
+
+    # Convert to BytesIO for sending
+    csv_bytes = io.BytesIO(output.getvalue().encode('utf-8'))
+    csv_bytes.name = 'saved_articles.csv'
+
+    await update.message.reply_document(
+        document=csv_bytes,
+        filename='saved_articles.csv',
+        caption=t('export_caption', user_lang)
+    )
+
+
 async def filter_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /filter command - filter saved articles by category."""
     from .user_storage import get_saved_articles, get_user_language
@@ -1607,6 +1647,7 @@ async def setup_bot_commands(application: Application):
         BotCommand("semsearch", "Semantic search saved"),
         BotCommand("filter", "Filter saved by category"),
         BotCommand("recap", "Weekly saved articles recap"),
+        BotCommand("export", "Export saved articles"),
         BotCommand("status", "View your settings"),
         BotCommand("language", "Change language"),
         BotCommand("sources", "Toggle news sources"),
@@ -1629,6 +1670,7 @@ async def setup_bot_commands(application: Application):
         BotCommand("semsearch", "Умный поиск"),
         BotCommand("filter", "Фильтр по категориям"),
         BotCommand("recap", "Еженедельная сводка"),
+        BotCommand("export", "Экспорт статей"),
         BotCommand("status", "Настройки"),
         BotCommand("language", "Язык"),
         BotCommand("sources", "Источники новостей"),
@@ -1697,6 +1739,7 @@ def create_bot_application() -> Application:
     application.add_handler(CommandHandler("language", language_command))
     application.add_handler(CommandHandler("filter", filter_command))
     application.add_handler(CommandHandler("recap", recap_command))
+    application.add_handler(CommandHandler("export", export_command))
     application.add_handler(CommandHandler("share", share_command))
     application.add_handler(CommandHandler("trends", trends_command))
     application.add_handler(CommandHandler("timezone", timezone_command))

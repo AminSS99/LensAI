@@ -57,6 +57,7 @@ Use /settime to change it!""",
 • /saved - View all saved articles
 • /filter <category> - Filter by category (ai, security, crypto, startups, hardware, software, tech)
 • /recap - Weekly recap of saved articles
+• /export - Export saved articles to CSV
 • /clear_saved - Clear all saved articles
 
 ⚙️ **Settings**
@@ -115,6 +116,7 @@ Use /sources to toggle sources""",
         'filter_empty': "📂 No articles in category **{category}**.\n\nSave some articles first!",
         'recap_header': "📊 **Weekly Recap**\n_Your top saved articles this week:_\n\n",
         'recap_empty': "📊 **Weekly Recap**\n\nNo articles saved this week. Start saving articles to see your recap!",
+        'export_caption': "📁 **Your Saved Articles Export**\n\nHere is your full list of saved articles in CSV format.",
         'article_deleted': "🗑️ Article deleted!",
         'article_saved_single': "✅ Article saved! Category: {category}",
         
@@ -190,6 +192,7 @@ Use /sources to toggle sources""",
 • /saved - Просмотреть все сохранённые
 • /filter <категория> - Фильтр по категории (ai, security, crypto, startups, hardware, software, tech)
 • /recap - Недельный обзор сохранённых
+• /export - Экспорт сохранённых статей (CSV)
 • /clear_saved - Очистить все сохранённые
 
 ⚙️ **Настройки**
@@ -248,6 +251,7 @@ _Работает локально - настройки сохранятся п�
         'filter_empty': "📂 Нет статей в категории **{category}**.\n\nСначала сохраните статьи!",
         'recap_header': "📊 **Недельный обзор**\n_Ваши топ статьи за эту неделю:_\n\n",
         'recap_empty': "📊 **Недельный обзор**\n\nНет сохранённых статей за неделю. Начните сохранять!",
+        'export_caption': "📁 **Экспорт сохранённых статей**\n\nВот полный список ваших сохранённых статей в формате CSV.",
         'article_deleted': "🗑️ Статья удалена!",
         'article_saved_single': "✅ Статья сохранена! Категория: {category}",
         

@@ -187,6 +187,30 @@ def get_saved_articles(telegram_id: int, limit: int = 10, category: str = None) 
     return list(reversed(articles[-limit:]))
 
 
+def get_all_saved_articles(telegram_id: int) -> List[Dict[str, Any]]:
+    """Get all of a user's saved articles from Firestore (or local) without limit."""
+    db = get_firestore_client()
+    if db:
+        try:
+            from google.cloud import firestore
+
+            query = db.collection('users').document(str(telegram_id)).collection('saved_articles')
+
+            # Order by saved_at desc
+            docs = query.order_by('saved_at', direction=firestore.Query.DESCENDING).stream()
+
+            return [doc.to_dict() for doc in docs]
+        except Exception as e:
+            print(f"Firestore get all error: {e}")
+            # Fall through
+
+    # Fallback to local
+    data = _load_local_data(telegram_id)
+    articles = data.get('saved_articles', [])
+
+    return list(reversed(articles))
+
+
 def delete_saved_article(telegram_id: int, url: str) -> bool:
     """Delete a saved article by URL."""
     db = get_firestore_client()
