@@ -134,7 +134,7 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_lang = get_user_language(telegram_id)
 
     # Resolve sources first so cache is language+source scoped.
-    sources = ['hackernews', 'techcrunch', 'ai_blogs', 'theverge', 'github']
+    sources = ['hackernews', 'techcrunch', 'ai_blogs', 'theverge', 'github', 'producthunt']
     try:
         from .database import get_user
         user = get_user(telegram_id)
@@ -218,6 +218,7 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         from .scrapers.ai_blogs import fetch_ai_blogs
         from .scrapers.theverge import fetch_theverge
         from .scrapers.github_trending import fetch_github_trending
+        from .scrapers.producthunt import fetch_producthunt
         from .summarizer import summarize_news
         
         # Source list already resolved above (used in cache key as well).
@@ -235,6 +236,8 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             tasks.append(asyncio.to_thread(fetch_theverge, 8))
         if 'github' in sources:
             tasks.append(asyncio.to_thread(fetch_github_trending, 8))
+        if 'producthunt' in sources:
+            tasks.append(asyncio.to_thread(fetch_producthunt, 8))
             
         results = await asyncio.gather(*tasks, return_exceptions=True)
         
@@ -431,7 +434,7 @@ async def sources_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_lang = get_user_language(telegram_id)
     
     # Try to get user preferences from database, use defaults if not available
-    sources = ['hackernews', 'techcrunch', 'ai_blogs', 'theverge', 'github']  # Default all enabled
+    sources = ['hackernews', 'techcrunch', 'ai_blogs', 'theverge', 'github', 'producthunt']  # Default all enabled
     try:
         from .database import get_user, create_or_update_user
         user = get_user(telegram_id)
@@ -462,6 +465,10 @@ async def sources_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton(
             f"{'✅' if 'github' in sources else '❌'} GitHub Trending",
             callback_data='toggle_github'
+        )],
+        [InlineKeyboardButton(
+            f"{'✅' if 'producthunt' in sources else '❌'} Product Hunt",
+            callback_data='toggle_producthunt'
         )],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -511,6 +518,10 @@ async def toggle_source_callback(update: Update, context: ContextTypes.DEFAULT_T
             f"{'✅' if 'github' in new_sources else '❌'} GitHub Trending",
             callback_data='toggle_github'
         )],
+        [InlineKeyboardButton(
+            f"{'✅' if 'producthunt' in new_sources else '❌'} Product Hunt",
+            callback_data='toggle_producthunt'
+        )],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
@@ -549,6 +560,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         'ai_blogs': 'AI Blogs',
         'theverge': 'The Verge',
         'github': 'GitHub Trending',
+        'producthunt': 'Product Hunt',
     }
     
     sources_text = '\n'.join([f"  вЂў {source_names.get(s, s)}" for s in sources])
@@ -1331,7 +1343,7 @@ async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     telegram_id = update.effective_user.id
     user_lang = get_user_language(telegram_id)
     # Resolve enabled sources for scoped cache invalidation.
-    sources = ['hackernews', 'techcrunch', 'ai_blogs', 'theverge', 'github']
+    sources = ['hackernews', 'techcrunch', 'ai_blogs', 'theverge', 'github', 'producthunt']
     try:
         from .database import get_user
         user = get_user(telegram_id)
@@ -1364,6 +1376,7 @@ async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         from .scrapers.ai_blogs import fetch_ai_blogs
         from .scrapers.theverge import fetch_theverge
         from .scrapers.github_trending import fetch_github_trending
+        from .scrapers.producthunt import fetch_producthunt
         from .summarizer import summarize_news
         tasks = []
         if 'hackernews' in sources:
@@ -1376,6 +1389,8 @@ async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             tasks.append(asyncio.to_thread(fetch_theverge, 10))
         if 'github' in sources:
             tasks.append(asyncio.to_thread(fetch_github_trending, 10))
+        if 'producthunt' in sources:
+            tasks.append(asyncio.to_thread(fetch_producthunt, 10))
         results = await asyncio.gather(*tasks, return_exceptions=True)
         all_news = []
         for res in results:
