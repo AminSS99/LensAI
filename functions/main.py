@@ -165,6 +165,7 @@ async def process_scheduled_digest(target_time: str = None) -> dict:
     from .scrapers.ai_blogs import fetch_ai_blogs
     from .scrapers.theverge import fetch_theverge
     from .scrapers.github_trending import fetch_github_trending
+    from .scrapers.producthunt import fetch_producthunt
     from .summarizer import summarize_news
     
     if target_time:
@@ -191,6 +192,7 @@ async def process_scheduled_digest(target_time: str = None) -> dict:
     tasks.append(fetch_ai_blogs(3))
     tasks.append(asyncio.to_thread(fetch_theverge, 5))
     tasks.append(asyncio.to_thread(fetch_github_trending, 5))
+    tasks.append(asyncio.to_thread(fetch_producthunt, 8))
     
     results = await asyncio.gather(*tasks, return_exceptions=True)
     
@@ -362,6 +364,7 @@ def fetch_news(request: Request):
     from .scrapers.ai_blogs import fetch_ai_blogs
     from .scrapers.theverge import fetch_theverge
     from .scrapers.github_trending import fetch_github_trending
+    from .scrapers.producthunt import fetch_producthunt
     from .summarizer import summarize_news
     
     try:
@@ -385,6 +388,9 @@ def fetch_news(request: Request):
             
             if 'all' in sources_arg or 'github' in sources_arg:
                 tasks.append(asyncio.to_thread(fetch_github_trending, 5))
+
+            if 'all' in sources_arg or 'producthunt' in sources_arg:
+                tasks.append(asyncio.to_thread(fetch_producthunt, 5))
                 
             results = await asyncio.gather(*tasks, return_exceptions=True)
             
