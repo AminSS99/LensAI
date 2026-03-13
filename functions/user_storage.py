@@ -516,10 +516,9 @@ def update_refresh_session(telegram_id: int, updates: Dict[str, Any]):
 
 def get_article_hash(item: Dict[str, Any]) -> str:
     """Generate a consistent hash for an article item."""
-    import hashlib
     # Use URL if available, otherwise title
     key = item.get('url', item.get('title', ''))
-    return hashlib.md5(key.encode('utf-8')).hexdigest()
+    return stable_hash(key)
 
 
 # ============ TEMP DIGEST STORAGE ============
