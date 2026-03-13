@@ -575,19 +575,30 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ============ SAVED ARTICLES ============
 
-async def saved_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /saved command - show saved articles with delete buttons."""
-    from .user_storage import get_saved_articles, get_user_language
+async def _render_saved_page(telegram_id: int, user_lang: str, page: int = 0) -> tuple:
+    """Helper to render a specific page of saved articles."""
+    from .user_storage import get_all_saved_articles
     from .translations import t
     import hashlib
+    import math
     
-    telegram_id = update.effective_user.id
-    user_lang = get_user_language(telegram_id)
-    articles = get_saved_articles(telegram_id, limit=10)
+    all_articles = get_all_saved_articles(telegram_id)
     
-    if not articles:
-        await update.message.reply_text(t('no_saved', user_lang), parse_mode='Markdown')
-        return
+    if not all_articles:
+        return t('no_saved', user_lang), None
+
+    per_page = 10
+    total_pages = math.ceil(len(all_articles) / per_page)
+
+    # Ensure page is within bounds
+    if page < 0:
+        page = 0
+    elif page >= total_pages and total_pages > 0:
+        page = total_pages - 1
+
+    start_idx = page * per_page
+    end_idx = start_idx + per_page
+    articles_page = all_articles[start_idx:end_idx]
     
     # Category emoji mapping
     cat_emoji = {
@@ -598,24 +609,18 @@ async def saved_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = t('saved_header', user_lang)
     keyboard = []
     
-    for i, article in enumerate(articles, 1):
+    for i, article in enumerate(articles_page, start_idx + 1):
         title = article.get('title', 'Untitled')[:50]
         url = article.get('url', '')
-        source = article.get('source', '')
         category = article.get('category', 'tech')
         saved_at = article.get('saved_at', '')
         
-        # Get category emoji
         emoji = cat_emoji.get(category, '🔧')
-        
-        # Format date
         date_str = saved_at[:10] if saved_at else ''
         
-        # Escape title for Markdown security
         from .security_utils import escape_markdown_v1
         safe_title = escape_markdown_v1(title)
         
-        # Build message line
         if url.startswith('http'):
             message += f"{i}. {emoji} [{safe_title}]({url})"
         else:
@@ -625,13 +630,35 @@ async def saved_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             message += f" `{date_str}`"
         message += "\n"
         
-        # Create delete button - use URL hash for unique ID
         url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
         delete_label = "🗑️"
         keyboard.append([InlineKeyboardButton(f"{delete_label} {i}. {title[:25]}...", callback_data=f"del_{url_hash}")])
     
     message += t('saved_footer', user_lang)
+    message += f"\n\n_Page {page + 1} of {total_pages}_"
+
+    # Add navigation buttons if needed
+    nav_buttons = []
+    if page > 0:
+        nav_buttons.append(InlineKeyboardButton("⬅️", callback_data=f"saved_page_{page - 1}"))
+    if page < total_pages - 1:
+        nav_buttons.append(InlineKeyboardButton("➡️", callback_data=f"saved_page_{page + 1}"))
+
+    if nav_buttons:
+        keyboard.append(nav_buttons)
+
     reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
+    return message, reply_markup
+
+
+async def saved_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /saved command - show saved articles with pagination and delete buttons."""
+    from .user_storage import get_user_language
+
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+
+    message, reply_markup = await _render_saved_page(telegram_id, user_lang, 0)
     
     try:
         await update.message.reply_text(
@@ -642,6 +669,39 @@ async def saved_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     except Exception:
         await update.message.reply_text(message, disable_web_page_preview=True, reply_markup=reply_markup)
+
+
+async def saved_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle pagination button press for saved articles."""
+    from .user_storage import get_user_language
+
+    query = update.callback_query
+    await query.answer()
+
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+
+    try:
+        page = int(query.data.replace('saved_page_', ''))
+    except ValueError:
+        page = 0
+
+    message, reply_markup = await _render_saved_page(telegram_id, user_lang, page)
+
+    try:
+        await query.edit_message_text(
+            message,
+            parse_mode='Markdown',
+            disable_web_page_preview=True,
+            reply_markup=reply_markup
+        )
+    except Exception as e:
+        if "Message is not modified" not in str(e):
+            await query.edit_message_text(
+                message,
+                disable_web_page_preview=True,
+                reply_markup=reply_markup
+            )
 
 
 async def save_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1774,6 +1834,7 @@ def create_bot_application() -> Application:
     application.add_handler(CallbackQueryHandler(save_digest_callback, pattern='^save_digest_'))
     application.add_handler(CallbackQueryHandler(why_digest_callback, pattern='^why_digest_'))
     application.add_handler(CallbackQueryHandler(delete_article_callback, pattern='^del_'))
+    application.add_handler(CallbackQueryHandler(saved_page_callback, pattern='^saved_page_'))
     
     # Add message handler for buttons and Q&A (handles any text that isn't a command)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
