@@ -7,6 +7,7 @@ import os
 import re
 import asyncio
 from datetime import datetime, timedelta, timezone
+from functions.security_utils import stable_hash
 from zoneinfo import ZoneInfo
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -166,8 +167,7 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         header = t('cached_news', user_lang, timestamp=timestamp_str)
         
         # Generate digest ID for buttons
-        import hashlib
-        digest_id = hashlib.md5(cached_digest[:100].encode()).hexdigest()[:8]
+        digest_id = stable_hash(cached_digest[:100])[:8]
         reply_markup = get_digest_reply_markup(digest_id, user_lang)
         
         try:
@@ -271,8 +271,7 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         set_cached_digest(digest, ttl_minutes=15, cache_key=cache_key)
         
         # Generate unique digest ID for rating tracking
-        import hashlib
-        digest_id = hashlib.md5(digest[:100].encode()).hexdigest()[:8]
+        digest_id = stable_hash(digest[:100])[:8]
         
         # Store full digest + metadata for callback actions and personalization.
         try:
@@ -579,7 +578,6 @@ async def saved_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /saved command - show saved articles with delete buttons."""
     from .user_storage import get_saved_articles, get_user_language
     from .translations import t
-    import hashlib
     
     telegram_id = update.effective_user.id
     user_lang = get_user_language(telegram_id)
@@ -626,7 +624,7 @@ async def saved_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         message += "\n"
         
         # Create delete button - use URL hash for unique ID
-        url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
+        url_hash = stable_hash(url)[:8]
         delete_label = "🗑️"
         keyboard.append([InlineKeyboardButton(f"{delete_label} {i}. {title[:25]}...", callback_data=f"del_{url_hash}")])
     
@@ -1092,11 +1090,10 @@ async def delete_article_callback(update: Update, context: ContextTypes.DEFAULT_
     url_hash = data.replace('del_', '')
     
     # Find the article with matching hash
-    import hashlib
     articles = get_saved_articles(telegram_id, limit=50)
     
     for article in articles:
-        article_hash = hashlib.md5(article.get('url', '').encode()).hexdigest()[:8]
+        article_hash = stable_hash(article.get('url', ''))[:8]
         if article_hash == url_hash:
             delete_saved_article(telegram_id, article.get('url', ''))
             await query.edit_message_text(
@@ -1407,8 +1404,7 @@ async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'seen_hashes': list(new_seen)
         })
         digest = await summarize_news(items_to_summarize, language=user_lang)
-        import hashlib
-        digest_id = hashlib.md5(digest[:100].encode()).hexdigest()[:8]
+        digest_id = stable_hash(digest[:100])[:8]
         # Persist callback context.
         save_temp_digest(digest_id, telegram_id, digest, articles_meta=items_to_summarize, ttl_hours=24)
         record_digest_context(digest_id, telegram_id, items_to_summarize)
@@ -1789,13 +1785,12 @@ async def send_digest_to_user(telegram_id: int, digest: str, articles_meta: list
     from telegram import Bot
     from .user_storage import get_user_language, save_temp_digest
     from .personalization import record_digest_context
-    import hashlib
     
     bot = Bot(token=get_bot_token())
     user_lang = get_user_language(telegram_id)
     
     # Generate digest ID for buttons
-    digest_id = hashlib.md5(digest[:100].encode()).hexdigest()[:8]
+    digest_id = stable_hash(digest[:100])[:8]
     
     # Persist temp digest context so callbacks work for scheduled sends too.
     try:

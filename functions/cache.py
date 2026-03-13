@@ -4,9 +4,9 @@ Firestore-based cache with TTL for news digests.
 """
 
 import time
-import hashlib
 from typing import Any, Optional, List
 from datetime import datetime, timezone
+from functions.security_utils import stable_hash
 try:
     from google.cloud import firestore
 except ImportError:
@@ -36,7 +36,7 @@ def build_digest_cache_key(language: str = "en", sources: Optional[List[str]] = 
     """
     normalized_sources = ",".join(sorted((sources or [])))
     payload = f"{scope}|{language}|{normalized_sources}"
-    suffix = hashlib.sha1(payload.encode("utf-8")).hexdigest()[:16]
+    suffix = stable_hash(payload)[:16]
     return f"news_digest_{suffix}"
 
 
