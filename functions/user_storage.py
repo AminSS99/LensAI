@@ -156,7 +156,7 @@ def save_article(telegram_id: int, title: str, url: str, source: str = "", categ
     return True
 
 
-def get_saved_articles(telegram_id: int, limit: int = 10, category: str = None) -> List[Dict[str, Any]]:
+def get_saved_articles(telegram_id: int, limit: int = 10, category: str = None, offset: int = 0) -> List[Dict[str, Any]]:
     """Get user's saved articles from Firestore (or local)."""
     db = get_firestore_client()
     if db:
@@ -170,7 +170,10 @@ def get_saved_articles(telegram_id: int, limit: int = 10, category: str = None) 
                 query = query.where(filter=FieldFilter('category', '==', category))
                 
             # Order by saved_at desc
-            docs = query.order_by('saved_at', direction=firestore.Query.DESCENDING).limit(limit).stream()
+            query = query.order_by('saved_at', direction=firestore.Query.DESCENDING)
+            if offset > 0:
+                query = query.offset(offset)
+            docs = query.limit(limit).stream()
             
             return [doc.to_dict() for doc in docs]
         except Exception as e:
@@ -184,7 +187,8 @@ def get_saved_articles(telegram_id: int, limit: int = 10, category: str = None) 
     if category:
         articles = [a for a in articles if a.get('category', 'tech') == category]
 
-    return list(reversed(articles[-limit:]))
+    rev_articles = list(reversed(articles))
+    return rev_articles[offset:offset + limit]
 
 
 def get_all_saved_articles(telegram_id: int, category: str = None) -> List[Dict[str, Any]]:
