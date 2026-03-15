@@ -587,73 +587,131 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ============ SAVED ARTICLES ============
 
-async def saved_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /saved command - show saved articles with delete buttons."""
-    from .user_storage import get_saved_articles, get_user_language
+async def _render_saved_page(update_or_query, telegram_id: int, user_lang: str, page: int, is_callback: bool = False):
+    from .user_storage import get_saved_articles
     from .translations import t
     import hashlib
     
-    telegram_id = update.effective_user.id
-    user_lang = get_user_language(telegram_id)
-    articles = get_saved_articles(telegram_id, limit=10)
+    limit = 10
+    offset = page * limit
+    # Fetch limit + 1 to check if there is a next page
+    articles = get_saved_articles(telegram_id, limit=limit + 1, offset=offset)
     
-    if not articles:
-        await update.message.reply_text(t('no_saved', user_lang), parse_mode='Markdown')
+    has_next = len(articles) > limit
+    articles = articles[:limit]
+    
+    if not articles and page == 0:
+        msg = t('no_saved', user_lang)
+        if is_callback:
+            await update_or_query.edit_message_text(msg, parse_mode='Markdown')
+        else:
+            await update_or_query.message.reply_text(msg, parse_mode='Markdown')
         return
-    
-    # Category emoji mapping
+    elif not articles and page > 0:
+        # Should rarely happen unless items were deleted from under the user
+        await update_or_query.answer("No more articles.", show_alert=True)
+        return
+
     cat_emoji = {
         'ai': '🤖', 'security': '🔒', 'crypto': '💰', 'startups': '🚀',
         'hardware': '💻', 'software': '📱', 'tech': '🔧'
     }
     
     message = t('saved_header', user_lang)
+    if page > 0:
+        # Append page info safely preserving any whitespace
+        message = message.rstrip() + f" (Page {page + 1})\n\n"
+
     keyboard = []
     
     for i, article in enumerate(articles, 1):
         title = article.get('title', 'Untitled')[:50]
         url = article.get('url', '')
-        source = article.get('source', '')
         category = article.get('category', 'tech')
         saved_at = article.get('saved_at', '')
         
-        # Get category emoji
         emoji = cat_emoji.get(category, '🔧')
-        
-        # Format date
         date_str = saved_at[:10] if saved_at else ''
         
-        # Escape title for Markdown security
         from .security_utils import escape_markdown_v1
         safe_title = escape_markdown_v1(title)
         
-        # Build message line
+        item_num = offset + i
+
         if url.startswith('http'):
-            message += f"{i}. {emoji} [{safe_title}]({url})"
+            message += f"{item_num}. {emoji} [{safe_title}]({url})"
         else:
-            message += f"{i}. {emoji} {safe_title}"
+            message += f"{item_num}. {emoji} {safe_title}"
         
         if date_str:
             message += f" `{date_str}`"
         message += "\n"
         
-        # Create delete button - use URL hash for unique ID
         url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
         delete_label = "🗑️"
-        keyboard.append([InlineKeyboardButton(f"{delete_label} {i}. {title[:25]}...", callback_data=f"del_{url_hash}")])
+        # encode page in callback data so delete button can refresh the correct page
+        keyboard.append([InlineKeyboardButton(f"{delete_label} {item_num}. {title[:25]}...", callback_data=f"del_{url_hash}_{page}")])
     
     message += t('saved_footer', user_lang)
+
+    # Add pagination buttons
+    nav_buttons = []
+    if page > 0:
+        prev_text = "⬅️ Назад" if user_lang == 'ru' else "⬅️ Previous"
+        nav_buttons.append(InlineKeyboardButton(prev_text, callback_data=f"saved_page_{page-1}"))
+    if has_next:
+        next_text = "Вперед ➡️" if user_lang == 'ru' else "Next ➡️"
+        nav_buttons.append(InlineKeyboardButton(next_text, callback_data=f"saved_page_{page+1}"))
+
+    if nav_buttons:
+        keyboard.append(nav_buttons)
+
     reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
     
     try:
-        await update.message.reply_text(
-            message, 
-            parse_mode='Markdown',
-            disable_web_page_preview=True,
-            reply_markup=reply_markup
-        )
+        if is_callback:
+            await update_or_query.edit_message_text(
+                message,
+                parse_mode='Markdown',
+                disable_web_page_preview=True,
+                reply_markup=reply_markup
+            )
+        else:
+            await update_or_query.message.reply_text(
+                message,
+                parse_mode='Markdown',
+                disable_web_page_preview=True,
+                reply_markup=reply_markup
+            )
     except Exception:
-        await update.message.reply_text(message, disable_web_page_preview=True, reply_markup=reply_markup)
+        if is_callback:
+            await update_or_query.edit_message_text(message, disable_web_page_preview=True, reply_markup=reply_markup)
+        else:
+            await update_or_query.message.reply_text(message, disable_web_page_preview=True, reply_markup=reply_markup)
+
+
+async def saved_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle saved articles pagination."""
+    query = update.callback_query
+    await query.answer()
+    telegram_id = update.effective_user.id
+    from .user_storage import get_user_language
+    user_lang = get_user_language(telegram_id)
+
+    data = query.data
+    page = int(data.replace('saved_page_', ''))
+
+    await _render_saved_page(query, telegram_id, user_lang, page, is_callback=True)
+
+
+async def saved_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /saved command - show saved articles with delete buttons."""
+    from .user_storage import get_user_language
+
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+
+    await _render_saved_page(update, telegram_id, user_lang, 0, is_callback=False)
 
 
 async def save_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1090,34 +1148,43 @@ async def admin_status_command(update: Update, context: ContextTypes.DEFAULT_TYP
 
 async def delete_article_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle delete article button press."""
-    from .user_storage import get_user_language, get_saved_articles, delete_saved_article
+    from .user_storage import get_user_language, get_all_saved_articles, delete_saved_article
     from .translations import t
     
     query = update.callback_query
-    await query.answer()
     
     telegram_id = update.effective_user.id
     user_lang = get_user_language(telegram_id)
     
-    # Get the URL hash from callback data
-    data = query.data  # e.g., "del_abc12345"
-    url_hash = data.replace('del_', '')
+    # Get the URL hash and page from callback data
+    data = query.data  # e.g., "del_abc12345_0"
+    parts = data.split('_')
+    if len(parts) >= 2:
+        url_hash = parts[1]
+    else:
+        url_hash = data.replace('del_', '')
+
+    page = int(parts[2]) if len(parts) > 2 else 0
     
     # Find the article with matching hash
     import hashlib
-    articles = get_saved_articles(telegram_id, limit=50)
+    articles = get_all_saved_articles(telegram_id)
+    article_title = ""
     
     for article in articles:
         article_hash = hashlib.md5(article.get('url', '').encode()).hexdigest()[:8]
         if article_hash == url_hash:
+            article_title = article.get('title', '')[:40]
             delete_saved_article(telegram_id, article.get('url', ''))
-            await query.edit_message_text(
-                t('article_deleted', user_lang) + f"\n\n_{article.get('title', '')[:40]}_",
-                parse_mode='Markdown'
-            )
-            return
-    
-    await query.edit_message_text(t('article_deleted', user_lang), parse_mode='Markdown')
+            break
+
+    if article_title:
+        await query.answer(f"Deleted: {article_title}", show_alert=False)
+    else:
+        await query.answer("Article deleted!", show_alert=False)
+
+    # Refresh the current page
+    await _render_saved_page(query, telegram_id, user_lang, page, is_callback=True)
 
 
 # ============ SEARCH ============
@@ -1789,6 +1856,7 @@ def create_bot_application() -> Application:
     application.add_handler(CallbackQueryHandler(save_digest_callback, pattern='^save_digest_'))
     application.add_handler(CallbackQueryHandler(why_digest_callback, pattern='^why_digest_'))
     application.add_handler(CallbackQueryHandler(delete_article_callback, pattern='^del_'))
+    application.add_handler(CallbackQueryHandler(saved_page_callback, pattern='^saved_page_'))
     
     # Add message handler for buttons and Q&A (handles any text that isn't a command)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
