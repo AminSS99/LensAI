@@ -575,19 +575,16 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ============ SAVED ARTICLES ============
 
-async def saved_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /saved command - show saved articles with delete buttons."""
-    from .user_storage import get_saved_articles, get_user_language
+def _build_saved_articles_message(telegram_id: int, user_lang: str) -> tuple[str, InlineKeyboardMarkup | None]:
+    """Helper to build the saved articles list message and keyboard."""
+    from .user_storage import get_saved_articles
     from .translations import t
     import hashlib
-    
-    telegram_id = update.effective_user.id
-    user_lang = get_user_language(telegram_id)
+
     articles = get_saved_articles(telegram_id, limit=10)
     
     if not articles:
-        await update.message.reply_text(t('no_saved', user_lang), parse_mode='Markdown')
-        return
+        return t('no_saved', user_lang), None
     
     # Category emoji mapping
     cat_emoji = {
@@ -633,6 +630,18 @@ async def saved_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message += t('saved_footer', user_lang)
     reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
     
+    return message, reply_markup
+
+
+async def saved_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /saved command - show saved articles with delete buttons."""
+    from .user_storage import get_user_language
+
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+
+    message, reply_markup = _build_saved_articles_message(telegram_id, user_lang)
+
     try:
         await update.message.reply_text(
             message, 
@@ -1099,13 +1108,24 @@ async def delete_article_callback(update: Update, context: ContextTypes.DEFAULT_
         article_hash = hashlib.md5(article.get('url', '').encode()).hexdigest()[:8]
         if article_hash == url_hash:
             delete_saved_article(telegram_id, article.get('url', ''))
+            await query.answer(t('article_deleted', user_lang) + f" {article.get('title', '')[:20]}...", show_alert=False)
+            message, reply_markup = _build_saved_articles_message(telegram_id, user_lang)
             await query.edit_message_text(
-                t('article_deleted', user_lang) + f"\n\n_{article.get('title', '')[:40]}_",
-                parse_mode='Markdown'
+                message,
+                parse_mode='Markdown',
+                reply_markup=reply_markup,
+                disable_web_page_preview=True
             )
             return
     
-    await query.edit_message_text(t('article_deleted', user_lang), parse_mode='Markdown')
+    await query.answer(t('article_deleted', user_lang), show_alert=False)
+    message, reply_markup = _build_saved_articles_message(telegram_id, user_lang)
+    await query.edit_message_text(
+        message,
+        parse_mode='Markdown',
+        reply_markup=reply_markup,
+        disable_web_page_preview=True
+    )
 
 
 # ============ SEARCH ============
