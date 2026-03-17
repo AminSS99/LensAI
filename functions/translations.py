@@ -120,6 +120,9 @@ Use /sources to toggle sources""",
         'recap_empty': "📊 **Weekly Recap**\n\nNo articles saved this week. Start saving articles to see your recap!",
         'article_deleted': "🗑️ Article deleted!",
         'article_saved_single': "✅ Article saved! Category: {category}",
+        'btn_summarize': "🧠 Summarize",
+        'summarizing_link': "🔄 Analyzing article...",
+        'summary_error': "❌ Could not summarize article: {error}",
         
         # Category labels
         'cat_ai': "🤖 AI",
@@ -256,6 +259,9 @@ _Работает локально - настройки сохранятся п�
         'recap_empty': "📊 **Недельный обзор**\n\nНет сохранённых статей за неделю. Начните сохранять!",
         'article_deleted': "🗑️ Статья удалена!",
         'article_saved_single': "✅ Статья сохранена! Категория: {category}",
+        'btn_summarize': "🧠 Краткое содержание",
+        'summarizing_link': "🔄 Анализирую статью...",
+        'summary_error': "❌ Не удалось суммаризировать статью: {error}",
         
         # Category labels
         'cat_ai': "🤖 ИИ",
