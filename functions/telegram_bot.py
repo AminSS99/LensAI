@@ -1636,6 +1636,89 @@ async def why_digest_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         err = f"Could not generate analysis: {str(e)[:80]}"
         await query.message.reply_text(err)
 
+async def summarize_url_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Summarize a saved URL."""
+    from .user_storage import get_user_language, get_temp_url
+    from .translations import t
+    from .summarizer import get_async_client
+    import httpx
+    from bs4 import BeautifulSoup
+
+    query = update.callback_query
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+
+    parts = query.data.split('_')
+    if len(parts) < 3:
+        await query.answer("Invalid request", show_alert=True)
+        return
+
+    url_hash = parts[2]
+    url = get_temp_url(url_hash, telegram_id)
+
+    if not url:
+        await query.answer("Link expired. Please send the link again.", show_alert=True)
+        return
+
+    await query.answer(t('summarizing_link', user_lang))
+
+    try:
+        # Fetch content
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+
+        # Parse content safely
+        soup = await asyncio.to_thread(BeautifulSoup, response.text, 'html.parser')
+        paragraphs = soup.find_all('p')
+        text_content = "\n\n".join([p.get_text(strip=True) for p in paragraphs if len(p.get_text(strip=True)) > 20])
+
+        if not text_content:
+            text_content = soup.get_text(strip=True)
+
+        # Limit content size to avoid token limit
+        text_content = text_content[:5000]
+
+        if len(text_content) < 100:
+            await query.message.reply_text("Could not extract enough text to summarize.")
+            return
+
+        # Prepare prompt
+        if user_lang == 'ru':
+            system_prompt = "Сделай краткое содержание этой статьи в 3 пунктах и добавь 1 главный вывод. Отвечай на русском языке."
+        else:
+            system_prompt = "Summarize this article in 3 bullet points and 1 actionable takeaway. Respond in English."
+
+        user_prompt = f"Article:\n\n{text_content}"
+
+        # Call AI
+        ai_client = get_async_client()
+        response = await asyncio.wait_for(
+            ai_client.chat.completions.create(
+                model='deepseek-chat',
+                messages=[
+                    {'role': 'system', 'content': system_prompt},
+                    {'role': 'user', 'content': user_prompt},
+                ],
+                temperature=0.3,
+                max_tokens=400,
+            ),
+            timeout=25.0,
+        )
+
+        answer = response.choices[0].message.content
+
+        # Send back summary
+        try:
+            await query.message.reply_text(answer, parse_mode='Markdown', disable_web_page_preview=True)
+        except Exception:
+            await query.message.reply_text(answer, disable_web_page_preview=True)
+
+    except Exception as e:
+        error_msg = str(e)[:80]
+        await query.message.reply_text(t('summary_error', user_lang, error=error_msg))
+
+
 # ============ Q&A HANDLER ============
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1662,11 +1745,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Check if it's a URL to save
     if user_message.startswith('http://') or user_message.startswith('https://'):
-        from .user_storage import save_article
-        if save_article(telegram_id, user_message[:50], user_message):
-            await update.message.reply_text(t('link_saved', user_lang))
+        from .user_storage import save_article, save_temp_url
+        from .security_utils import stable_hash
+
+        is_saved = save_article(telegram_id, user_message[:50], user_message)
+
+        url_hash = stable_hash(user_message)[:8]
+        save_temp_url(url_hash, telegram_id, user_message)
+
+        reply_markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton(t('btn_summarize', user_lang), callback_data=f"summarize_url_{url_hash}")]
+        ])
+
+        if is_saved:
+            await update.message.reply_text(t('link_saved', user_lang), reply_markup=reply_markup)
         else:
-            await update.message.reply_text(t('link_exists', user_lang))
+            await update.message.reply_text(t('link_exists', user_lang), reply_markup=reply_markup)
         return
     
     # Otherwise, treat as a question for AI
@@ -1858,6 +1952,7 @@ def create_bot_application() -> Application:
     application.add_handler(CallbackQueryHandler(why_digest_callback, pattern='^why_digest_'))
     application.add_handler(CallbackQueryHandler(delete_article_callback, pattern='^del_'))
     application.add_handler(CallbackQueryHandler(saved_page_callback, pattern='^saved_page_'))
+    application.add_handler(CallbackQueryHandler(summarize_url_callback, pattern='^summarize_url_'))
     
     # Add message handler for buttons and Q&A (handles any text that isn't a command)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
