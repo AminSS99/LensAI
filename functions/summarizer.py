@@ -1,6 +1,7 @@
 """
-DeepSeek Summarization Module
-Uses DeepSeek API to summarize and format tech news digest.
+AI Summarization Module
+Uses a configurable OpenAI-compatible provider to summarize and format
+the tech news digest.
 """
 
 import os
@@ -19,20 +20,84 @@ def get_current_date_baku() -> str:
     return datetime.now(BAKU_TZ).strftime('%Y-%m-%d')
 
 
-# DeepSeek uses OpenAI-compatible API
+# OpenAI-compatible API endpoints
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
+GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
+
+DEFAULT_AI_PROVIDER = "gemini"
+DEFAULT_AI_MODELS = {
+    "gemini": "gemini-3-flash-preview",
+    "deepseek": "deepseek-chat",
+}
+
+
+def get_ai_provider() -> str:
+    """Resolve the active AI provider from env or available credentials."""
+    configured = (os.environ.get("AI_PROVIDER") or "").strip().lower()
+    if configured in DEFAULT_AI_MODELS:
+        return configured
+    if os.environ.get("GEMINI_API_KEY"):
+        return "gemini"
+    if os.environ.get("DEEPSEEK_API_KEY"):
+        return "deepseek"
+    return DEFAULT_AI_PROVIDER
+
+
+def get_chat_model() -> str:
+    """Resolve the active chat model."""
+    configured = (os.environ.get("AI_MODEL") or "").strip()
+    if configured:
+        return configured
+    return DEFAULT_AI_MODELS[get_ai_provider()]
 
 
 def get_async_client() -> AsyncOpenAI:
-    """Get DeepSeek Async API client."""
-    api_key = os.environ.get('DEEPSEEK_API_KEY')
+    """Get the configured Async API client."""
+    provider = get_ai_provider()
+    if provider == "gemini":
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            raise ValueError("GEMINI_API_KEY environment variable not set")
+        return AsyncOpenAI(api_key=api_key, base_url=GEMINI_BASE_URL)
+
+    api_key = os.environ.get("DEEPSEEK_API_KEY")
     if not api_key:
         raise ValueError("DEEPSEEK_API_KEY environment variable not set")
-    
-    return AsyncOpenAI(
-        api_key=api_key,
-        base_url=DEEPSEEK_BASE_URL
-    )
+    return AsyncOpenAI(api_key=api_key, base_url=DEEPSEEK_BASE_URL)
+
+
+async def chat_completion(
+    messages: List[Dict[str, str]],
+    temperature: float = 0.7,
+    max_tokens: int = 800,
+    timeout: float = 45.0,
+) -> str:
+    """Run a chat completion on the configured provider/model."""
+    provider = get_ai_provider()
+    client = get_async_client()
+    request: Dict[str, Any] = {
+        "model": get_chat_model(),
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+    }
+    if provider == "gemini":
+        request["reasoning_effort"] = os.environ.get("GEMINI_REASONING_EFFORT", "low")
+
+    try:
+        response = await asyncio.wait_for(
+            client.chat.completions.create(**request),
+            timeout=timeout,
+        )
+    except asyncio.TimeoutError as exc:
+        raise Exception(f"{provider.title()} API timeout after {int(timeout)} seconds") from exc
+    except Exception as exc:
+        raise Exception(f"{provider.title()} API error: {exc}") from exc
+
+    content = response.choices[0].message.content
+    if not content:
+        raise Exception(f"{provider.title()} API returned empty content")
+    return content
 
 
 # Source emoji mapping
@@ -124,8 +189,8 @@ EACH ITEM FORMAT:
 • **Title** — brief 1-sentence summary. (Source) ~X min | [Read](url)
 
 RULES:
-- Maximum 8-10 items total
-- Keep summaries to ONE sentence
+- Target 12-14 items total when enough strong stories exist
+- Keep summaries to one or two concise sentences
 - Use bullet points (•) not asterisks
 - Put the link text as just "Read" or "Читать"
 - NO intro paragraph, NO title/header, start directly with first category
@@ -144,7 +209,7 @@ Create an engaging Telegram-friendly digest with the most important stories."""
 async def summarize_news(news_items: List[Dict[str, Any]], max_items: int = 30, language: str = 'en') -> str:
     """
     Summarize a list of news items into a formatted digest.
-    Uses DeepSeek AI with fallback to simple formatting if AI fails.
+    Uses the configured AI provider with fallback to simple formatting if AI fails.
     
     Now includes:
     - Smart deduplication (merges similar stories)
@@ -191,6 +256,10 @@ async def summarize_news(news_items: List[Dict[str, Any]], max_items: int = 30, 
             record_daily_topics(topic_counts)
     except Exception as e:
         print(f"Trend recording failed: {e}")
+
+    # The max_items knob now directly controls how much context we feed into
+    # the model and how many stories the fallback formatter can use.
+    prompt_items = items_to_summarize[:max_items]
     
     # Get current date for header
     current_date = datetime.now(BAKU_TZ)
@@ -201,24 +270,24 @@ async def summarize_news(news_items: List[Dict[str, Any]], max_items: int = 30, 
     
     # Try AI summarization first
     try:
-        digest = await _ai_summarize(items_to_summarize, language)
+        digest = await _ai_summarize(prompt_items, language)
         # Always prepend our own date header to ensure accuracy
         return date_header + digest
     except Exception as e:
         print(f"AI summarization failed: {e}. Falling back to simple digest.")
         # Fallback to simple digest without AI
         try:
-            return date_header + create_simple_digest(items_to_summarize, language)
+            return date_header + create_simple_digest(prompt_items, language)
         except Exception as e2:
             print(f"Simple digest failed: {e2}. Falling back to raw list.")
             # Last resort: raw list
-            return date_header + create_raw_list(items_to_summarize, language)
+            return date_header + create_raw_list(prompt_items, language)
 
 
 @retry_with_backoff(max_retries=2, base_delay=1.0, max_delay=5.0)
 async def _ai_summarize(news_items: List[Dict[str, Any]], language: str) -> str:
     """
-    Internal function to call DeepSeek AI with retry logic.
+    Internal function to call the configured AI provider with retry logic.
     
     Raises:
         Exception if AI summarization fails after retries
@@ -254,34 +323,43 @@ async def _ai_summarize(news_items: List[Dict[str, Any]], language: str) -> str:
 ВАЖНО: Пропускай старые или повторяющиеся новости. Будь кратким."""
         user_prompt = f"""Вот сегодняшние новости. Создай дайджест НА РУССКОМ:
 
-{news_content}"""
+{news_content}
+
+РџСЂРµРґРїРѕС‡С‚РёС‚РµР»СЊРЅРѕ РІРєР»СЋС‡Рё 12-14 СЃРёР»СЊРЅС‹С… РЅРѕРІРѕСЃС‚РµР№, РµСЃР»Рё РѕРЅРё РµСЃС‚СЊ."""
+        system_prompt = f"""You create polished Telegram tech digests. Today is {date_formatted}.
+
+Respond entirely in Russian and follow this exact structure:
+- Use category headers with `###`
+- Categories:
+  `### 🔥 Главное`
+  `### 🤖 ИИ Новости`
+  `### 🛠️ Инструменты`
+  `### 💼 Индустрия`
+- Each item format:
+  `• **Заголовок** — 1-2 кратких предложения. (Источник) ~X мин | [Читать](url)`
+- Target 12-14 strong stories when enough good items exist
+- Skip stale or repetitive items
+- Do not add an intro paragraph or a date header
+- End with: `💡 **Инсайт:**` and one brief observation
+"""
+        user_prompt = (
+            "Create the digest in Russian from these stories:\n\n"
+            f"{news_content}\n\n"
+            "Prefer 12-14 strong stories if available."
+        )
     else:
         system_prompt = get_system_prompt()
-        user_prompt = USER_PROMPT_TEMPLATE.format(news_content=news_content)
-    
-    client = get_async_client()
-    
-    # Add timeout to prevent hanging
-    try:
-        response = await asyncio.wait_for(
-            client.chat.completions.create(
-                model="deepseek-chat",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                temperature=0.7,
-                max_tokens=1500
-            ),
-            timeout=45.0  # 45 second timeout
-        )
-        
-        return response.choices[0].message.content
-        
-    except asyncio.TimeoutError:
-        raise Exception("DeepSeek API timeout after 45 seconds")
-    except Exception as e:
-        raise Exception(f"DeepSeek API error: {str(e)}")
+        user_prompt = USER_PROMPT_TEMPLATE.format(news_content=news_content) + "\n\nPrefer 12-14 strong stories if available."
+
+    return await chat_completion(
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=0.7,
+        max_tokens=2200,
+        timeout=45.0,
+    )
 
 
 def create_fallback_digest(news_items: List[Dict[str, Any]]) -> str:
@@ -308,20 +386,15 @@ async def quick_summary(text: str, max_length: int = 100) -> str:
     Useful for individual article summaries.
     """
     try:
-        client = get_async_client()
-        
-        response = await client.chat.completions.create(
-            model="deepseek-chat",
+        return await chat_completion(
             messages=[
                 {"role": "system", "content": "Summarize the following in one concise sentence."},
                 {"role": "user", "content": text[:1000]}  # Limit input
             ],
             temperature=0.5,
-            max_tokens=100
+            max_tokens=100,
+            timeout=20.0,
         )
-        
-        return response.choices[0].message.content
-        
     except Exception as e:
         print(f"Error in quick_summary: {e}")
         return text[:max_length] + "..." if len(text) > max_length else text
@@ -344,7 +417,7 @@ if __name__ == "__main__":
         }
     ]
     
-    print("Testing summarizer (requires DEEPSEEK_API_KEY)...")
+    print("Testing summarizer (requires AI provider credentials)...")
     
     async def test():
         try:

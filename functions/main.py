@@ -223,7 +223,7 @@ async def process_scheduled_digest(target_time: str = None) -> dict:
     digests_by_lang = {}
     for lang in users_by_lang.keys():
         print(f"Generating digest for language: {lang}")
-        digests_by_lang[lang] = await summarize_news(all_news, language=lang)
+        digests_by_lang[lang] = await summarize_news(all_news, max_items=18, language=lang)
     
     # Send to all scheduled users with their language-specific digest
     sent_count = 0
@@ -414,7 +414,7 @@ def fetch_news(request: Request):
             processed_news = all_news[:30] # Limit to 30 items for consistency
             
             if summarize:
-                digest = await summarize_news(processed_news)
+                digest = await summarize_news(processed_news, max_items=18)
                 return {
                     'digest': digest,
                     'article_count': len(processed_news)

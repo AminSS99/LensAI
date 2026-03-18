@@ -20,6 +20,7 @@ from telegram.ext import (
 
 # Baku timezone (UTC+4)
 BAKU_TZ = timezone(timedelta(hours=4))
+PERSONALIZED_DIGEST_ITEM_LIMIT = 14
 
 
 def get_bot_token() -> str:
@@ -170,20 +171,24 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         digest_id = stable_hash(cached_digest[:100])[:8]
         reply_markup = get_digest_reply_markup(digest_id, user_lang)
         
-        try:
-            await update.message.reply_text(
-                header + cached_digest[:3900],
-                parse_mode='Markdown',
-                disable_web_page_preview=True,
-                reply_markup=reply_markup
-            )
-        except Exception:
-            # Fallback without markdown if parsing fails
-            await update.message.reply_text(
-                header + cached_digest[:3900],
-                disable_web_page_preview=True,
-                reply_markup=reply_markup
-            )
+        from .message_utils import split_message
+        chunks = split_message(header + cached_digest)
+
+        for i, chunk in enumerate(chunks):
+            is_last = i == len(chunks) - 1
+            try:
+                await update.message.reply_text(
+                    chunk,
+                    parse_mode='Markdown',
+                    disable_web_page_preview=True,
+                    reply_markup=reply_markup if is_last else None
+                )
+            except Exception:
+                await update.message.reply_text(
+                    chunk,
+                    disable_web_page_preview=True,
+                    reply_markup=reply_markup if is_last else None
+                )
         return
     
     # Check if already generating using distributed lock
@@ -255,7 +260,7 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Personalized ranking based on previous feedback.
         from .personalization import rank_articles_for_user
         ranked_news = rank_articles_for_user(telegram_id, all_news)
-        items_to_summarize = ranked_news[:10]
+        items_to_summarize = ranked_news[:PERSONALIZED_DIGEST_ITEM_LIMIT]
         
         digest = await summarize_news(items_to_summarize, language=user_lang)
         
@@ -1479,7 +1484,7 @@ async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             candidate_news = all_news
         ranked_news = rank_articles_for_user(telegram_id, candidate_news)
-        items_to_summarize = ranked_news[:10]
+        items_to_summarize = ranked_news[:PERSONALIZED_DIGEST_ITEM_LIMIT]
         if not items_to_summarize:
             error_text = "Could not select stories."
             await query.message.reply_text(error_text)
@@ -1589,7 +1594,7 @@ async def save_digest_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 async def why_digest_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Generate a quick \"why it matters\" explanation for a digest."""
     from .user_storage import get_user_language, get_temp_digest
-    from .summarizer import get_async_client
+    from .summarizer import chat_completion
     query = update.callback_query
     telegram_id = update.effective_user.id
     user_lang = get_user_language(telegram_id)
@@ -1614,20 +1619,15 @@ async def why_digest_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         system_prompt = "You are a tech analyst. Explain why this digest matters: 3 bullets + 1 actionable takeaway."
         user_prompt = f"Digest:\n\n{digest_content}"
     try:
-        client = get_async_client()
-        response = await asyncio.wait_for(
-            client.chat.completions.create(
-                model='deepseek-chat',
-                messages=[
-                    {'role': 'system', 'content': system_prompt},
-                    {'role': 'user', 'content': user_prompt},
-                ],
-                temperature=0.4,
-                max_tokens=350,
-            ),
+        answer = await chat_completion(
+            messages=[
+                {'role': 'system', 'content': system_prompt},
+                {'role': 'user', 'content': user_prompt},
+            ],
+            temperature=0.4,
+            max_tokens=350,
             timeout=25.0,
         )
-        answer = response.choices[0].message.content
         try:
             await query.message.reply_text(answer, parse_mode='Markdown', disable_web_page_preview=True)
         except Exception:
@@ -1640,7 +1640,7 @@ async def summarize_url_callback(update: Update, context: ContextTypes.DEFAULT_T
     """Summarize a saved URL."""
     from .user_storage import get_user_language, get_temp_url
     from .translations import t
-    from .summarizer import get_async_client
+    from .summarizer import chat_completion
     import httpx
     from bs4 import BeautifulSoup
 
@@ -1692,21 +1692,15 @@ async def summarize_url_callback(update: Update, context: ContextTypes.DEFAULT_T
         user_prompt = f"Article:\n\n{text_content}"
 
         # Call AI
-        ai_client = get_async_client()
-        response = await asyncio.wait_for(
-            ai_client.chat.completions.create(
-                model='deepseek-chat',
-                messages=[
-                    {'role': 'system', 'content': system_prompt},
-                    {'role': 'user', 'content': user_prompt},
-                ],
-                temperature=0.3,
-                max_tokens=400,
-            ),
+        answer = await chat_completion(
+            messages=[
+                {'role': 'system', 'content': system_prompt},
+                {'role': 'user', 'content': user_prompt},
+            ],
+            temperature=0.3,
+            max_tokens=400,
             timeout=25.0,
         )
-
-        answer = response.choices[0].message.content
 
         # Send back summary
         try:
@@ -1722,7 +1716,7 @@ async def summarize_url_callback(update: Update, context: ContextTypes.DEFAULT_T
 # ============ Q&A HANDLER ============
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle any text message - button presses or questions for DeepSeek."""
+    """Handle any text message - button presses or questions for the active AI model."""
     from .user_storage import get_user_language
     from .translations import t
     
@@ -1764,7 +1758,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     # Otherwise, treat as a question for AI
-    from .summarizer import get_async_client
+    from .summarizer import chat_completion
     from .rate_limiter import check_rate_limit
     
     # Rate limit AI chat
@@ -1782,10 +1776,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lang_instruction = " Respond in Azerbaijani."
     
     try:
-        client = get_async_client()
-        
-        response = await client.chat.completions.create(
-            model="deepseek-chat",
+        answer = await chat_completion(
             messages=[
                 {
                     "role": "system", 
@@ -1804,11 +1795,10 @@ Keep responses under 300 words unless more detail is needed.{lang_instruction}""
                 {"role": "user", "content": user_message}
             ],
             temperature=0.7,
-            max_tokens=800
+            max_tokens=800,
+            timeout=30.0,
         )
-        
-        answer = response.choices[0].message.content
-        
+
         # Send answer (split if too long) with markdown error handling
         async def send_answer(text):
             try:
