@@ -156,7 +156,7 @@ def save_article(telegram_id: int, title: str, url: str, source: str = "", categ
     return True
 
 
-def get_saved_articles(telegram_id: int, limit: int = 10, category: str = None) -> List[Dict[str, Any]]:
+def get_saved_articles(telegram_id: int, limit: int = 10, category: str = None, offset: int = 0) -> List[Dict[str, Any]]:
     """Get user's saved articles from Firestore (or local)."""
     db = get_firestore_client()
     if db:
@@ -170,7 +170,10 @@ def get_saved_articles(telegram_id: int, limit: int = 10, category: str = None) 
                 query = query.where(filter=FieldFilter('category', '==', category))
                 
             # Order by saved_at desc
-            docs = query.order_by('saved_at', direction=firestore.Query.DESCENDING).limit(limit).stream()
+            query = query.order_by('saved_at', direction=firestore.Query.DESCENDING)
+            if offset > 0:
+                query = query.offset(offset)
+            docs = query.limit(limit).stream()
             
             return [doc.to_dict() for doc in docs]
         except Exception as e:
@@ -184,7 +187,8 @@ def get_saved_articles(telegram_id: int, limit: int = 10, category: str = None) 
     if category:
         articles = [a for a in articles if a.get('category', 'tech') == category]
 
-    return list(reversed(articles[-limit:]))
+    rev_articles = list(reversed(articles))
+    return rev_articles[offset:offset + limit]
 
 
 def get_all_saved_articles(telegram_id: int, category: str = None) -> List[Dict[str, Any]]:
@@ -516,13 +520,87 @@ def update_refresh_session(telegram_id: int, updates: Dict[str, Any]):
 
 def get_article_hash(item: Dict[str, Any]) -> str:
     """Generate a consistent hash for an article item."""
-    import hashlib
+    from .security_utils import stable_hash
     # Use URL if available, otherwise title
     key = item.get('url', item.get('title', ''))
-    return hashlib.md5(key.encode('utf-8')).hexdigest()
+    return stable_hash(key)
 
 
 # ============ TEMP DIGEST STORAGE ============
+
+def save_temp_url(
+    url_hash: str,
+    telegram_id: int,
+    url: str,
+    ttl_hours: int = 24
+) -> bool:
+    """
+    Store a URL temporarily for callback actions like summarize.
+    """
+    db = get_firestore_client()
+    if not db:
+        # Fallback to local
+        data = _load_local_data(telegram_id)
+        if 'urls_temp' not in data:
+            data['urls_temp'] = {}
+
+        data['urls_temp'][url_hash] = {
+            'url': url,
+            'expires_at': time.time() + (ttl_hours * 3600)
+        }
+
+        # Cleanup expired ones locally
+        current_time = time.time()
+        expired_keys = [k for k, v in data['urls_temp'].items() if v.get('expires_at', 0) < current_time]
+        for k in expired_keys:
+            del data['urls_temp'][k]
+
+        _save_local_data(telegram_id, data)
+        return True
+
+    try:
+        from google.cloud import firestore
+        expires_at = datetime.now(timezone.utc).timestamp() + (ttl_hours * 3600)
+        db.collection('urls_temp').document(url_hash).set({
+            'url': url,
+            'user_id': telegram_id,
+            'created_at': firestore.SERVER_TIMESTAMP,
+            'expires_at': expires_at
+        }, merge=True)
+        return True
+    except Exception as e:
+        print(f"Temp URL store error: {e}")
+        return False
+
+
+def get_temp_url(url_hash: str, telegram_id: Optional[int] = None) -> Optional[str]:
+    """Fetch stored temporary URL."""
+    db = get_firestore_client()
+    if not db:
+        if not telegram_id:
+            return None
+        # Fallback to local
+        data = _load_local_data(telegram_id)
+        temp_data = data.get('urls_temp', {}).get(url_hash)
+        if not temp_data:
+            return None
+        if time.time() > temp_data.get('expires_at', 0):
+            return None
+        return temp_data.get('url')
+
+    try:
+        doc = db.collection('urls_temp').document(url_hash).get()
+        if not doc.exists:
+            return None
+        data = doc.to_dict()
+        expires_at = data.get('expires_at')
+        if isinstance(expires_at, (int, float)) and time.time() > expires_at:
+            return None
+        return data.get('url')
+    except Exception as e:
+        print(f"Temp URL read error: {e}")
+        return None
+
 
 def save_temp_digest(
     digest_id: str,

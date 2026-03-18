@@ -134,7 +134,7 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_lang = get_user_language(telegram_id)
 
     # Resolve sources first so cache is language+source scoped.
-    sources = ['hackernews', 'techcrunch', 'ai_blogs', 'theverge', 'github']
+    sources = ['hackernews', 'techcrunch', 'ai_blogs', 'theverge', 'github', 'producthunt']
     try:
         from .database import get_user
         user = get_user(telegram_id)
@@ -166,8 +166,8 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         header = t('cached_news', user_lang, timestamp=timestamp_str)
         
         # Generate digest ID for buttons
-        import hashlib
-        digest_id = hashlib.md5(cached_digest[:100].encode()).hexdigest()[:8]
+        from .security_utils import stable_hash
+        digest_id = stable_hash(cached_digest[:100])[:8]
         reply_markup = get_digest_reply_markup(digest_id, user_lang)
         
         try:
@@ -218,6 +218,7 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         from .scrapers.ai_blogs import fetch_ai_blogs
         from .scrapers.theverge import fetch_theverge
         from .scrapers.github_trending import fetch_github_trending
+        from .scrapers.producthunt import fetch_producthunt
         from .summarizer import summarize_news
         
         # Source list already resolved above (used in cache key as well).
@@ -235,6 +236,8 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             tasks.append(asyncio.to_thread(fetch_theverge, 8))
         if 'github' in sources:
             tasks.append(asyncio.to_thread(fetch_github_trending, 8))
+        if 'producthunt' in sources:
+            tasks.append(asyncio.to_thread(fetch_producthunt, 8))
             
         results = await asyncio.gather(*tasks, return_exceptions=True)
         
@@ -271,8 +274,8 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         set_cached_digest(digest, ttl_minutes=15, cache_key=cache_key)
         
         # Generate unique digest ID for rating tracking
-        import hashlib
-        digest_id = hashlib.md5(digest[:100].encode()).hexdigest()[:8]
+        from .security_utils import stable_hash
+        digest_id = stable_hash(digest[:100])[:8]
         
         # Store full digest + metadata for callback actions and personalization.
         try:
@@ -431,7 +434,7 @@ async def sources_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_lang = get_user_language(telegram_id)
     
     # Try to get user preferences from database, use defaults if not available
-    sources = ['hackernews', 'techcrunch', 'ai_blogs', 'theverge', 'github']  # Default all enabled
+    sources = ['hackernews', 'techcrunch', 'ai_blogs', 'theverge', 'github', 'producthunt']  # Default all enabled
     try:
         from .database import get_user, create_or_update_user
         user = get_user(telegram_id)
@@ -462,6 +465,10 @@ async def sources_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton(
             f"{'✅' if 'github' in sources else '❌'} GitHub Trending",
             callback_data='toggle_github'
+        )],
+        [InlineKeyboardButton(
+            f"{'✅' if 'producthunt' in sources else '❌'} Product Hunt",
+            callback_data='toggle_producthunt'
         )],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -511,6 +518,10 @@ async def toggle_source_callback(update: Update, context: ContextTypes.DEFAULT_T
             f"{'✅' if 'github' in new_sources else '❌'} GitHub Trending",
             callback_data='toggle_github'
         )],
+        [InlineKeyboardButton(
+            f"{'✅' if 'producthunt' in new_sources else '❌'} Product Hunt",
+            callback_data='toggle_producthunt'
+        )],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
@@ -549,6 +560,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         'ai_blogs': 'AI Blogs',
         'theverge': 'The Verge',
         'github': 'GitHub Trending',
+        'producthunt': 'Product Hunt',
     }
     
     sources_text = '\n'.join([f"  вЂў {source_names.get(s, s)}" for s in sources])
@@ -575,73 +587,132 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ============ SAVED ARTICLES ============
 
-async def saved_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /saved command - show saved articles with delete buttons."""
-    from .user_storage import get_saved_articles, get_user_language
+async def _render_saved_page(update_or_query, telegram_id: int, user_lang: str, page: int, is_callback: bool = False):
+    from .user_storage import get_saved_articles
     from .translations import t
-    import hashlib
     
-    telegram_id = update.effective_user.id
-    user_lang = get_user_language(telegram_id)
-    articles = get_saved_articles(telegram_id, limit=10)
+    limit = 10
+    offset = page * limit
+    # Fetch limit + 1 to check if there is a next page
+    articles = get_saved_articles(telegram_id, limit=limit + 1, offset=offset)
     
-    if not articles:
-        await update.message.reply_text(t('no_saved', user_lang), parse_mode='Markdown')
+    has_next = len(articles) > limit
+    articles = articles[:limit]
+    
+    if not articles and page == 0:
+        msg = t('no_saved', user_lang)
+        if is_callback:
+            await update_or_query.edit_message_text(msg, parse_mode='Markdown')
+        else:
+            await update_or_query.message.reply_text(msg, parse_mode='Markdown')
         return
-    
-    # Category emoji mapping
+    elif not articles and page > 0:
+        # Should rarely happen unless items were deleted from under the user
+        await update_or_query.answer("No more articles.", show_alert=True)
+        return
+
     cat_emoji = {
         'ai': '🤖', 'security': '🔒', 'crypto': '💰', 'startups': '🚀',
         'hardware': '💻', 'software': '📱', 'tech': '🔧'
     }
     
     message = t('saved_header', user_lang)
+    if page > 0:
+        # Append page info safely preserving any whitespace
+        message = message.rstrip() + f" (Page {page + 1})\n\n"
+
     keyboard = []
     
     for i, article in enumerate(articles, 1):
         title = article.get('title', 'Untitled')[:50]
         url = article.get('url', '')
-        source = article.get('source', '')
         category = article.get('category', 'tech')
         saved_at = article.get('saved_at', '')
         
-        # Get category emoji
         emoji = cat_emoji.get(category, '🔧')
-        
-        # Format date
         date_str = saved_at[:10] if saved_at else ''
         
-        # Escape title for Markdown security
         from .security_utils import escape_markdown_v1
         safe_title = escape_markdown_v1(title)
         
-        # Build message line
+        item_num = offset + i
+
         if url.startswith('http'):
-            message += f"{i}. {emoji} [{safe_title}]({url})"
+            message += f"{item_num}. {emoji} [{safe_title}]({url})"
         else:
-            message += f"{i}. {emoji} {safe_title}"
+            message += f"{item_num}. {emoji} {safe_title}"
         
         if date_str:
             message += f" `{date_str}`"
         message += "\n"
         
         # Create delete button - use URL hash for unique ID
-        url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
+        from .security_utils import stable_hash
+        url_hash = stable_hash(url)[:8]
         delete_label = "🗑️"
-        keyboard.append([InlineKeyboardButton(f"{delete_label} {i}. {title[:25]}...", callback_data=f"del_{url_hash}")])
+        # encode page in callback data so delete button can refresh the correct page
+        keyboard.append([InlineKeyboardButton(f"{delete_label} {item_num}. {title[:25]}...", callback_data=f"del_{url_hash}_{page}")])
     
     message += t('saved_footer', user_lang)
+
+    # Add pagination buttons
+    nav_buttons = []
+    if page > 0:
+        prev_text = "⬅️ Назад" if user_lang == 'ru' else "⬅️ Previous"
+        nav_buttons.append(InlineKeyboardButton(prev_text, callback_data=f"saved_page_{page-1}"))
+    if has_next:
+        next_text = "Вперед ➡️" if user_lang == 'ru' else "Next ➡️"
+        nav_buttons.append(InlineKeyboardButton(next_text, callback_data=f"saved_page_{page+1}"))
+
+    if nav_buttons:
+        keyboard.append(nav_buttons)
+
     reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
     
     try:
-        await update.message.reply_text(
-            message, 
-            parse_mode='Markdown',
-            disable_web_page_preview=True,
-            reply_markup=reply_markup
-        )
+        if is_callback:
+            await update_or_query.edit_message_text(
+                message,
+                parse_mode='Markdown',
+                disable_web_page_preview=True,
+                reply_markup=reply_markup
+            )
+        else:
+            await update_or_query.message.reply_text(
+                message,
+                parse_mode='Markdown',
+                disable_web_page_preview=True,
+                reply_markup=reply_markup
+            )
     except Exception:
-        await update.message.reply_text(message, disable_web_page_preview=True, reply_markup=reply_markup)
+        if is_callback:
+            await update_or_query.edit_message_text(message, disable_web_page_preview=True, reply_markup=reply_markup)
+        else:
+            await update_or_query.message.reply_text(message, disable_web_page_preview=True, reply_markup=reply_markup)
+
+
+async def saved_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle saved articles pagination."""
+    query = update.callback_query
+    await query.answer()
+    telegram_id = update.effective_user.id
+    from .user_storage import get_user_language
+    user_lang = get_user_language(telegram_id)
+
+    data = query.data
+    page = int(data.replace('saved_page_', ''))
+
+    await _render_saved_page(query, telegram_id, user_lang, page, is_callback=True)
+
+
+async def saved_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /saved command - show saved articles with delete buttons."""
+    from .user_storage import get_user_language
+
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+
+    await _render_saved_page(update, telegram_id, user_lang, 0, is_callback=False)
 
 
 async def save_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1078,34 +1149,43 @@ async def admin_status_command(update: Update, context: ContextTypes.DEFAULT_TYP
 
 async def delete_article_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle delete article button press."""
-    from .user_storage import get_user_language, get_saved_articles, delete_saved_article
+    from .user_storage import get_user_language, get_all_saved_articles, delete_saved_article
     from .translations import t
     
     query = update.callback_query
-    await query.answer()
     
     telegram_id = update.effective_user.id
     user_lang = get_user_language(telegram_id)
     
-    # Get the URL hash from callback data
-    data = query.data  # e.g., "del_abc12345"
-    url_hash = data.replace('del_', '')
+    # Get the URL hash and page from callback data
+    data = query.data  # e.g., "del_abc12345_0"
+    parts = data.split('_')
+    if len(parts) >= 2:
+        url_hash = parts[1]
+    else:
+        url_hash = data.replace('del_', '')
+
+    page = int(parts[2]) if len(parts) > 2 else 0
     
     # Find the article with matching hash
-    import hashlib
-    articles = get_saved_articles(telegram_id, limit=50)
+    from .security_utils import stable_hash
+    articles = get_all_saved_articles(telegram_id)
+    article_title = ""
     
     for article in articles:
-        article_hash = hashlib.md5(article.get('url', '').encode()).hexdigest()[:8]
+        article_hash = stable_hash(article.get('url', ''))[:8]
         if article_hash == url_hash:
+            article_title = article.get('title', '')[:40]
             delete_saved_article(telegram_id, article.get('url', ''))
-            await query.edit_message_text(
-                t('article_deleted', user_lang) + f"\n\n_{article.get('title', '')[:40]}_",
-                parse_mode='Markdown'
-            )
-            return
-    
-    await query.edit_message_text(t('article_deleted', user_lang), parse_mode='Markdown')
+            break
+
+    if article_title:
+        await query.answer(f"Deleted: {article_title}", show_alert=False)
+    else:
+        await query.answer("Article deleted!", show_alert=False)
+
+    # Refresh the current page
+    await _render_saved_page(query, telegram_id, user_lang, page, is_callback=True)
 
 
 # ============ SEARCH ============
@@ -1331,7 +1411,7 @@ async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     telegram_id = update.effective_user.id
     user_lang = get_user_language(telegram_id)
     # Resolve enabled sources for scoped cache invalidation.
-    sources = ['hackernews', 'techcrunch', 'ai_blogs', 'theverge', 'github']
+    sources = ['hackernews', 'techcrunch', 'ai_blogs', 'theverge', 'github', 'producthunt']
     try:
         from .database import get_user
         user = get_user(telegram_id)
@@ -1364,6 +1444,7 @@ async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         from .scrapers.ai_blogs import fetch_ai_blogs
         from .scrapers.theverge import fetch_theverge
         from .scrapers.github_trending import fetch_github_trending
+        from .scrapers.producthunt import fetch_producthunt
         from .summarizer import summarize_news
         tasks = []
         if 'hackernews' in sources:
@@ -1376,6 +1457,8 @@ async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             tasks.append(asyncio.to_thread(fetch_theverge, 10))
         if 'github' in sources:
             tasks.append(asyncio.to_thread(fetch_github_trending, 10))
+        if 'producthunt' in sources:
+            tasks.append(asyncio.to_thread(fetch_producthunt, 10))
         results = await asyncio.gather(*tasks, return_exceptions=True)
         all_news = []
         for res in results:
@@ -1407,8 +1490,8 @@ async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'seen_hashes': list(new_seen)
         })
         digest = await summarize_news(items_to_summarize, language=user_lang)
-        import hashlib
-        digest_id = hashlib.md5(digest[:100].encode()).hexdigest()[:8]
+        from .security_utils import stable_hash
+        digest_id = stable_hash(digest[:100])[:8]
         # Persist callback context.
         save_temp_digest(digest_id, telegram_id, digest, articles_meta=items_to_summarize, ttl_hours=24)
         record_digest_context(digest_id, telegram_id, items_to_summarize)
@@ -1553,6 +1636,89 @@ async def why_digest_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         err = f"Could not generate analysis: {str(e)[:80]}"
         await query.message.reply_text(err)
 
+async def summarize_url_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Summarize a saved URL."""
+    from .user_storage import get_user_language, get_temp_url
+    from .translations import t
+    from .summarizer import get_async_client
+    import httpx
+    from bs4 import BeautifulSoup
+
+    query = update.callback_query
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+
+    parts = query.data.split('_')
+    if len(parts) < 3:
+        await query.answer("Invalid request", show_alert=True)
+        return
+
+    url_hash = parts[2]
+    url = get_temp_url(url_hash, telegram_id)
+
+    if not url:
+        await query.answer("Link expired. Please send the link again.", show_alert=True)
+        return
+
+    await query.answer(t('summarizing_link', user_lang))
+
+    try:
+        # Fetch content
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+
+        # Parse content safely
+        soup = await asyncio.to_thread(BeautifulSoup, response.text, 'html.parser')
+        paragraphs = soup.find_all('p')
+        text_content = "\n\n".join([p.get_text(strip=True) for p in paragraphs if len(p.get_text(strip=True)) > 20])
+
+        if not text_content:
+            text_content = soup.get_text(strip=True)
+
+        # Limit content size to avoid token limit
+        text_content = text_content[:5000]
+
+        if len(text_content) < 100:
+            await query.message.reply_text("Could not extract enough text to summarize.")
+            return
+
+        # Prepare prompt
+        if user_lang == 'ru':
+            system_prompt = "Сделай краткое содержание этой статьи в 3 пунктах и добавь 1 главный вывод. Отвечай на русском языке."
+        else:
+            system_prompt = "Summarize this article in 3 bullet points and 1 actionable takeaway. Respond in English."
+
+        user_prompt = f"Article:\n\n{text_content}"
+
+        # Call AI
+        ai_client = get_async_client()
+        response = await asyncio.wait_for(
+            ai_client.chat.completions.create(
+                model='deepseek-chat',
+                messages=[
+                    {'role': 'system', 'content': system_prompt},
+                    {'role': 'user', 'content': user_prompt},
+                ],
+                temperature=0.3,
+                max_tokens=400,
+            ),
+            timeout=25.0,
+        )
+
+        answer = response.choices[0].message.content
+
+        # Send back summary
+        try:
+            await query.message.reply_text(answer, parse_mode='Markdown', disable_web_page_preview=True)
+        except Exception:
+            await query.message.reply_text(answer, disable_web_page_preview=True)
+
+    except Exception as e:
+        error_msg = str(e)[:80]
+        await query.message.reply_text(t('summary_error', user_lang, error=error_msg))
+
+
 # ============ Q&A HANDLER ============
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1579,11 +1745,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Check if it's a URL to save
     if user_message.startswith('http://') or user_message.startswith('https://'):
-        from .user_storage import save_article
-        if save_article(telegram_id, user_message[:50], user_message):
-            await update.message.reply_text(t('link_saved', user_lang))
+        from .user_storage import save_article, save_temp_url
+        from .security_utils import stable_hash
+
+        is_saved = save_article(telegram_id, user_message[:50], user_message)
+
+        url_hash = stable_hash(user_message)[:8]
+        save_temp_url(url_hash, telegram_id, user_message)
+
+        reply_markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton(t('btn_summarize', user_lang), callback_data=f"summarize_url_{url_hash}")]
+        ])
+
+        if is_saved:
+            await update.message.reply_text(t('link_saved', user_lang), reply_markup=reply_markup)
         else:
-            await update.message.reply_text(t('link_exists', user_lang))
+            await update.message.reply_text(t('link_exists', user_lang), reply_markup=reply_markup)
         return
     
     # Otherwise, treat as a question for AI
@@ -1774,6 +1951,8 @@ def create_bot_application() -> Application:
     application.add_handler(CallbackQueryHandler(save_digest_callback, pattern='^save_digest_'))
     application.add_handler(CallbackQueryHandler(why_digest_callback, pattern='^why_digest_'))
     application.add_handler(CallbackQueryHandler(delete_article_callback, pattern='^del_'))
+    application.add_handler(CallbackQueryHandler(saved_page_callback, pattern='^saved_page_'))
+    application.add_handler(CallbackQueryHandler(summarize_url_callback, pattern='^summarize_url_'))
     
     # Add message handler for buttons and Q&A (handles any text that isn't a command)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
@@ -1789,13 +1968,13 @@ async def send_digest_to_user(telegram_id: int, digest: str, articles_meta: list
     from telegram import Bot
     from .user_storage import get_user_language, save_temp_digest
     from .personalization import record_digest_context
-    import hashlib
+    from .security_utils import stable_hash
     
     bot = Bot(token=get_bot_token())
     user_lang = get_user_language(telegram_id)
     
     # Generate digest ID for buttons
-    digest_id = hashlib.md5(digest[:100].encode()).hexdigest()[:8]
+    digest_id = stable_hash(digest[:100])[:8]
     
     # Persist temp digest context so callbacks work for scheduled sends too.
     try:
