@@ -672,6 +672,10 @@ async def _render_saved_page(update_or_query, telegram_id: int, user_lang: str, 
     if nav_buttons:
         keyboard.append(nav_buttons)
 
+    # Add Clear All button
+    clear_all_text = t('clear_all_btn', user_lang)
+    keyboard.append([InlineKeyboardButton(clear_all_text, callback_data=f"clear_all_prompt_{page}")])
+
     reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
     
     try:
@@ -802,6 +806,60 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode='Markdown'
     )
 
+
+async def clear_all_prompt_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle clear all prompt button press."""
+    query = update.callback_query
+    await query.answer()
+    telegram_id = update.effective_user.id
+    from .user_storage import get_user_language
+    from .translations import t
+    user_lang = get_user_language(telegram_id)
+
+    data = query.data
+    page = data.replace('clear_all_prompt_', '')
+
+    message = t('clear_all_prompt', user_lang)
+    keyboard = [
+        [InlineKeyboardButton(t('clear_all_confirm_btn', user_lang), callback_data=f"clear_all_confirm_{page}")],
+        [InlineKeyboardButton(t('clear_all_cancel_btn', user_lang), callback_data=f"clear_all_cancel_{page}")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await query.edit_message_text(
+        message,
+        parse_mode='Markdown',
+        reply_markup=reply_markup
+    )
+
+async def clear_all_confirm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle clear all confirm button press."""
+    query = update.callback_query
+    await query.answer()
+    telegram_id = update.effective_user.id
+    from .user_storage import clear_saved_articles, get_user_language
+    from .translations import t
+
+    user_lang = get_user_language(telegram_id)
+    clear_saved_articles(telegram_id)
+
+    await query.edit_message_text(
+        t('cleared_saved', user_lang),
+        parse_mode='Markdown'
+    )
+
+async def clear_all_cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle clear all cancel button press."""
+    query = update.callback_query
+    await query.answer()
+    telegram_id = update.effective_user.id
+    from .user_storage import get_user_language
+
+    user_lang = get_user_language(telegram_id)
+    data = query.data
+    page = int(data.replace('clear_all_cancel_', ''))
+
+    await _render_saved_page(query, telegram_id, user_lang, page, is_callback=True)
 
 async def clear_saved_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /clear_saved command."""
@@ -1943,6 +2001,9 @@ def create_bot_application() -> Application:
     application.add_handler(CallbackQueryHandler(delete_article_callback, pattern='^del_'))
     application.add_handler(CallbackQueryHandler(saved_page_callback, pattern='^saved_page_'))
     application.add_handler(CallbackQueryHandler(summarize_url_callback, pattern='^summarize_url_'))
+    application.add_handler(CallbackQueryHandler(clear_all_prompt_callback, pattern='^clear_all_prompt_'))
+    application.add_handler(CallbackQueryHandler(clear_all_confirm_callback, pattern='^clear_all_confirm_'))
+    application.add_handler(CallbackQueryHandler(clear_all_cancel_callback, pattern='^clear_all_cancel_'))
     
     # Add message handler for buttons and Q&A (handles any text that isn't a command)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
