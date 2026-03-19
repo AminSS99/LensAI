@@ -71,6 +71,32 @@ def get_digest_reply_markup(digest_id: str, user_lang: str) -> InlineKeyboardMar
     return InlineKeyboardMarkup(keyboard)
 
 
+def _digest_action_texts(lang: str) -> dict:
+    """Localized callback copy for digest action buttons."""
+    if lang == 'ru':
+        return {
+            'saving': 'Сохраняю...',
+            'saved': 'Сохранено статей: {count}. Откройте /saved.',
+            'save_empty': 'Все статьи уже сохранены или ссылки не найдены.',
+            'invalid': 'Некорректный запрос.',
+            'not_found': 'Контекст дайджеста истёк.',
+            'analyzing': 'Анализирую...',
+            'digest_missing': 'Не удалось найти данные дайджеста.',
+            'analysis_error': 'Не удалось подготовить объяснение: {error}',
+        }
+
+    return {
+        'saving': 'Saving...',
+        'saved': 'Saved {count} articles. Open /saved to view them.',
+        'save_empty': 'All articles are already saved or no links were found.',
+        'invalid': 'Invalid request.',
+        'not_found': 'Digest context expired.',
+        'analyzing': 'Analyzing...',
+        'digest_missing': 'Could not find digest data.',
+        'analysis_error': 'Could not prepare the explanation: {error}',
+    }
+
+
 # ============ KEYBOARD MENUS ============
 
 def get_main_keyboard(lang: str = 'en'):
@@ -286,7 +312,14 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             from .user_storage import save_temp_digest
             from .personalization import record_digest_context
-            save_temp_digest(digest_id, telegram_id, digest, articles_meta=items_to_summarize, ttl_hours=24)
+            save_temp_digest(
+                digest_id,
+                telegram_id,
+                digest,
+                articles_meta=items_to_summarize,
+                language=user_lang,
+                ttl_hours=24,
+            )
             record_digest_context(digest_id, telegram_id, items_to_summarize)
         except Exception as e:
             print(f"Error storing digest: {e}")
@@ -1498,7 +1531,14 @@ async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         from .security_utils import stable_hash
         digest_id = stable_hash(digest[:100])[:8]
         # Persist callback context.
-        save_temp_digest(digest_id, telegram_id, digest, articles_meta=items_to_summarize, ttl_hours=24)
+        save_temp_digest(
+            digest_id,
+            telegram_id,
+            digest,
+            articles_meta=items_to_summarize,
+            language=user_lang,
+            ttl_hours=24,
+        )
         record_digest_context(digest_id, telegram_id, items_to_summarize)
         # Refresh cache with latest digest variant.
         set_cached_digest(digest, ttl_minutes=15, cache_key=cache_key)
@@ -1544,18 +1584,19 @@ async def save_digest_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     from .user_storage import get_user_language, save_article, get_temp_digest
     import re
     query = update.callback_query
-    await query.answer("Saving...")
     telegram_id = update.effective_user.id
     user_lang = get_user_language(telegram_id)
+    texts = _digest_action_texts(user_lang)
+    await query.answer(texts['saving'])
     callback_data = query.data
     parts = callback_data.split('_')
     if len(parts) < 3:
-        await query.answer("Error: Invalid callback data", show_alert=True)
+        await query.answer(texts['invalid'], show_alert=True)
         return
     digest_id = parts[2]
     digest_data = get_temp_digest(digest_id)
     if not digest_data:
-        await query.answer("Digest not found", show_alert=True)
+        await query.answer(texts['not_found'], show_alert=True)
         return
     digest_content = digest_data.get('content', '')
     articles_meta = digest_data.get('articles_meta', [])
@@ -1584,56 +1625,49 @@ async def save_digest_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             if save_article(telegram_id, title, url, ''):
                 saved_count += 1
     if saved_count > 0:
-        text = f"Saved {saved_count} articles! Use /saved to view."
+        text = texts['saved'].format(count=saved_count)
         await query.answer(text, show_alert=True)
     else:
-        text = "All articles already saved or no links to save."
-        await query.answer(text, show_alert=True)
+        await query.answer(texts['save_empty'], show_alert=True)
 
 
 async def why_digest_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Generate a quick \"why it matters\" explanation for a digest."""
-    from .user_storage import get_user_language, get_temp_digest
-    from .summarizer import chat_completion
+    from .user_storage import get_user_language, get_temp_digest, normalize_language_code
+    from .summarizer import generate_why_digest
     query = update.callback_query
     telegram_id = update.effective_user.id
     user_lang = get_user_language(telegram_id)
+    texts = _digest_action_texts(user_lang)
     parts = query.data.split('_')
     if len(parts) < 3:
-        await query.answer("Invalid request", show_alert=True)
+        await query.answer(texts['invalid'], show_alert=True)
         return
     digest_id = parts[2]
     digest_data = get_temp_digest(digest_id)
     if not digest_data:
-        await query.answer("Digest context expired", show_alert=True)
+        await query.answer(texts['not_found'], show_alert=True)
         return
-    await query.answer("Analyzing...")
+    reply_lang = normalize_language_code(digest_data.get('language') or user_lang)
+    texts = _digest_action_texts(reply_lang)
+    await query.answer(texts['analyzing'])
     digest_content = (digest_data.get('content') or '')[:3500]
+    articles_meta = digest_data.get('articles_meta') or []
     if not digest_content:
-        await query.message.reply_text("Digest data not found.")
+        await query.message.reply_text(texts['digest_missing'])
         return
-    if user_lang == 'ru':
-        system_prompt = "Summarize why this digest matters in Russian with 3 bullet points and 1 actionable takeaway."
-        user_prompt = f"Digest:\n\n{digest_content}"
-    else:
-        system_prompt = "You are a tech analyst. Explain why this digest matters: 3 bullets + 1 actionable takeaway."
-        user_prompt = f"Digest:\n\n{digest_content}"
     try:
-        answer = await chat_completion(
-            messages=[
-                {'role': 'system', 'content': system_prompt},
-                {'role': 'user', 'content': user_prompt},
-            ],
-            temperature=0.4,
-            max_tokens=350,
-            timeout=25.0,
+        answer = await generate_why_digest(
+            digest_content=digest_content,
+            articles_meta=articles_meta,
+            language=reply_lang,
         )
         try:
             await query.message.reply_text(answer, parse_mode='Markdown', disable_web_page_preview=True)
         except Exception:
             await query.message.reply_text(answer, disable_web_page_preview=True)
     except Exception as e:
-        err = f"Could not generate analysis: {str(e)[:80]}"
+        err = texts['analysis_error'].format(error=str(e)[:80])
         await query.message.reply_text(err)
 
 async def summarize_url_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1968,7 +2002,14 @@ async def send_digest_to_user(telegram_id: int, digest: str, articles_meta: list
     
     # Persist temp digest context so callbacks work for scheduled sends too.
     try:
-        save_temp_digest(digest_id, telegram_id, digest, articles_meta=articles_meta or [], ttl_hours=24)
+        save_temp_digest(
+            digest_id,
+            telegram_id,
+            digest,
+            articles_meta=articles_meta or [],
+            language=user_lang,
+            ttl_hours=24,
+        )
         if articles_meta:
             record_digest_context(digest_id, telegram_id, articles_meta)
     except Exception as e:

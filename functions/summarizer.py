@@ -5,7 +5,7 @@ the tech news digest.
 """
 
 import os
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone, timedelta
 from openai import AsyncOpenAI
 import asyncio
@@ -175,28 +175,28 @@ def estimate_read_time(title: str, summary: str = "") -> int:
 def get_system_prompt() -> str:
     """Generate system prompt with current date."""
     current_date = get_current_date_baku()
-    return f"""You are a professional tech news digest creator. Today is {current_date}.
+    return f"""You create polished Telegram tech digests. Today is {current_date}.
 
-Create a Telegram digest following this EXACT format:
+Respond only in English and use clean Markdown for Telegram.
 
-CATEGORIES (use ### for headers):
-### 🔥 Top Stories
-### 🤖 AI News  
-### 🛠️ Tools
-### 💼 Industry
+Required structure:
+### Top Stories
+### AI & ML
+### Tools
+### Industry
 
-EACH ITEM FORMAT:
-• **Title** — brief 1-sentence summary. (Source) ~X min | [Read](url)
+Required format for every story:
+• **Headline** — one short descriptive sentence.
+  [Source: Publication Name](url)
 
-RULES:
-- Target 12-14 items total when enough strong stories exist
-- Keep summaries to one or two concise sentences
-- Use bullet points (•) not asterisks
-- Put the link text as just "Read" or "Читать"
-- NO intro paragraph, NO title/header, start directly with first category
-- End with: 💡 **Insight:** one brief observation
-
-IMPORTANT: Skip old or repeated news. Be concise."""
+Rules:
+- Prefer 8-12 strong stories when enough good items exist
+- Every item must include both a short description and a source link
+- Keep descriptions to one concise sentence
+- Skip stale, duplicate, or weak stories
+- No intro paragraph and no extra title header
+- End with `💡 **Why this matters:**` followed by one brief observation
+"""
 
 
 USER_PROMPT_TEMPLATE = """Here are today's tech news items. Please create a curated digest:
@@ -204,6 +204,136 @@ USER_PROMPT_TEMPLATE = """Here are today's tech news items. Please create a cura
 {news_content}
 
 Create an engaging Telegram-friendly digest with the most important stories."""
+
+
+def build_digest_context(news_items: List[Dict[str, Any]], language: str = 'en', limit: int = 10) -> str:
+    """Build compact structured article context for follow-up actions."""
+    labels = {
+        'en': {
+            'title': 'Title',
+            'source': 'Source',
+            'summary': 'Summary',
+            'url': 'URL',
+        },
+        'ru': {
+            'title': 'Заголовок',
+            'source': 'Источник',
+            'summary': 'Описание',
+            'url': 'Ссылка',
+        },
+    }
+    active = labels['ru'] if language == 'ru' else labels['en']
+    lines: List[str] = []
+
+    for index, item in enumerate(news_items[:limit], 1):
+        title = (item.get('title') or 'Untitled').strip()
+        source = (item.get('source') or 'Unknown').strip()
+        summary = (item.get('summary') or '').strip()
+        url = (item.get('url') or '').strip()
+
+        lines.append(f"{index}. {active['title']}: {title}")
+        lines.append(f"   {active['source']}: {source}")
+        if summary:
+            lines.append(f"   {active['summary']}: {summary[:280]}")
+        if url:
+            lines.append(f"   {active['url']}: {url}")
+
+    return "\n".join(lines)
+
+
+async def generate_why_digest(
+    digest_content: str,
+    articles_meta: Optional[List[Dict[str, Any]]] = None,
+    language: str = 'en',
+) -> str:
+    """Generate a localized follow-up for the Why This Matters button."""
+    articles_context = build_digest_context(articles_meta or [], language=language, limit=8)
+    digest_excerpt = (digest_content or '')[:2800]
+
+    if language == 'ru':
+        system_prompt = """Ты объясняешь, почему новостной дайджест важен для читателя.
+
+Отвечай только на русском и в таком формате:
+**Почему это важно:**
+• пункт 1
+• пункт 2
+• пункт 3
+
+**Что сделать дальше:** одно короткое практическое действие.
+
+Опирайся только на факты из дайджеста и списка статей. Не выдумывай детали."""
+        user_prompt = (
+            "Вот данные дайджеста.\n\n"
+            f"Статьи:\n{articles_context or 'Нет структурированных данных.'}\n\n"
+            f"Текст дайджеста:\n{digest_excerpt}"
+        )
+    else:
+        system_prompt = """You explain why a tech news digest matters to the reader.
+
+Reply only in English and use this format:
+**Why this matters:**
+• point 1
+• point 2
+• point 3
+
+**What to do next:** one short practical action.
+
+Use only details grounded in the digest and article list. Do not invent facts."""
+        user_prompt = (
+            "Here is the digest data.\n\n"
+            f"Articles:\n{articles_context or 'No structured article data available.'}\n\n"
+            f"Digest text:\n{digest_excerpt}"
+        )
+
+    return await chat_completion(
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=0.3,
+        max_tokens=320,
+        timeout=25.0,
+    )
+
+
+def build_digest_prompts(news_content: str, language: str = 'en') -> tuple[str, str]:
+    """Build localized digest prompts with a consistent output shape."""
+    if language == 'ru':
+        date_formatted = datetime.now(BAKU_TZ).strftime('%d.%m.%Y')
+        system_prompt = f"""Ты создаёшь аккуратные Telegram-дайджесты о технологиях. Сегодня {date_formatted}.
+
+Отвечай только на русском языке и используй Markdown.
+
+Структура:
+### Главное
+### AI & ML
+### Инструменты
+### Индустрия
+
+Формат каждой новости:
+• **Заголовок** — одно короткое поясняющее предложение.
+  [Источник: Название издания](url)
+
+Правила:
+- Предпочитай 8-12 сильных новостей, если хватает хороших материалов
+- У каждой новости обязательно должны быть короткое описание и ссылка на источник
+- Не добавляй вступление и отдельный заголовок с датой
+- Пропускай повторы и слабые новости
+- Заверши строкой `💡 **Почему это важно:**` и одним кратким наблюдением
+"""
+        user_prompt = (
+            "Создай дайджест на русском языке по этим новостям:\n\n"
+            f"{news_content}\n\n"
+            "Предпочитай 8-12 сильных новостей, если хватает хороших материалов."
+        )
+        return system_prompt, user_prompt
+
+    system_prompt = get_system_prompt()
+    user_prompt = (
+        USER_PROMPT_TEMPLATE.format(news_content=news_content)
+        + "\n\nPrefer 8-12 strong stories if enough quality items exist. Every story must include a short description and a source link."
+    )
+    return system_prompt, user_prompt
 
 
 async def summarize_news(news_items: List[Dict[str, Any]], max_items: int = 30, language: str = 'en') -> str:
@@ -294,6 +424,18 @@ async def _ai_summarize(news_items: List[Dict[str, Any]], language: str) -> str:
     """
     # Format news for the prompt
     news_content = format_news_for_prompt(news_items)
+
+    # Use a single prompt builder so English and Russian stay aligned.
+    system_prompt, user_prompt = build_digest_prompts(news_content, language)
+    return await chat_completion(
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=0.7,
+        max_tokens=2200,
+        timeout=45.0,
+    )
     
     # Language-specific prompts
     if language == 'ru':

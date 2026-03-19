@@ -13,6 +13,23 @@ from .security_utils import stable_hash
 
 # Local storage directory (fallback)
 STORAGE_DIR = os.path.join(os.path.dirname(__file__), '.user_data')
+SUPPORTED_LANGUAGE_CODES = {'en', 'ru', 'az'}
+LANGUAGE_ALIASES = {
+    'en': 'en',
+    'en-us': 'en',
+    'en-gb': 'en',
+    'english': 'en',
+    'английский': 'en',
+    'ru': 'ru',
+    'ru-ru': 'ru',
+    'russian': 'ru',
+    'русский': 'ru',
+    'az': 'az',
+    'az-az': 'az',
+    'azerbaijani': 'az',
+    'azərbaycan': 'az',
+    'azerbaijan': 'az',
+}
 
 
 def _ensure_storage_dir():
@@ -67,6 +84,22 @@ def get_firestore_client():
         return firestore.Client()
     except Exception:
         return None
+
+
+def normalize_language_code(language: Any, default: str = 'en') -> str:
+    """Normalize language values from Firestore/UI into canonical bot codes."""
+    if not language:
+        return default
+
+    value = str(language).strip().lower().replace('_', '-')
+    if value in LANGUAGE_ALIASES:
+        return LANGUAGE_ALIASES[value]
+
+    prefix = value.split('-', 1)[0]
+    if prefix in SUPPORTED_LANGUAGE_CODES:
+        return prefix
+
+    return default
 
 
 # ============ ARTICLE CATEGORIES ============
@@ -312,16 +345,17 @@ def get_user_language(telegram_id: int) -> str:
         try:
             doc = db.collection('user_preferences').document(str(telegram_id)).get()
             if doc.exists:
-                return doc.to_dict().get('language', 'en')
+                return normalize_language_code(doc.to_dict().get('language', 'en'))
         except Exception:
             pass
             
     prefs = get_user_preferences(telegram_id)
-    return prefs.get('language', 'en')
+    return normalize_language_code(prefs.get('language', 'en'))
 
 
 def set_user_language(telegram_id: int, language: str):
     """Set user's preferred language."""
+    language = normalize_language_code(language)
     db = get_firestore_client()
     if db:
         try:
@@ -607,6 +641,7 @@ def save_temp_digest(
     telegram_id: int,
     content: str,
     articles_meta: Optional[List[Dict[str, Any]]] = None,
+    language: str = 'en',
     ttl_hours: int = 24
 ) -> bool:
     """
@@ -623,6 +658,7 @@ def save_temp_digest(
             'content': content,
             'user_id': telegram_id,
             'articles_meta': articles_meta or [],
+            'language': normalize_language_code(language),
             'created_at': firestore.SERVER_TIMESTAMP,
             'expires_at': expires_at
         }, merge=True)
