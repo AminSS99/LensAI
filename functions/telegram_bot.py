@@ -1293,6 +1293,7 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /search command - search news by topic."""
     from .scrapers.hackernews import fetch_hackernews_sync
     from .scrapers.techcrunch import fetch_techcrunch
+    from .security_utils import escape_markdown_v1
     from .user_storage import add_search_history, get_user_language, get_search_history
     from .rate_limiter import check_rate_limit
     from .translations import t
@@ -1312,11 +1313,7 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Fetch and append recent search history
         recent_searches = get_search_history(telegram_id, limit=5)
         if recent_searches:
-            from .security_utils import escape_markdown_v1
-
-            # Using unique set while preserving order
-            seen = set()
-            unique_searches = [x for x in recent_searches if not (x in seen or seen.add(x))]
+            unique_searches = list(dict.fromkeys(recent_searches))
 
             history_lines = [f"• `{escape_markdown_v1(query)}`" for query in unique_searches]
             header = t('search_history_header', user_lang)
