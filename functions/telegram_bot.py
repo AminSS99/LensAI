@@ -890,7 +890,10 @@ async def clear_all_cancel_callback(update: Update, context: ContextTypes.DEFAUL
 
     user_lang = get_user_language(telegram_id)
     data = query.data
-    page = int(data.replace('clear_all_cancel_', ''))
+    try:
+        page = int(data.replace('clear_all_cancel_', ''))
+    except (TypeError, ValueError):
+        page = 0
 
     await _render_saved_page(query, telegram_id, user_lang, page, is_callback=True)
 

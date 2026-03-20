@@ -3,6 +3,7 @@ Fallback Digest Generator
 Creates simple, formatted digests without AI when DeepSeek API fails.
 """
 
+import re
 from typing import List, Dict, Any
 from datetime import datetime, timezone, timedelta
 
@@ -38,6 +39,11 @@ def get_source_emoji(source: str) -> str:
         return '📄'
 
 
+def _contains_keyword(title_lower: str, keywords: List[str]) -> bool:
+    """Match whole keywords and phrases to avoid substring false positives."""
+    return any(re.search(rf"\b{re.escape(keyword)}\b", title_lower) for keyword in keywords)
+
+
 def categorize_news(news_items: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
     """
     Categorize news items by topic.
@@ -65,13 +71,13 @@ def categorize_news(news_items: List[Dict[str, Any]]) -> Dict[str, List[Dict[str
         if score and score > 200:
             categories['🔥 Top Stories'].append(item)
         # AI category
-        elif any(kw in title_lower for kw in ai_keywords):
+        elif _contains_keyword(title_lower, ai_keywords):
             categories['🤖 AI & ML'].append(item)
         # Tools category
-        elif any(kw in title_lower for kw in tools_keywords):
+        elif _contains_keyword(title_lower, tools_keywords):
             categories['🛠️ Tools & Products'].append(item)
         # Business category
-        elif any(kw in title_lower for kw in business_keywords):
+        elif _contains_keyword(title_lower, business_keywords):
             categories['💼 Business & Startups'].append(item)
         # Default to other
         else:
