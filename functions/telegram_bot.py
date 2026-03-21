@@ -1767,6 +1767,11 @@ async def summarize_url_callback(update: Update, context: ContextTypes.DEFAULT_T
         await query.answer("Link expired. Please send the link again.", show_alert=True)
         return
 
+    from .security_utils import is_safe_url
+    if not is_safe_url(url):
+        await query.answer("Restricted or invalid URL.", show_alert=True)
+        return
+
     await query.answer(t('summarizing_link', user_lang))
 
     try:
@@ -1846,8 +1851,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Check if it's a URL to save
     if user_message.startswith('http://') or user_message.startswith('https://'):
+        from .security_utils import is_safe_url, stable_hash
+        if not is_safe_url(user_message):
+            await update.message.reply_text("❌ Restricted or invalid URL.")
+            return
+
         from .user_storage import save_article, save_temp_url
-        from .security_utils import stable_hash
 
         is_saved = save_article(telegram_id, user_message[:50], user_message)
 
