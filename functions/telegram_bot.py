@@ -1769,10 +1769,36 @@ async def summarize_url_callback(update: Update, context: ContextTypes.DEFAULT_T
 
     await query.answer(t('summarizing_link', user_lang))
 
+    from .security_utils import is_safe_url
+    if not await is_safe_url(url):
+        await query.message.reply_text("❌ Security Policy: Cannot summarize local or private URLs.")
+        return
+
     try:
-        # Fetch content
-        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
-            response = await client.get(url)
+        # Fetch content manually handling redirects to ensure each hop is safe
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
+            current_url = url
+            for _ in range(5): # Max 5 redirects
+                response = await client.get(current_url)
+                if response.is_redirect:
+                    next_url = response.headers.get("location")
+                    if not next_url:
+                        break
+
+                    # urljoin handles both relative and absolute URLs safely
+                    from urllib.parse import urljoin
+                    current_url = urljoin(current_url, next_url)
+
+                    if not await is_safe_url(current_url):
+                        await query.message.reply_text("❌ Security Policy: Redirected to a local or private URL.")
+                        return
+                else:
+                    break
+            else:
+                # Loop completed without breaking, meaning too many redirects
+                await query.message.reply_text("❌ Error: Too many redirects.")
+                return
+
             response.raise_for_status()
 
         # Parse content safely
