@@ -688,6 +688,7 @@ async def _render_saved_page(update_or_query, telegram_id: int, user_lang: str, 
         from .security_utils import stable_hash
         url_hash = stable_hash(url)[:8]
         delete_label = "🗑️"
+
         # encode page in callback data so delete button can refresh the correct page
         keyboard.append([InlineKeyboardButton(f"{delete_label} {item_num}. {title[:25]}...", callback_data=f"del_{url_hash}_{page}")])
     
@@ -1289,6 +1290,45 @@ async def delete_article_callback(update: Update, context: ContextTypes.DEFAULT_
 
 # ============ SEARCH ============
 
+async def save_search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle save article button press from search results."""
+    from .user_storage import get_user_language, save_article, get_temp_digest
+    query = update.callback_query
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+
+    parts = query.data.split('_')
+    if len(parts) < 3:
+        await query.answer("Invalid request", show_alert=True)
+        return
+
+    search_id = parts[1]
+    item_index = int(parts[2])
+
+    digest_data = get_temp_digest(search_id)
+    if not digest_data:
+        await query.answer("Search results expired. Please search again.", show_alert=True)
+        return
+
+    articles_meta = digest_data.get('articles_meta', [])
+    if item_index < 0 or item_index >= len(articles_meta):
+        await query.answer("Article not found in results.", show_alert=True)
+        return
+
+    item = articles_meta[item_index]
+    title = (item.get('title') or item.get('url') or 'Untitled')[:100]
+    url = item.get('url', '')
+    source = item.get('source', '')
+
+    if not url:
+        await query.answer("Invalid article URL.", show_alert=True)
+        return
+
+    if save_article(telegram_id, title, url, source):
+        await query.answer(f"Saved: {title[:30]}...", show_alert=False)
+    else:
+        await query.answer("Article already saved!", show_alert=False)
+
 async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /search command - search news by topic."""
     from .scrapers.hackernews import fetch_hackernews_sync
@@ -1370,10 +1410,12 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode='Markdown'
             )
             return
+
+        top_results = results[:10]
         
         # Format results
         message = t('search_results', user_lang, query=safe_query, count=len(results))
-        for i, article in enumerate(results[:10], 1):
+        for i, article in enumerate(top_results, 1):
             title = article.get('title', '')[:60]
             # Escape title for security
             safe_title = escape_markdown_v1(title)
@@ -1384,11 +1426,38 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             safe_source = escape_markdown_v1(source)
             
             message += f"{i}. [{safe_title}]({url}) _{safe_source}_\n"
+
+        # Create temp digest and interactive keyboard
+        from .user_storage import save_temp_digest
+        from .security_utils import stable_hash
+
+        search_id = stable_hash(query + str(telegram_id))[:8]
+        save_temp_digest(
+            search_id,
+            telegram_id,
+            "Search results",
+            articles_meta=top_results,
+            language=user_lang,
+            ttl_hours=2
+        )
+
+        keyboard = []
+        row = []
+        for i in range(1, len(top_results) + 1):
+            row.append(InlineKeyboardButton(f"🔖 {i}", callback_data=f"svsrch_{search_id}_{i-1}"))
+            if len(row) == 5:
+                keyboard.append(row)
+                row = []
+        if row:
+            keyboard.append(row)
+
+        reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
         
         await update.message.reply_text(
             message,
             parse_mode='Markdown',
-            disable_web_page_preview=True
+            disable_web_page_preview=True,
+            reply_markup=reply_markup
         )
         
     except Exception as e:
@@ -2053,6 +2122,7 @@ def create_bot_application() -> Application:
     application.add_handler(CallbackQueryHandler(clear_all_prompt_callback, pattern='^clear_all_prompt_'))
     application.add_handler(CallbackQueryHandler(clear_all_confirm_callback, pattern='^clear_all_confirm_'))
     application.add_handler(CallbackQueryHandler(clear_all_cancel_callback, pattern='^clear_all_cancel_'))
+    application.add_handler(CallbackQueryHandler(save_search_callback, pattern='^svsrch_'))
     
     # Add message handler for buttons and Q&A (handles any text that isn't a command)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
