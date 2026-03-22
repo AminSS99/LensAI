@@ -1,5 +1,5 @@
 import pytest
-from functions.security_utils import escape_markdown_v1
+from functions.security_utils import escape_markdown_v1, is_safe_url
 
 def test_escape_markdown_v1_empty_string():
     """Test with empty strings and None."""
@@ -40,3 +40,26 @@ def test_escape_markdown_v1_mixed_text():
     input_str = "Check out this *awesome* repo: [Link](https://github.com/test)! It's 100% free."
     expected_str = r"Check out this \*awesome\* repo: \[Link\]\(https://github\.com/test\)\! It's 100% free\."
     assert escape_markdown_v1(input_str) == expected_str
+
+@pytest.mark.asyncio
+async def test_is_safe_url_valid():
+    assert await is_safe_url("https://google.com") == True
+    assert await is_safe_url("http://example.org") == True
+
+@pytest.mark.asyncio
+async def test_is_safe_url_invalid_scheme():
+    assert await is_safe_url("file:///etc/passwd") == False
+    assert await is_safe_url("ftp://example.com") == False
+
+@pytest.mark.asyncio
+async def test_is_safe_url_local():
+    assert await is_safe_url("http://localhost") == False
+    assert await is_safe_url("http://127.0.0.1") == False
+    assert await is_safe_url("http://[::1]") == False
+
+@pytest.mark.asyncio
+async def test_is_safe_url_private():
+    assert await is_safe_url("http://192.168.1.1") == False
+    assert await is_safe_url("http://10.0.0.5") == False
+    assert await is_safe_url("http://172.16.0.1") == False
+    assert await is_safe_url("http://169.254.169.254") == False
