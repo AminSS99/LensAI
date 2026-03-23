@@ -688,8 +688,12 @@ async def _render_saved_page(update_or_query, telegram_id: int, user_lang: str, 
         from .security_utils import stable_hash
         url_hash = stable_hash(url)[:8]
         delete_label = "🗑️"
+        summarize_label = "🧠"
         # encode page in callback data so delete button can refresh the correct page
-        keyboard.append([InlineKeyboardButton(f"{delete_label} {item_num}. {title[:25]}...", callback_data=f"del_{url_hash}_{page}")])
+        keyboard.append([
+            InlineKeyboardButton(f"{summarize_label} {item_num}", callback_data=f"summarize_url_{url_hash}"),
+            InlineKeyboardButton(f"{delete_label} {item_num}", callback_data=f"del_{url_hash}_{page}")
+        ])
     
     message += t('saved_footer', user_lang)
 
@@ -1745,11 +1749,13 @@ async def why_digest_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def summarize_url_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Summarize a saved URL."""
-    from .user_storage import get_user_language, get_temp_url
+    from .user_storage import get_user_language, get_temp_url, get_all_saved_articles
     from .translations import t
     from .summarizer import chat_completion
     import httpx
     from bs4 import BeautifulSoup
+    from .security_utils import is_safe_url, stable_hash
+    from urllib.parse import urljoin
 
     query = update.callback_query
     telegram_id = update.effective_user.id
@@ -1763,16 +1769,41 @@ async def summarize_url_callback(update: Update, context: ContextTypes.DEFAULT_T
     url_hash = parts[2]
     url = get_temp_url(url_hash, telegram_id)
 
+    # Fallback to saved articles if temp URL expired
     if not url:
-        await query.answer("Link expired. Please send the link again.", show_alert=True)
+        articles = get_all_saved_articles(telegram_id)
+        for article in articles:
+            if stable_hash(article.get('url', ''))[:8] == url_hash:
+                url = article.get('url')
+                break
+
+    if not url:
+        await query.answer("Link expired or not found. Please send the link again.", show_alert=True)
+        return
+
+    # Validate URL to prevent SSRF
+    if not await is_safe_url(url):
+        await query.answer("Security policy prevents accessing this URL.", show_alert=True)
         return
 
     await query.answer(t('summarizing_link', user_lang))
 
     try:
-        # Fetch content
-        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
-            response = await client.get(url)
+        # Fetch content with safe manual redirect resolution
+        current_url = url
+        response = None
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
+            for _ in range(5): # Max 5 redirects
+                response = await client.get(current_url)
+                if response.status_code in (301, 302, 303, 307, 308):
+                    next_url = urljoin(current_url, response.headers.get('Location', ''))
+                    if not await is_safe_url(next_url):
+                        await query.message.reply_text("❌ Security policy prevents accessing a redirected URL.")
+                        return
+                    current_url = next_url
+                else:
+                    break
+
             response.raise_for_status()
 
         # Parse content safely
