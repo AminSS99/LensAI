@@ -1747,6 +1747,8 @@ async def summarize_url_callback(update: Update, context: ContextTypes.DEFAULT_T
     """Summarize a saved URL."""
     from .user_storage import get_user_language, get_temp_url
     from .translations import t
+    from .security_utils import is_safe_url
+    import urllib.parse
     from .summarizer import chat_completion
     import httpx
     from bs4 import BeautifulSoup
@@ -1770,10 +1772,24 @@ async def summarize_url_callback(update: Update, context: ContextTypes.DEFAULT_T
     await query.answer(t('summarizing_link', user_lang))
 
     try:
-        # Fetch content
-        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
-            response = await client.get(url)
-            response.raise_for_status()
+        # Fetch content safely to prevent SSRF
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
+            current_url = url
+            for hop in range(3):  # Limit to 3 redirects
+                if not await is_safe_url(current_url):
+                    raise ValueError(f"Unsafe URL detected: {current_url}")
+
+                response = await client.get(current_url)
+                if response.is_redirect:
+                    location = response.headers.get('Location')
+                    if not location:
+                        break
+                    current_url = urllib.parse.urljoin(current_url, location)
+                else:
+                    response.raise_for_status()
+                    break
+            else:
+                raise ValueError("Too many redirects")
 
         # Parse content safely
         soup = await asyncio.to_thread(BeautifulSoup, response.text, 'html.parser')
