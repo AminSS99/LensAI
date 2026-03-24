@@ -689,7 +689,10 @@ async def _render_saved_page(update_or_query, telegram_id: int, user_lang: str, 
         url_hash = stable_hash(url)[:8]
         delete_label = "🗑️"
         # encode page in callback data so delete button can refresh the correct page
-        keyboard.append([InlineKeyboardButton(f"{delete_label} {item_num}. {title[:25]}...", callback_data=f"del_{url_hash}_{page}")])
+        keyboard.append([
+            InlineKeyboardButton(f"{delete_label} {item_num}. {title[:25]}...", callback_data=f"del_{url_hash}_{page}"),
+            InlineKeyboardButton("🧠", callback_data=f"summarize_url_{url_hash}")
+        ])
     
     message += t('saved_footer', user_lang)
 
@@ -906,6 +909,68 @@ async def clear_saved_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     user_lang = get_user_language(telegram_id)
     clear_saved_articles(telegram_id)
     await update.message.reply_text(t('cleared_saved', user_lang))
+
+
+
+async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /stats command - view reading statistics."""
+    from .user_storage import get_all_saved_articles, get_user_language
+    from .translations import t
+    from datetime import datetime, timedelta
+
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+
+    articles = get_all_saved_articles(telegram_id)
+
+    if not articles:
+        await update.message.reply_text(t('stats_empty', user_lang), parse_mode='Markdown')
+        return
+
+    # Calculate stats
+    total_saved = len(articles)
+
+    week_ago = datetime.now() - timedelta(days=7)
+    weekly_count = 0
+    categories = {}
+    sources = {}
+
+    for article in articles:
+        # Weekly count
+        saved_at = article.get('saved_at', '')
+        if saved_at:
+            try:
+                saved_date = datetime.fromisoformat(saved_at.replace('Z', '+00:00'))
+                if saved_date.replace(tzinfo=None) > week_ago:
+                    weekly_count += 1
+            except Exception:
+                pass
+
+        # Top category
+        category = article.get('category', 'tech')
+        if category:
+            categories[category] = categories.get(category, 0) + 1
+
+        # Top source
+        source = article.get('source', '')
+        if source:
+            sources[source] = sources.get(source, 0) + 1
+
+    top_category = max(categories.items(), key=lambda x: x[1])[0] if categories else 'tech'
+    top_source = max(sources.items(), key=lambda x: x[1])[0] if sources else 'Unknown'
+
+    cat_label = t(f'cat_{top_category}', user_lang)
+    if cat_label == f'cat_{top_category}':
+        cat_label = top_category.capitalize()
+
+    # Format message
+    message = t('stats_message', user_lang,
+                total=total_saved,
+                weekly=weekly_count,
+                top_category=cat_label,
+                top_source=top_source)
+
+    await update.message.reply_text(message, parse_mode='Markdown')
 
 
 async def filter_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1745,9 +1810,11 @@ async def why_digest_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def summarize_url_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Summarize a saved URL."""
-    from .user_storage import get_user_language, get_temp_url
+    from .user_storage import get_user_language, get_temp_url, get_all_saved_articles
     from .translations import t
     from .summarizer import chat_completion
+    from .security_utils import stable_hash, is_safe_url
+    from urllib.parse import urljoin
     import httpx
     from bs4 import BeautifulSoup
 
@@ -1764,15 +1831,41 @@ async def summarize_url_callback(update: Update, context: ContextTypes.DEFAULT_T
     url = get_temp_url(url_hash, telegram_id)
 
     if not url:
+        articles = get_all_saved_articles(telegram_id)
+        for article in articles:
+            article_url = article.get('url', '')
+            if article_url and stable_hash(article_url)[:8] == url_hash:
+                url = article_url
+                break
+
+    if not url:
         await query.answer("Link expired. Please send the link again.", show_alert=True)
+        return
+
+    if not await is_safe_url(url):
+        await query.answer("Unsafe URL detected.", show_alert=True)
         return
 
     await query.answer(t('summarizing_link', user_lang))
 
     try:
         # Fetch content
-        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
             response = await client.get(url)
+            redirect_count = 0
+            while response.is_redirect:
+                redirect_count += 1
+                if redirect_count > 5:
+                    await query.answer("Too many redirects.", show_alert=True)
+                    return
+                location = response.headers.get("location")
+                if not location:
+                    break
+                url = urljoin(url, location)
+                if not await is_safe_url(url):
+                    await query.answer("Unsafe redirect URL detected.", show_alert=True)
+                    return
+                response = await client.get(url)
             response.raise_for_status()
 
         # Parse content safely
@@ -1939,6 +2032,7 @@ async def setup_bot_commands(application: Application):
         BotCommand("semsearch", "Semantic search saved"),
         BotCommand("filter", "Filter saved by category"),
         BotCommand("recap", "Weekly saved articles recap"),
+        BotCommand("stats", "View reading stats"),
         BotCommand("status", "View your settings"),
         BotCommand("language", "Change language"),
         BotCommand("sources", "Toggle news sources"),
@@ -1962,6 +2056,7 @@ async def setup_bot_commands(application: Application):
         BotCommand("semsearch", "Умный поиск"),
         BotCommand("filter", "Фильтр по категориям"),
         BotCommand("recap", "Еженедельная сводка"),
+        BotCommand("stats", "Статистика чтения"),
         BotCommand("status", "Настройки"),
         BotCommand("language", "Язык"),
         BotCommand("sources", "Источники новостей"),
@@ -2031,6 +2126,7 @@ def create_bot_application() -> Application:
     application.add_handler(CommandHandler("language", language_command))
     application.add_handler(CommandHandler("filter", filter_command))
     application.add_handler(CommandHandler("recap", recap_command))
+    application.add_handler(CommandHandler("stats", stats_command))
     application.add_handler(CommandHandler("share", share_command))
     application.add_handler(CommandHandler("trends", trends_command))
     application.add_handler(CommandHandler("timezone", timezone_command))
