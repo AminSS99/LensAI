@@ -40,3 +40,21 @@ def test_escape_markdown_v1_mixed_text():
     input_str = "Check out this *awesome* repo: [Link](https://github.com/test)! It's 100% free."
     expected_str = r"Check out this \*awesome\* repo: \[Link\]\(https://github\.com/test\)\! It's 100% free\."
     assert escape_markdown_v1(input_str) == expected_str
+
+@pytest.mark.asyncio
+async def test_is_safe_url_valid():
+    """Test that public valid URLs are allowed."""
+    from functions.security_utils import is_safe_url
+    assert await is_safe_url("https://www.google.com") is True
+    assert await is_safe_url("http://example.com") is True
+
+@pytest.mark.asyncio
+async def test_is_safe_url_invalid():
+    """Test that private, local, and reserved URLs are rejected."""
+    from functions.security_utils import is_safe_url
+    assert await is_safe_url("http://localhost:8080") is False
+    assert await is_safe_url("http://127.0.0.1") is False
+    assert await is_safe_url("http://0.0.0.0") is False
+    assert await is_safe_url("http://192.168.1.1") is False
+    assert await is_safe_url("http://10.0.0.1") is False
+    assert await is_safe_url("http://internal.service.local") is False
