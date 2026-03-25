@@ -705,9 +705,13 @@ async def _render_saved_page(update_or_query, telegram_id: int, user_lang: str, 
     if nav_buttons:
         keyboard.append(nav_buttons)
 
-    # Add Clear All button
+    # Add Export and Clear All buttons
     clear_all_text = t('clear_all_btn', user_lang)
-    keyboard.append([InlineKeyboardButton(clear_all_text, callback_data=f"clear_all_prompt_{page}")])
+    export_text = "📤 Экспорт" if user_lang == 'ru' else "📤 Export"
+    keyboard.append([
+        InlineKeyboardButton(export_text, callback_data="export_saved"),
+        InlineKeyboardButton(clear_all_text, callback_data=f"clear_all_prompt_{page}")
+    ])
 
     reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
     
@@ -781,6 +785,66 @@ async def save_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(t('article_saved_single', user_lang, category=cat_label))
     else:
         await update.message.reply_text(t('article_exists', user_lang))
+
+
+async def export_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle export button press - export saved articles as a Markdown file."""
+    query = update.callback_query
+    await query.answer()
+
+    telegram_id = update.effective_user.id
+    from .translations import t
+    from .user_storage import get_all_saved_articles, get_user_language
+    import io
+
+    user_lang = get_user_language(telegram_id)
+    articles = get_all_saved_articles(telegram_id)
+
+    if not articles:
+        await query.message.reply_text(t('export_empty', user_lang), parse_mode='Markdown')
+        return
+
+    def _clean_export_value(value) -> str:
+        if value is None:
+            return ""
+        if hasattr(value, "isoformat"):
+            value = value.isoformat()
+        return str(value).replace("\r", " ").replace("\n", " ").strip()
+
+    lines = [
+        "# LensAI Saved Articles",
+        "",
+        f"Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}",
+        f"Total articles: {len(articles)}",
+        "",
+    ]
+
+    for index, article in enumerate(articles, 1):
+        title = _clean_export_value(article.get('title')) or "Untitled"
+        url = _clean_export_value(article.get('url'))
+        source = _clean_export_value(article.get('source'))
+        category = article.get('category', 'tech') or 'tech'
+        category_label = _clean_export_value(t(f'cat_{category}', user_lang))
+        saved_at = _clean_export_value(article.get('saved_at'))
+
+        lines.append(f"## {index}. {title}")
+        lines.append(f"- Category: {category_label}")
+        if source:
+            lines.append(f"- Source: {source}")
+        if saved_at:
+            lines.append(f"- Saved: {saved_at}")
+        if url:
+            lines.append(f"- URL: <{url}>")
+        lines.append("")
+
+    document = io.BytesIO("\n".join(lines).encode('utf-8'))
+    document.name = f"lensai_saved_articles_{datetime.now().strftime('%Y%m%d')}.md"
+
+    await query.message.reply_document(
+        document=document,
+        caption=t('export_caption', user_lang, count=len(articles)),
+        parse_mode='Markdown'
+    )
 
 
 async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2049,6 +2113,7 @@ def create_bot_application() -> Application:
     application.add_handler(CallbackQueryHandler(why_digest_callback, pattern='^why_digest_'))
     application.add_handler(CallbackQueryHandler(delete_article_callback, pattern='^del_'))
     application.add_handler(CallbackQueryHandler(saved_page_callback, pattern='^saved_page_'))
+    application.add_handler(CallbackQueryHandler(export_callback, pattern='^export_saved$'))
     application.add_handler(CallbackQueryHandler(summarize_url_callback, pattern='^summarize_url_'))
     application.add_handler(CallbackQueryHandler(clear_all_prompt_callback, pattern='^clear_all_prompt_'))
     application.add_handler(CallbackQueryHandler(clear_all_confirm_callback, pattern='^clear_all_confirm_'))
