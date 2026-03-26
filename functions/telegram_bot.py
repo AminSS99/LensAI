@@ -684,12 +684,15 @@ async def _render_saved_page(update_or_query, telegram_id: int, user_lang: str, 
             message += f" `{date_str}`"
         message += "\n"
         
-        # Create delete button - use URL hash for unique ID
+        # Create summarize and delete buttons - use URL hash for unique ID
         from .security_utils import stable_hash
         url_hash = stable_hash(url)[:8]
         delete_label = "🗑️"
         # encode page in callback data so delete button can refresh the correct page
-        keyboard.append([InlineKeyboardButton(f"{delete_label} {item_num}. {title[:25]}...", callback_data=f"del_{url_hash}_{page}")])
+        keyboard.append([
+            InlineKeyboardButton("🧠", callback_data=f"summarize_url_{url_hash}"),
+            InlineKeyboardButton(f"{delete_label} {item_num}. {title[:25]}...", callback_data=f"del_{url_hash}_{page}")
+        ])
     
     message += t('saved_footer', user_lang)
 
@@ -1745,7 +1748,7 @@ async def why_digest_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def summarize_url_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Summarize a saved URL."""
-    from .user_storage import get_user_language, get_temp_url
+    from .user_storage import get_user_language, get_temp_url, get_saved_article_by_hash
     from .translations import t
     from .summarizer import chat_completion
     import httpx
@@ -1762,6 +1765,9 @@ async def summarize_url_callback(update: Update, context: ContextTypes.DEFAULT_T
 
     url_hash = parts[2]
     url = get_temp_url(url_hash, telegram_id)
+
+    if not url:
+        url = get_saved_article_by_hash(telegram_id, url_hash)
 
     if not url:
         await query.answer("Link expired. Please send the link again.", show_alert=True)

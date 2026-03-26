@@ -224,6 +224,17 @@ def get_saved_articles(telegram_id: int, limit: int = 10, category: str = None, 
     return rev_articles[offset:offset + limit]
 
 
+def get_saved_article_by_hash(telegram_id: int, url_hash: str) -> Optional[str]:
+    """Get a saved article URL by its stable hash."""
+    from .security_utils import stable_hash
+    articles = get_all_saved_articles(telegram_id)
+    for article in articles:
+        url = article.get('url', '')
+        if url and stable_hash(url)[:8] == url_hash:
+            return url
+    return None
+
+
 def get_all_saved_articles(telegram_id: int, category: str = None) -> List[Dict[str, Any]]:
     """Get all saved articles for a user from Firestore (or local)."""
     db = get_firestore_client()
