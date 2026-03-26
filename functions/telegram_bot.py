@@ -1748,6 +1748,8 @@ async def summarize_url_callback(update: Update, context: ContextTypes.DEFAULT_T
     from .user_storage import get_user_language, get_temp_url
     from .translations import t
     from .summarizer import chat_completion
+    from .security_utils import is_safe_url
+    import urllib.parse
     import httpx
     from bs4 import BeautifulSoup
 
@@ -1770,10 +1772,35 @@ async def summarize_url_callback(update: Update, context: ContextTypes.DEFAULT_T
     await query.answer(t('summarizing_link', user_lang))
 
     try:
-        # Fetch content
-        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
-            response = await client.get(url)
-            response.raise_for_status()
+        # Manual redirect following to validate each hop
+        current_url = url
+        max_redirects = 5
+        redirects = 0
+        response = None
+
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
+            while redirects <= max_redirects:
+                if not await is_safe_url(current_url):
+                    await query.message.reply_text("Error: Unsafe URL detected.")
+                    return
+
+                response = await client.get(current_url)
+
+                if response.status_code in (301, 302, 303, 307, 308):
+                    location = response.headers.get("Location")
+                    if not location:
+                        break
+
+                    # Resolve relative URLs
+                    current_url = urllib.parse.urljoin(current_url, location)
+                    redirects += 1
+                else:
+                    response.raise_for_status()
+                    break
+
+            if redirects > max_redirects:
+                await query.message.reply_text("Error: Too many redirects.")
+                return
 
         # Parse content safely
         soup = await asyncio.to_thread(BeautifulSoup, response.text, 'html.parser')
