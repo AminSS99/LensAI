@@ -1,5 +1,5 @@
 import pytest
-from functions.security_utils import escape_markdown_v1
+from functions.security_utils import escape_markdown_v1, is_safe_url
 
 def test_escape_markdown_v1_empty_string():
     """Test with empty strings and None."""
@@ -40,3 +40,52 @@ def test_escape_markdown_v1_mixed_text():
     input_str = "Check out this *awesome* repo: [Link](https://github.com/test)! It's 100% free."
     expected_str = r"Check out this \*awesome\* repo: \[Link\]\(https://github\.com/test\)\! It's 100% free\."
     assert escape_markdown_v1(input_str) == expected_str
+
+@pytest.mark.asyncio
+async def test_is_safe_url_valid_public():
+    """Test public URLs are allowed."""
+    assert await is_safe_url("https://example.com") is True
+    assert await is_safe_url("http://google.com") is True
+    assert await is_safe_url("https://github.com/microsoft") is True
+
+@pytest.mark.asyncio
+async def test_is_safe_url_invalid_scheme():
+    """Test non-HTTP(S) schemes are blocked."""
+    assert await is_safe_url("ftp://example.com") is False
+    assert await is_safe_url("file:///etc/passwd") is False
+    assert await is_safe_url("dict://localhost:11211/stat") is False
+    assert await is_safe_url("gopher://127.0.0.1:80/_GET") is False
+
+@pytest.mark.asyncio
+async def test_is_safe_url_loopback_ips():
+    """Test loopback IPs are blocked."""
+    assert await is_safe_url("http://127.0.0.1") is False
+    assert await is_safe_url("http://127.0.0.1:8080/admin") is False
+    assert await is_safe_url("https://[::1]/") is False
+
+@pytest.mark.asyncio
+async def test_is_safe_url_private_ips():
+    """Test private IP ranges are blocked."""
+    assert await is_safe_url("http://10.0.0.1/admin") is False
+    assert await is_safe_url("http://172.16.0.5") is False
+    assert await is_safe_url("https://192.168.1.100") is False
+
+@pytest.mark.asyncio
+async def test_is_safe_url_link_local_cloud_metadata():
+    """Test link-local (cloud metadata) IPs are blocked."""
+    assert await is_safe_url("http://169.254.169.254/latest/meta-data/") is False
+
+@pytest.mark.asyncio
+async def test_is_safe_url_internal_hostnames():
+    """Test common internal hostnames are blocked."""
+    assert await is_safe_url("http://localhost/admin") is False
+    assert await is_safe_url("http://metadata.google.internal/computeMetadata/v1/") is False
+    assert await is_safe_url("http://my-service.local/api") is False
+    assert await is_safe_url("http://database.internal:5432") is False
+
+@pytest.mark.asyncio
+async def test_is_safe_url_malformed():
+    """Test malformed URLs are handled gracefully."""
+    assert await is_safe_url("") is False
+    assert await is_safe_url("not_a_url") is False
+    assert await is_safe_url("http://") is False

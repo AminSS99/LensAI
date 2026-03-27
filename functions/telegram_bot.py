@@ -1769,11 +1769,44 @@ async def summarize_url_callback(update: Update, context: ContextTypes.DEFAULT_T
 
     await query.answer(t('summarizing_link', user_lang))
 
+    from .security_utils import is_safe_url
+    import urllib.parse
+
     try:
-        # Fetch content
-        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
-            response = await client.get(url)
-            response.raise_for_status()
+        # SSRF Protection: Validate initial URL
+        if not await is_safe_url(url):
+            await query.message.reply_text("Security Error: Unsafe URL detected.")
+            return
+
+        # Fetch content with manual redirect handling for SSRF protection
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
+            current_url = url
+            redirect_count = 0
+            max_redirects = 5
+
+            while True:
+                response = await client.get(current_url)
+
+                if response.status_code in (301, 302, 303, 307, 308):
+                    redirect_count += 1
+                    if redirect_count > max_redirects:
+                        raise Exception("Too many redirects")
+
+                    location = response.headers.get("Location")
+                    if not location:
+                        raise Exception("Redirect without Location header")
+
+                    next_url = urllib.parse.urljoin(current_url, location)
+
+                    # SSRF Protection: Validate redirect URL
+                    if not await is_safe_url(next_url):
+                        await query.message.reply_text("Security Error: Unsafe redirect detected.")
+                        return
+
+                    current_url = next_url
+                else:
+                    response.raise_for_status()
+                    break
 
         # Parse content safely
         soup = await asyncio.to_thread(BeautifulSoup, response.text, 'html.parser')
