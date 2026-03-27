@@ -649,7 +649,26 @@ def save_temp_digest(
     """
     db = get_firestore_client()
     if not db:
-        return False
+        data = _load_local_data(telegram_id)
+        if 'digests_temp' not in data:
+            data['digests_temp'] = {}
+
+        data['digests_temp'][digest_id] = {
+            'content': content,
+            'user_id': telegram_id,
+            'articles_meta': articles_meta or [],
+            'language': normalize_language_code(language),
+            'expires_at': time.time() + (ttl_hours * 3600)
+        }
+
+        # Cleanup expired ones locally
+        current_time = time.time()
+        expired_keys = [k for k, v in data['digests_temp'].items() if v.get('expires_at', 0) < current_time]
+        for k in expired_keys:
+            del data['digests_temp'][k]
+
+        _save_local_data(telegram_id, data)
+        return True
 
     try:
         from google.cloud import firestore
@@ -668,11 +687,19 @@ def save_temp_digest(
         return False
 
 
-def get_temp_digest(digest_id: str) -> Optional[Dict[str, Any]]:
+def get_temp_digest(digest_id: str, telegram_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
     """Fetch stored temporary digest context."""
     db = get_firestore_client()
     if not db:
-        return None
+        if not telegram_id:
+            return None
+        data = _load_local_data(telegram_id)
+        temp_data = data.get('digests_temp', {}).get(digest_id)
+        if not temp_data:
+            return None
+        if time.time() > temp_data.get('expires_at', 0):
+            return None
+        return temp_data
 
     try:
         doc = db.collection('digests_temp').document(digest_id).get()

@@ -1289,6 +1289,84 @@ async def delete_article_callback(update: Update, context: ContextTypes.DEFAULT_
 
 # ============ SEARCH ============
 
+async def save_search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle saving a specific article from search results."""
+    from .user_storage import get_temp_digest, save_article
+
+    query = update.callback_query
+    telegram_id = query.from_user.id
+
+    # Parse callback data: savesearch_<search_id>_<idx>
+    parts = query.data.split('_')
+    if len(parts) < 3:
+        await query.answer("Invalid request", show_alert=True)
+        return
+
+    search_id = parts[1]
+    try:
+        idx = int(parts[2])
+    except ValueError:
+        await query.answer("Invalid article index", show_alert=True)
+        return
+
+    # Retrieve search data
+    data = get_temp_digest(search_id, telegram_id)
+    if not data:
+        await query.answer("Search results expired. Please search again.", show_alert=True)
+        return
+
+    articles_meta = data.get('articles_meta', [])
+    if idx < 0 or idx >= len(articles_meta):
+        await query.answer("Article not found", show_alert=True)
+        return
+
+    article = articles_meta[idx]
+    title = article.get('title', 'Untitled')
+    url = article.get('url', '')
+    source = article.get('source', '')
+
+    # Get localized strings
+    from .user_storage import get_user_language
+    from .translations import t
+    user_lang = get_user_language(telegram_id)
+    msg_saved = "Article saved!" if user_lang == 'en' else "Статья сохранена!"
+    msg_exists = "Article already saved!" if user_lang == 'en' else "Статья уже сохранена!"
+
+    # Save the article
+    is_saved = save_article(telegram_id=telegram_id, title=title, url=url, source=source)
+    if is_saved:
+        await query.answer(msg_saved, show_alert=False)
+    else:
+        await query.answer(msg_exists, show_alert=False)
+
+    # Rebuild the inline keyboard to update the button from 🔖 X to ✅ X
+    current_keyboard = query.message.reply_markup.inline_keyboard if query.message.reply_markup else []
+    new_keyboard = []
+
+    for row in current_keyboard:
+        new_row = []
+        for btn in row:
+            if btn.callback_data == query.data:
+                # Update button for saved article
+                new_row.append(InlineKeyboardButton(f"✅ {idx+1}", callback_data=query.data))
+            else:
+                new_row.append(btn)
+        new_keyboard.append(new_row)
+
+    new_reply_markup = InlineKeyboardMarkup(new_keyboard)
+
+    # Update the message
+    try:
+        await query.edit_message_text(
+            data.get('content', query.message.text),
+            parse_mode='Markdown',
+            disable_web_page_preview=True,
+            reply_markup=new_reply_markup
+        )
+    except Exception as e:
+        print(f"Error updating search keyboard: {e}")
+
+
 async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /search command - search news by topic."""
     from .scrapers.hackernews import fetch_hackernews_sync
@@ -1340,7 +1418,8 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     add_search_history(telegram_id, query)
     
     # Escape query for display
-    from .security_utils import escape_markdown_v1
+    from .security_utils import escape_markdown_v1, stable_hash
+    from .user_storage import save_temp_digest
     safe_query = escape_markdown_v1(query)
     
     await update.message.reply_text(t('searching', user_lang, query=safe_query), parse_mode='Markdown')
@@ -1384,11 +1463,28 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             safe_source = escape_markdown_v1(source)
             
             message += f"{i}. [{safe_title}]({url}) _{safe_source}_\n"
+
+        from datetime import datetime
+        search_id = stable_hash(f"{telegram_id}_{query}_{datetime.now().timestamp()}")[:8]
+        save_temp_digest(digest_id=search_id, telegram_id=telegram_id, content=message, articles_meta=results[:10])
+
+        keyboard = []
+        row = []
+        for i in range(len(results[:10])):
+            row.append(InlineKeyboardButton(f"🔖 {i+1}", callback_data=f"savesearch_{search_id}_{i}"))
+            if len(row) == 5:
+                keyboard.append(row)
+                row = []
+        if row:
+            keyboard.append(row)
+
+        reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
         
         await update.message.reply_text(
             message,
             parse_mode='Markdown',
-            disable_web_page_preview=True
+            disable_web_page_preview=True,
+            reply_markup=reply_markup
         )
         
     except Exception as e:
@@ -2053,6 +2149,7 @@ def create_bot_application() -> Application:
     application.add_handler(CallbackQueryHandler(clear_all_prompt_callback, pattern='^clear_all_prompt_'))
     application.add_handler(CallbackQueryHandler(clear_all_confirm_callback, pattern='^clear_all_confirm_'))
     application.add_handler(CallbackQueryHandler(clear_all_cancel_callback, pattern='^clear_all_cancel_'))
+    application.add_handler(CallbackQueryHandler(save_search_callback, pattern='^savesearch_'))
     
     # Add message handler for buttons and Q&A (handles any text that isn't a command)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
