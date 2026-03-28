@@ -783,18 +783,19 @@ async def save_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(t('article_exists', user_lang))
 
 
+def _clean_export_value(value) -> str:
+    """Helper to clean string values for export."""
+    if value is None:
+        return ""
+    if hasattr(value, "isoformat"):
+        value = value.isoformat()
+    return str(value).replace("\r", " ").replace("\n", " ").strip()
+
+
 async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /export command - export saved articles as a Markdown file."""
+    """Handle /export command - prompt user for export format."""
     from .translations import t
     from .user_storage import get_all_saved_articles, get_user_language
-    import io
-
-    def _clean_export_value(value) -> str:
-        if value is None:
-            return ""
-        if hasattr(value, "isoformat"):
-            value = value.isoformat()
-        return str(value).replace("\r", " ").replace("\n", " ").strip()
 
     telegram_id = update.effective_user.id
     user_lang = get_user_language(telegram_id)
@@ -804,40 +805,103 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(t('export_empty', user_lang), parse_mode='Markdown')
         return
 
-    lines = [
-        "# LensAI Saved Articles",
-        "",
-        f"Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}",
-        f"Total articles: {len(articles)}",
-        "",
+    keyboard = [
+        [
+            InlineKeyboardButton(t('btn_export_md', user_lang), callback_data="export_fmt_md"),
+            InlineKeyboardButton(t('btn_export_csv', user_lang), callback_data="export_fmt_csv")
+        ]
     ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
 
-    for index, article in enumerate(articles, 1):
-        title = _clean_export_value(article.get('title')) or "Untitled"
-        url = _clean_export_value(article.get('url'))
-        source = _clean_export_value(article.get('source'))
-        category = article.get('category', 'tech') or 'tech'
-        category_label = _clean_export_value(t(f'cat_{category}', user_lang))
-        saved_at = _clean_export_value(article.get('saved_at'))
-
-        lines.append(f"## {index}. {title}")
-        lines.append(f"- Category: {category_label}")
-        if source:
-            lines.append(f"- Source: {source}")
-        if saved_at:
-            lines.append(f"- Saved: {saved_at}")
-        if url:
-            lines.append(f"- URL: <{url}>")
-        lines.append("")
-
-    document = io.BytesIO("\n".join(lines).encode('utf-8'))
-    document.name = f"lensai_saved_articles_{datetime.now().strftime('%Y%m%d')}.md"
-
-    await update.message.reply_document(
-        document=document,
-        caption=t('export_caption', user_lang, count=len(articles)),
+    await update.message.reply_text(
+        t('export_format_prompt', user_lang),
+        reply_markup=reply_markup,
         parse_mode='Markdown'
     )
+
+
+async def export_action_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle export format selection."""
+    from .translations import t
+    from .user_storage import get_all_saved_articles, get_user_language
+    import io
+    import csv
+
+    query = update.callback_query
+    await query.answer()
+
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+    articles = get_all_saved_articles(telegram_id)
+
+    if not articles:
+        await query.edit_message_text(t('export_empty', user_lang), parse_mode='Markdown')
+        return
+
+    fmt = query.data.replace('export_fmt_', '')
+    document = None
+
+    if fmt == 'md':
+        lines = [
+            "# LensAI Saved Articles",
+            "",
+            f"Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}",
+            f"Total articles: {len(articles)}",
+            "",
+        ]
+
+        for index, article in enumerate(articles, 1):
+            title = _clean_export_value(article.get('title')) or "Untitled"
+            url = _clean_export_value(article.get('url'))
+            source = _clean_export_value(article.get('source'))
+            category = article.get('category', 'tech') or 'tech'
+            category_label = _clean_export_value(t(f'cat_{category}', user_lang))
+            saved_at = _clean_export_value(article.get('saved_at'))
+
+            lines.append(f"## {index}. {title}")
+            lines.append(f"- Category: {category_label}")
+            if source:
+                lines.append(f"- Source: {source}")
+            if saved_at:
+                lines.append(f"- Saved: {saved_at}")
+            if url:
+                lines.append(f"- URL: <{url}>")
+            lines.append("")
+
+        document = io.BytesIO("\n".join(lines).encode('utf-8'))
+        document.name = f"lensai_saved_articles_{datetime.now().strftime('%Y%m%d')}.md"
+
+    elif fmt == 'csv':
+        csv_buffer = io.StringIO()
+        writer = csv.writer(csv_buffer)
+
+        # Write headers
+        writer.writerow(["Title", "URL", "Category", "Source", "Saved At"])
+
+        for article in articles:
+            title = _clean_export_value(article.get('title')) or "Untitled"
+            url = _clean_export_value(article.get('url'))
+            category = article.get('category', 'tech') or 'tech'
+            category_label = _clean_export_value(t(f'cat_{category}', user_lang))
+            source = _clean_export_value(article.get('source'))
+            saved_at = _clean_export_value(article.get('saved_at'))
+
+            writer.writerow([title, url, category_label, source, saved_at])
+
+        document = io.BytesIO(csv_buffer.getvalue().encode('utf-8'))
+        document.name = f"lensai_saved_articles_{datetime.now().strftime('%Y%m%d')}.csv"
+
+    if document:
+        await query.message.reply_document(
+            document=document,
+            caption=t('export_caption', user_lang, count=len(articles)),
+            parse_mode='Markdown'
+        )
+        # Remove the keyboard prompt
+        await query.edit_message_text(
+            t('export_caption', user_lang, count=len(articles)),
+            parse_mode='Markdown'
+        )
 
 
 async def clear_all_prompt_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2053,6 +2117,7 @@ def create_bot_application() -> Application:
     application.add_handler(CallbackQueryHandler(clear_all_prompt_callback, pattern='^clear_all_prompt_'))
     application.add_handler(CallbackQueryHandler(clear_all_confirm_callback, pattern='^clear_all_confirm_'))
     application.add_handler(CallbackQueryHandler(clear_all_cancel_callback, pattern='^clear_all_cancel_'))
+    application.add_handler(CallbackQueryHandler(export_action_callback, pattern='^export_fmt_'))
     
     # Add message handler for buttons and Q&A (handles any text that isn't a command)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
