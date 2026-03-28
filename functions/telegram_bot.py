@@ -1748,7 +1748,9 @@ async def summarize_url_callback(update: Update, context: ContextTypes.DEFAULT_T
     from .user_storage import get_user_language, get_temp_url
     from .translations import t
     from .summarizer import chat_completion
+    from .security_utils import is_safe_url
     import httpx
+    import urllib.parse
     from bs4 import BeautifulSoup
 
     query = update.callback_query
@@ -1770,9 +1772,37 @@ async def summarize_url_callback(update: Update, context: ContextTypes.DEFAULT_T
     await query.answer(t('summarizing_link', user_lang))
 
     try:
-        # Fetch content
-        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
-            response = await client.get(url)
+        # Fetch content safely to prevent SSRF
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
+            current_url = url
+            response = None
+            redirect_count = 0
+            max_redirects = 5
+
+            while redirect_count < max_redirects:
+                if not await is_safe_url(current_url):
+                    await query.message.reply_text("❌ Security Error: URL is not safe to process.")
+                    return
+
+                response = await client.get(current_url)
+                if response.status_code in (301, 302, 303, 307, 308):
+                    location = response.headers.get("Location")
+                    if not location:
+                        break
+                    # Resolve relative redirects
+                    current_url = urllib.parse.urljoin(current_url, location)
+                    redirect_count += 1
+                else:
+                    break
+
+            if response is None:
+                 await query.message.reply_text("❌ Error: Could not reach the URL.")
+                 return
+
+            if response.status_code in (301, 302, 303, 307, 308):
+                 await query.message.reply_text("❌ Error: Too many redirects.")
+                 return
+
             response.raise_for_status()
 
         # Parse content safely
