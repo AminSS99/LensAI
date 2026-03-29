@@ -689,7 +689,10 @@ async def _render_saved_page(update_or_query, telegram_id: int, user_lang: str, 
         url_hash = stable_hash(url)[:8]
         delete_label = "🗑️"
         # encode page in callback data so delete button can refresh the correct page
-        keyboard.append([InlineKeyboardButton(f"{delete_label} {item_num}. {title[:25]}...", callback_data=f"del_{url_hash}_{page}")])
+        keyboard.append([
+            InlineKeyboardButton(f"{delete_label} {item_num}. {title[:25]}...", callback_data=f"del_{url_hash}_{page}"),
+            InlineKeyboardButton("🧠", callback_data=f"summarize_url_{url_hash}")
+        ])
     
     message += t('saved_footer', user_lang)
 
@@ -1762,6 +1765,16 @@ async def summarize_url_callback(update: Update, context: ContextTypes.DEFAULT_T
 
     url_hash = parts[2]
     url = get_temp_url(url_hash, telegram_id)
+
+    if not url:
+        from .user_storage import get_all_saved_articles
+        from .security_utils import stable_hash
+        articles = get_all_saved_articles(telegram_id)
+        for article in articles:
+            article_url = article.get('url', '')
+            if stable_hash(article_url)[:8] == url_hash:
+                url = article_url
+                break
 
     if not url:
         await query.answer("Link expired. Please send the link again.", show_alert=True)
