@@ -2,3 +2,8 @@
 **Vulnerability:** MD5 and SHA-1 algorithms were being used for cryptographic hashes (e.g. `hashlib.md5` and `hashlib.sha1`) in several modules (`functions/cache.py`, `functions/telegram_bot.py`, `functions/user_storage.py`).
 **Learning:** Usage of insecure algorithms like MD5 and SHA1 poses a security risk due to known vulnerabilities and collision weaknesses. Even when used for non-critical identifiers, it is a bad practice and violates security policies.
 **Prevention:** Establish and strictly enforce a coding standard that mandates the use of modern, secure hash functions (such as SHA-256) for all hashing purposes. Here, we implemented a centralized `stable_hash` utility (using SHA-256) to ensure consistent and secure hashing across the codebase.
+
+## 2025-02-12 - [CRITICAL] Fix Server-Side Request Forgery (SSRF) risk
+**Vulnerability:** In `summarize_url_callback`, `httpx.AsyncClient` was fetching user-provided URLs with automatic redirects (`follow_redirects=True`) without validating the URL or the IP it resolves to. This allowed attackers to request internal metadata services (e.g., `169.254.169.254`) or scan internal network ports via the bot.
+**Learning:** Automatically following redirects in untrusted URLs is a severe SSRF risk because the initial URL might be safe (e.g., `http://example.com`), but it can redirect to a malicious internal IP. Wait times, external IP resolution, and manual redirect hop handling are required.
+**Prevention:** Disable `follow_redirects`, enforce a maximum redirect depth, and use an async hostname resolution strategy (like `is_safe_url` utilizing `asyncio.get_running_loop().getaddrinfo`) to check each URL and redirect hop against restricted IP ranges (private, loopback, multicast) before issuing a GET request.

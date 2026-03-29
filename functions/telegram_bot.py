@@ -1770,10 +1770,33 @@ async def summarize_url_callback(update: Update, context: ContextTypes.DEFAULT_T
     await query.answer(t('summarizing_link', user_lang))
 
     try:
-        # Fetch content
-        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
-            response = await client.get(url)
-            response.raise_for_status()
+        from .security_utils import is_safe_url
+        import urllib.parse
+
+        # Fetch content with manual redirect handling to prevent SSRF
+        max_redirects = 5
+        current_url = url
+
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
+            for _ in range(max_redirects + 1):
+                if not await is_safe_url(current_url):
+                    await query.message.reply_text("Invalid or unsafe URL provided.")
+                    return
+
+                response = await client.get(current_url)
+
+                if 300 <= response.status_code < 400:
+                    location = response.headers.get("Location")
+                    if not location:
+                        break
+                    current_url = urllib.parse.urljoin(current_url, location)
+                    continue
+
+                response.raise_for_status()
+                break
+            else:
+                await query.message.reply_text("Too many redirects.")
+                return
 
         # Parse content safely
         soup = await asyncio.to_thread(BeautifulSoup, response.text, 'html.parser')
