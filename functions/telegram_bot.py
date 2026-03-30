@@ -1770,9 +1770,43 @@ async def summarize_url_callback(update: Update, context: ContextTypes.DEFAULT_T
     await query.answer(t('summarizing_link', user_lang))
 
     try:
-        # Fetch content
-        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
-            response = await client.get(url)
+        from .security_utils import is_safe_url
+        import urllib.parse
+
+        # Initial SSRF check
+        if not await is_safe_url(url):
+            await query.message.reply_text("Unsafe URL detected.")
+            return
+
+        # Fetch content with manual redirect handling for full SSRF protection
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
+            current_url = url
+            redirect_count = 0
+            max_redirects = 5
+            response = None
+
+            while redirect_count < max_redirects:
+                response = await client.get(current_url)
+
+                if response.status_code in (301, 302, 303, 307, 308):
+                    location = response.headers.get("location")
+                    if not location:
+                        break
+
+                    next_url = urllib.parse.urljoin(current_url, location)
+                    if not await is_safe_url(next_url):
+                        await query.message.reply_text("Unsafe redirection URL detected.")
+                        return
+
+                    current_url = next_url
+                    redirect_count += 1
+                else:
+                    break
+
+            if response is None:
+                await query.message.reply_text("Could not fetch the URL.")
+                return
+
             response.raise_for_status()
 
         # Parse content safely
