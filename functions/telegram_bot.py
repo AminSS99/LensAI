@@ -1764,6 +1764,17 @@ async def summarize_url_callback(update: Update, context: ContextTypes.DEFAULT_T
     url = get_temp_url(url_hash, telegram_id)
 
     if not url:
+        from .user_storage import get_all_saved_articles
+        from .security_utils import stable_hash
+
+        articles = get_all_saved_articles(telegram_id)
+        for article in articles:
+            article_url = article.get('url', '')
+            if stable_hash(article_url)[:8] == url_hash:
+                url = article_url
+                break
+
+    if not url:
         await query.answer("Link expired. Please send the link again.", show_alert=True)
         return
 
