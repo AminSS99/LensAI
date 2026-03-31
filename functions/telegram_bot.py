@@ -1,4 +1,4 @@
-﻿"""
+"""
 Telegram Bot Module
 Handles all Telegram bot interactions and commands.
 """
@@ -705,9 +705,13 @@ async def _render_saved_page(update_or_query, telegram_id: int, user_lang: str, 
     if nav_buttons:
         keyboard.append(nav_buttons)
 
-    # Add Clear All button
+    # Add Export and Clear All buttons
+    export_all_text = t('export_all_btn', user_lang)
     clear_all_text = t('clear_all_btn', user_lang)
-    keyboard.append([InlineKeyboardButton(clear_all_text, callback_data=f"clear_all_prompt_{page}")])
+    keyboard.append([
+        InlineKeyboardButton(export_all_text, callback_data="export_saved"),
+        InlineKeyboardButton(clear_all_text, callback_data=f"clear_all_prompt_{page}")
+    ])
 
     reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
     
@@ -800,8 +804,10 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_lang = get_user_language(telegram_id)
     articles = get_all_saved_articles(telegram_id)
 
+    reply_msg = update.message if update.message else update.callback_query.message
+
     if not articles:
-        await update.message.reply_text(t('export_empty', user_lang), parse_mode='Markdown')
+        await reply_msg.reply_text(t('export_empty', user_lang), parse_mode='Markdown')
         return
 
     lines = [
@@ -833,11 +839,17 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     document = io.BytesIO("\n".join(lines).encode('utf-8'))
     document.name = f"lensai_saved_articles_{datetime.now().strftime('%Y%m%d')}.md"
 
-    await update.message.reply_document(
+    await reply_msg.reply_document(
         document=document,
         caption=t('export_caption', user_lang, count=len(articles)),
         parse_mode='Markdown'
     )
+
+
+async def export_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle export saved articles button press."""
+    await update.callback_query.answer("Exporting...", show_alert=False)
+    await export_command(update, context)
 
 
 async def clear_all_prompt_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2053,6 +2065,7 @@ def create_bot_application() -> Application:
     application.add_handler(CallbackQueryHandler(clear_all_prompt_callback, pattern='^clear_all_prompt_'))
     application.add_handler(CallbackQueryHandler(clear_all_confirm_callback, pattern='^clear_all_confirm_'))
     application.add_handler(CallbackQueryHandler(clear_all_cancel_callback, pattern='^clear_all_cancel_'))
+    application.add_handler(CallbackQueryHandler(export_callback, pattern='^export_saved$'))
     
     # Add message handler for buttons and Q&A (handles any text that isn't a command)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
