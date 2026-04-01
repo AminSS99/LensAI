@@ -1287,6 +1287,102 @@ async def delete_article_callback(update: Update, context: ContextTypes.DEFAULT_
     await _render_saved_page(query, telegram_id, user_lang, page, is_callback=True)
 
 
+
+async def _handle_readnext(update_or_query, telegram_id: int, user_lang: str, is_callback: bool = False):
+    from .user_storage import get_all_saved_articles
+    from .translations import t
+    import random
+    from .security_utils import escape_markdown_v1, stable_hash
+
+    articles = get_all_saved_articles(telegram_id)
+    if not articles:
+        msg = t('no_saved', user_lang)
+        if is_callback:
+            await update_or_query.edit_message_text(msg, parse_mode='Markdown')
+        else:
+            await update_or_query.message.reply_text(msg, parse_mode='Markdown')
+        return
+
+    article = random.choice(articles)
+    title = article.get('title', 'Untitled')[:100]
+    url = article.get('url', '')
+    category = article.get('category', 'tech')
+
+    cat_emoji = {
+        'ai': '🤖', 'security': '🔒', 'crypto': '💰', 'startups': '🚀',
+        'hardware': '💻', 'software': '📱', 'tech': '🔧'
+    }
+    emoji = cat_emoji.get(category, '🔧')
+
+    safe_title = escape_markdown_v1(title)
+
+    if user_lang == 'ru':
+        header = "🎲 *Случайная статья из сохранённых*\n\n"
+        btn_summarize = "🧠 Краткое содержание"
+        btn_another = "🔄 Ещё одну"
+    else:
+        header = "🎲 *Random Saved Article*\n\n"
+        btn_summarize = "🧠 Summarize"
+        btn_another = "🔄 Another one"
+
+    if url.startswith('http'):
+        message = f"{header}{emoji} [{safe_title}]({url})"
+    else:
+        message = f"{header}{emoji} {safe_title}"
+
+    url_hash = stable_hash(url)[:8]
+
+    keyboard = [
+        [InlineKeyboardButton(btn_summarize, callback_data=f"summarize_url_{url_hash}")],
+        [InlineKeyboardButton(btn_another, callback_data="readnext")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    try:
+        if is_callback:
+            await update_or_query.edit_message_text(
+                message,
+                parse_mode='Markdown',
+                disable_web_page_preview=True,
+                reply_markup=reply_markup
+            )
+        else:
+            await update_or_query.message.reply_text(
+                message,
+                parse_mode='Markdown',
+                disable_web_page_preview=True,
+                reply_markup=reply_markup
+            )
+    except Exception:
+        if is_callback:
+            await update_or_query.edit_message_text(message, disable_web_page_preview=True, reply_markup=reply_markup)
+        else:
+            await update_or_query.message.reply_text(message, disable_web_page_preview=True, reply_markup=reply_markup)
+
+
+async def readnext_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /readnext command - suggest a random saved article."""
+    from .user_storage import get_user_language
+
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+
+    await _handle_readnext(update, telegram_id, user_lang, is_callback=False)
+
+
+async def readnext_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle readnext button press."""
+    from .user_storage import get_user_language
+
+    query = update.callback_query
+    await query.answer()
+
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+
+    await _handle_readnext(query, telegram_id, user_lang, is_callback=True)
+
+
 # ============ SEARCH ============
 
 async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1764,6 +1860,17 @@ async def summarize_url_callback(update: Update, context: ContextTypes.DEFAULT_T
     url = get_temp_url(url_hash, telegram_id)
 
     if not url:
+        # Fallback to checking saved articles
+        from .user_storage import get_all_saved_articles
+        from .security_utils import stable_hash
+        articles = get_all_saved_articles(telegram_id)
+        for article in articles:
+            article_url = article.get('url', '')
+            if stable_hash(article_url)[:8] == url_hash:
+                url = article_url
+                break
+
+    if not url:
         await query.answer("Link expired. Please send the link again.", show_alert=True)
         return
 
@@ -1940,6 +2047,7 @@ async def setup_bot_commands(application: Application):
         BotCommand("filter", "Filter saved by category"),
         BotCommand("recap", "Weekly saved articles recap"),
         BotCommand("status", "View your settings"),
+        BotCommand("readnext", "Read a random saved article"),
         BotCommand("language", "Change language"),
         BotCommand("sources", "Toggle news sources"),
         BotCommand("schedule", "Set digest schedule"),
@@ -1963,6 +2071,7 @@ async def setup_bot_commands(application: Application):
         BotCommand("filter", "Фильтр по категориям"),
         BotCommand("recap", "Еженедельная сводка"),
         BotCommand("status", "Настройки"),
+        BotCommand("readnext", "Читать случайную статью"),
         BotCommand("language", "Язык"),
         BotCommand("sources", "Источники новостей"),
         BotCommand("schedule", "Расписание"),
@@ -2038,6 +2147,7 @@ def create_bot_application() -> Application:
     application.add_handler(CommandHandler("trendalerts", trendalerts_command))
     application.add_handler(CommandHandler("semsearch", semantic_search_command))
     application.add_handler(CommandHandler("admin_status", admin_status_command))
+    application.add_handler(CommandHandler("readnext", readnext_command))
     
     # Add callback query handlers for inline buttons
     application.add_handler(CallbackQueryHandler(toggle_source_callback, pattern='^toggle_'))
@@ -2053,6 +2163,7 @@ def create_bot_application() -> Application:
     application.add_handler(CallbackQueryHandler(clear_all_prompt_callback, pattern='^clear_all_prompt_'))
     application.add_handler(CallbackQueryHandler(clear_all_confirm_callback, pattern='^clear_all_confirm_'))
     application.add_handler(CallbackQueryHandler(clear_all_cancel_callback, pattern='^clear_all_cancel_'))
+    application.add_handler(CallbackQueryHandler(readnext_callback, pattern='^readnext$'))
     
     # Add message handler for buttons and Q&A (handles any text that isn't a command)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
