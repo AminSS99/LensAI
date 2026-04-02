@@ -897,6 +897,34 @@ async def clear_all_cancel_callback(update: Update, context: ContextTypes.DEFAUL
 
     await _render_saved_page(query, telegram_id, user_lang, page, is_callback=True)
 
+async def search_history_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle search history button press."""
+    query = update.callback_query
+    await query.answer()
+
+    # Extract the query safely
+    search_query = query.data[15:] if query.data.startswith('search_history_') else query.data
+
+    # Set context.args
+    context.args = search_query.split()
+
+    # Call search_command
+    await search_command(update, context)
+
+async def clear_search_history_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle clear search history button press."""
+    query = update.callback_query
+    await query.answer()
+
+    telegram_id = update.effective_user.id
+    from .user_storage import clear_search_history, get_user_language
+
+    clear_search_history(telegram_id)
+    user_lang = get_user_language(telegram_id)
+
+    msg = "✅ История поиска очищена." if user_lang == 'ru' else "✅ Search history cleared."
+    await query.edit_message_text(msg, parse_mode='Markdown')
+
 async def clear_saved_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /clear_saved command."""
     from .user_storage import clear_saved_articles, get_user_language
@@ -1298,13 +1326,14 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from .rate_limiter import check_rate_limit
     from .translations import t
     
+    reply_msg = update.message if update.message else update.callback_query.message
     telegram_id = update.effective_user.id
     user_lang = get_user_language(telegram_id)
     
     # Rate limit check
     allowed, message = check_rate_limit(telegram_id, 'search')
     if not allowed:
-        await update.message.reply_text(t('rate_limited', user_lang, seconds='60'))
+        await reply_msg.reply_text(t('rate_limited', user_lang, seconds='60'))
         return
     
     if not context.args:
@@ -1312,16 +1341,22 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Fetch and append recent search history
         recent_searches = get_search_history(telegram_id, limit=5)
+        reply_markup = None
         if recent_searches:
             unique_searches = list(dict.fromkeys(recent_searches))
-
-            history_lines = [f"• `{escape_markdown_v1(query)}`" for query in unique_searches]
             header = t('search_history_header', user_lang)
-            prompt += f"\n\n{header}\n" + "\n".join(history_lines)
+            prompt += f"\n\n{header}"
 
-        await update.message.reply_text(
+            keyboard = []
+            for query in unique_searches:
+                keyboard.append([InlineKeyboardButton(f"🔍 {query}", callback_data=f"search_history_{query[:45]}")])
+            keyboard.append([InlineKeyboardButton("🗑️ Clear History" if user_lang == 'en' else "🗑️ Очистить историю", callback_data="clear_search_history")])
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await reply_msg.reply_text(
             prompt,
-            parse_mode='Markdown'
+            parse_mode='Markdown',
+            reply_markup=reply_markup
         )
         return
     
@@ -1330,11 +1365,11 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Validation
     if len(query) > 100:
-        await update.message.reply_text("❌ Search query too long (max 100 chars).")
+        await reply_msg.reply_text("❌ Search query too long (max 100 chars).")
         return
         
     if len(query) < 2:
-        await update.message.reply_text("❌ Search query too short.")
+        await reply_msg.reply_text("❌ Search query too short.")
         return
     
     add_search_history(telegram_id, query)
@@ -1343,7 +1378,7 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from .security_utils import escape_markdown_v1
     safe_query = escape_markdown_v1(query)
     
-    await update.message.reply_text(t('searching', user_lang, query=safe_query), parse_mode='Markdown')
+    await reply_msg.reply_text(t('searching', user_lang, query=safe_query), parse_mode='Markdown')
     
     try:
         # Fetch news without blocking the event loop.
@@ -1365,7 +1400,7 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 results.append(article)
         
         if not results:
-            await update.message.reply_text(
+            await reply_msg.reply_text(
                 t('no_results', user_lang, query=query),
                 parse_mode='Markdown'
             )
@@ -1385,14 +1420,14 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             message += f"{i}. [{safe_title}]({url}) _{safe_source}_\n"
         
-        await update.message.reply_text(
+        await reply_msg.reply_text(
             message,
             parse_mode='Markdown',
             disable_web_page_preview=True
         )
         
     except Exception as e:
-        await update.message.reply_text(t('error_fetching', user_lang, error=str(e)[:100]))
+        await reply_msg.reply_text(t('error_fetching', user_lang, error=str(e)[:100]))
 
 
 # ============ LANGUAGE ============
@@ -2053,6 +2088,8 @@ def create_bot_application() -> Application:
     application.add_handler(CallbackQueryHandler(clear_all_prompt_callback, pattern='^clear_all_prompt_'))
     application.add_handler(CallbackQueryHandler(clear_all_confirm_callback, pattern='^clear_all_confirm_'))
     application.add_handler(CallbackQueryHandler(clear_all_cancel_callback, pattern='^clear_all_cancel_'))
+    application.add_handler(CallbackQueryHandler(search_history_callback, pattern='^search_history_'))
+    application.add_handler(CallbackQueryHandler(clear_search_history_callback, pattern='^clear_search_history$'))
     
     # Add message handler for buttons and Q&A (handles any text that isn't a command)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))

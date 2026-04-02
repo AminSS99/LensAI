@@ -399,6 +399,23 @@ def add_search_history(telegram_id: int, query: str):
     _save_local_data(telegram_id, data)
 
 
+def clear_search_history(telegram_id: int):
+    """Clear user search history."""
+    db = get_firestore_client()
+    if db:
+        try:
+            docs = db.collection('users').document(str(telegram_id)).collection('search_history').list_documents()
+            for doc in docs:
+                doc.delete()
+        except Exception as e:
+            print(f"Firestore clear search error: {e}")
+
+    # Fallback to local
+    data = _load_local_data(telegram_id)
+    data['search_history'] = []
+    _save_local_data(telegram_id, data)
+
+
 def get_search_history(telegram_id: int, limit: int = 5) -> List[str]:
     """Get recent search queries."""
     db = get_firestore_client()
