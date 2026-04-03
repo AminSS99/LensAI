@@ -956,6 +956,47 @@ async def filter_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(message, disable_web_page_preview=True)
 
 
+async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /stats command - show breakdown of saved articles by category."""
+    from .user_storage import get_all_saved_articles, get_user_language
+    from .translations import t
+
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+
+    articles = get_all_saved_articles(telegram_id)
+
+    if not articles:
+        await update.message.reply_text(t('stats_empty', user_lang), parse_mode='Markdown')
+        return
+
+    categories_count = {}
+    for article in articles:
+        category = article.get('category', 'tech')
+        categories_count[category] = categories_count.get(category, 0) + 1
+
+    cat_emoji = {
+        'ai': '🤖', 'security': '🔒', 'crypto': '💰', 'startups': '🚀',
+        'hardware': '💻', 'software': '📱', 'tech': '🔧'
+    }
+
+    message = t('stats_header', user_lang)
+
+    # Sort categories by count (descending)
+    sorted_categories = sorted(categories_count.items(), key=lambda x: x[1], reverse=True)
+
+    for category, count in sorted_categories:
+        cat_label = t(f'cat_{category}', user_lang)
+        message += f"{cat_label}: {count}\n"
+
+    message += t('stats_total', user_lang, total=len(articles))
+
+    try:
+        await update.message.reply_text(message, parse_mode='Markdown')
+    except Exception:
+        await update.message.reply_text(message)
+
+
 async def recap_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /recap command - show weekly summary of saved articles."""
     from .user_storage import get_saved_articles, get_user_language
@@ -1939,6 +1980,7 @@ async def setup_bot_commands(application: Application):
         BotCommand("semsearch", "Semantic search saved"),
         BotCommand("filter", "Filter saved by category"),
         BotCommand("recap", "Weekly saved articles recap"),
+        BotCommand("stats", "View saved articles stats"),
         BotCommand("status", "View your settings"),
         BotCommand("language", "Change language"),
         BotCommand("sources", "Toggle news sources"),
@@ -1962,6 +2004,7 @@ async def setup_bot_commands(application: Application):
         BotCommand("semsearch", "Умный поиск"),
         BotCommand("filter", "Фильтр по категориям"),
         BotCommand("recap", "Еженедельная сводка"),
+        BotCommand("stats", "Статистика сохранённых статей"),
         BotCommand("status", "Настройки"),
         BotCommand("language", "Язык"),
         BotCommand("sources", "Источники новостей"),
@@ -2031,6 +2074,7 @@ def create_bot_application() -> Application:
     application.add_handler(CommandHandler("language", language_command))
     application.add_handler(CommandHandler("filter", filter_command))
     application.add_handler(CommandHandler("recap", recap_command))
+    application.add_handler(CommandHandler("stats", stats_command))
     application.add_handler(CommandHandler("share", share_command))
     application.add_handler(CommandHandler("trends", trends_command))
     application.add_handler(CommandHandler("timezone", timezone_command))

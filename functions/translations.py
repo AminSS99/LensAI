@@ -128,6 +128,10 @@ Use /sources to toggle sources""",
         'clear_all_prompt': "⚠️ **Are you sure you want to delete ALL saved articles?**\n\nThis action cannot be undone.",
         'clear_all_confirm_btn': "✅ Yes, delete all",
         'clear_all_cancel_btn': "❌ Cancel",
+        'cleared_saved': "✅ All saved articles have been deleted.",
+        'stats_header': "📊 **Your Reading Profile**\n_Here is a breakdown of your saved articles:_\n\n",
+        'stats_empty': "📊 **Your Reading Profile**\n\nYou haven't saved any articles yet. Start saving articles to see your reading stats!",
+        'stats_total': "\n_Total saved articles: {total}_",
         
         # Category labels
         'cat_ai': "🤖 AI",
@@ -272,6 +276,10 @@ _Работает локально - настройки сохранятся п�
         'clear_all_prompt': "⚠️ **Вы уверены, что хотите удалить ВСЕ сохранённые статьи?**\n\nЭто действие нельзя отменить.",
         'clear_all_confirm_btn': "✅ Да, удалить всё",
         'clear_all_cancel_btn': "❌ Отмена",
+        'cleared_saved': "✅ Все сохранённые статьи были удалены.",
+        'stats_header': "📊 **Ваш профиль чтения**\n_Вот статистика ваших сохранённых статей:_\n\n",
+        'stats_empty': "📊 **Ваш профиль чтения**\n\nВы еще не сохранили ни одной статьи. Начните сохранять статьи, чтобы увидеть статистику!",
+        'stats_total': "\n_Всего сохранено статей: {total}_",
         
         # Category labels
         'cat_ai': "🤖 ИИ",
