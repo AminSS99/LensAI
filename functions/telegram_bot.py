@@ -6,6 +6,8 @@ Handles all Telegram bot interactions and commands.
 import os
 import re
 import asyncio
+import urllib.parse
+from .security_utils import is_safe_url
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -1770,13 +1772,44 @@ async def summarize_url_callback(update: Update, context: ContextTypes.DEFAULT_T
     await query.answer(t('summarizing_link', user_lang))
 
     try:
-        # Fetch content
-        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
-            response = await client.get(url)
-            response.raise_for_status()
+        # Prevent SSRF
+        if not await is_safe_url(url):
+            await query.message.reply_text("Security Error: This URL is not safe to fetch.")
+            return
+
+        # Fetch content with manual redirect handling to enforce SSRF checks on each hop
+        current_url = url
+        redirect_count = 0
+        max_redirects = 5
+        response_text = ""
+
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
+            while redirect_count < max_redirects:
+                response = await client.get(current_url)
+
+                if 300 <= response.status_code < 400:
+                    location = response.headers.get("Location")
+                    if not location:
+                        response.raise_for_status()
+                        break
+
+                    next_url = urllib.parse.urljoin(current_url, location)
+                    if not await is_safe_url(next_url):
+                        await query.message.reply_text("Security Error: Redirected to an unsafe URL.")
+                        return
+
+                    current_url = next_url
+                    redirect_count += 1
+                else:
+                    response.raise_for_status()
+                    response_text = response.text
+                    break
+            else:
+                await query.message.reply_text("Error: Too many redirects.")
+                return
 
         # Parse content safely
-        soup = await asyncio.to_thread(BeautifulSoup, response.text, 'html.parser')
+        soup = await asyncio.to_thread(BeautifulSoup, response_text, 'html.parser')
         paragraphs = soup.find_all('p')
         text_content = "\n\n".join([p.get_text(strip=True) for p in paragraphs if len(p.get_text(strip=True)) > 20])
 

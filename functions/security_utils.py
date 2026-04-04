@@ -5,6 +5,9 @@ Contains helper functions for input sanitization and security.
 
 import re
 import hashlib
+import asyncio
+import urllib.parse
+import ipaddress
 
 def escape_markdown_v1(text: str) -> str:
     """
@@ -39,3 +42,36 @@ def stable_hash(value: str) -> str:
     if not value:
         value = ""
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+async def is_safe_url(url: str) -> bool:
+    """
+    Validate that a URL is safe to fetch (prevents SSRF).
+    Rejects local, loopback, private IP ranges, and internal hostnames.
+
+    Args:
+        url: The URL to validate
+
+    Returns:
+        True if safe, False otherwise
+    """
+    try:
+        parsed = urllib.parse.urlparse(url)
+        if parsed.scheme not in ('http', 'https'):
+            return False
+
+        hostname = parsed.hostname
+        if not hostname:
+            return False
+
+        loop = asyncio.get_running_loop()
+        addrs = await loop.getaddrinfo(hostname, None)
+
+        for addr in addrs:
+            ip = ipaddress.ip_address(addr[4][0])
+            if not ip.is_global or ip.is_link_local or ip.is_unspecified:
+                return False
+
+        return True
+    except Exception:
+        return False
