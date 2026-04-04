@@ -40,3 +40,39 @@ def test_escape_markdown_v1_mixed_text():
     input_str = "Check out this *awesome* repo: [Link](https://github.com/test)! It's 100% free."
     expected_str = r"Check out this \*awesome\* repo: \[Link\]\(https://github\.com/test\)\! It's 100% free\."
     assert escape_markdown_v1(input_str) == expected_str
+
+
+from functions.security_utils import is_safe_url
+
+@pytest.mark.asyncio
+async def test_is_safe_url_valid_https():
+    """Test valid external HTTPS URL."""
+    assert await is_safe_url("https://example.com") is True
+
+@pytest.mark.asyncio
+async def test_is_safe_url_invalid_scheme():
+    """Test URL with invalid scheme (e.g. ftp, file)."""
+    assert await is_safe_url("ftp://example.com") is False
+    assert await is_safe_url("file:///etc/passwd") is False
+
+@pytest.mark.asyncio
+async def test_is_safe_url_localhost():
+    """Test localhost URL."""
+    assert await is_safe_url("http://localhost") is False
+    assert await is_safe_url("http://127.0.0.1") is False
+
+@pytest.mark.asyncio
+async def test_is_safe_url_link_local():
+    """Test link-local IP URL (e.g., AWS metadata)."""
+    assert await is_safe_url("http://169.254.169.254") is False
+
+@pytest.mark.asyncio
+async def test_is_safe_url_unspecified():
+    """Test unspecified IP URL."""
+    assert await is_safe_url("http://0.0.0.0") is False
+
+@pytest.mark.asyncio
+async def test_is_safe_url_invalid_hostname():
+    """Test invalid hostname."""
+    assert await is_safe_url("http://") is False
+    assert await is_safe_url("invalid-url") is False
