@@ -30,6 +30,7 @@ MESSAGES = {
         'cleared_saved': "🗑️ All saved articles cleared!",
         'export_empty': "🔖 **No saved articles to export yet!**\n\nSave an article first, then try `/export` again.",
         'export_caption': "📚 **Saved Articles Export**\n\nExported {count} saved articles as a Markdown file.",
+        'random_article_header': "🎲 **Random Pick for You**\n\n",
         'ai_error': "❌ Sorry, I couldn't process that: {error}",
         'refresh_limit': "✅ **You're all caught up!**\n\nI've generated 2 digests for you and you've seen the top news. Check back later for more updates!",
         
@@ -174,6 +175,7 @@ Use /sources to toggle sources""",
         'cleared_saved': "🗑️ Все сохранённые статьи удалены!",
         'export_empty': "🔖 **Пока нечего экспортировать!**\n\nСначала сохраните статью, затем попробуйте `/export` снова.",
         'export_caption': "📚 **Экспорт сохранённых статей**\n\nЭкспортировано {count} сохранённых статей в файл Markdown.",
+        'random_article_header': "🎲 **Случайная статья для вас**\n\n",
         'ai_error': "❌ Не удалось обработать запрос: {error}",
         'refresh_limit': "✅ **Вы узнали всё главное!**\n\nЯ уже сделал для вас 2 уникальных дайджеста. Заходите позже за новыми новостями!",
         
