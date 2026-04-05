@@ -1287,6 +1287,45 @@ async def delete_article_callback(update: Update, context: ContextTypes.DEFAULT_
     await _render_saved_page(query, telegram_id, user_lang, page, is_callback=True)
 
 
+
+async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /stats command - show personalized reading statistics."""
+    from .user_storage import get_all_saved_articles, get_user_language
+    from .translations import t
+    from collections import Counter
+
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+
+    articles = get_all_saved_articles(telegram_id)
+    if not articles:
+        await update.message.reply_text(t('stats_empty', user_lang), parse_mode='Markdown')
+        return
+
+    total_saved = len(articles)
+    categories = Counter(a.get('category', 'tech') for a in articles)
+    sources = Counter(a.get('source') for a in articles if a.get('source'))
+
+    message = t('stats_header', user_lang)
+    message += t('stats_total', user_lang, total=total_saved)
+    message += "\n"
+
+    for cat, count in categories.most_common(5):
+        percentage = int(round((count / total_saved) * 100))
+        bar_length = int(round(percentage / 10))
+        bar = '█' * bar_length + '░' * (10 - bar_length)
+        cat_label = t(f'cat_{cat}', user_lang)
+        message += f"{cat_label}: {count} ({percentage}%)\n`{bar}`\n"
+
+    if sources:
+        message += t('stats_top_sources', user_lang)
+        for source, count in sources.most_common(5):
+            message += f"• {source}: {count}\n"
+
+    await update.message.reply_text(message, parse_mode='Markdown')
+
+# ============ ADMIN STATUS ============
+
 # ============ SEARCH ============
 
 async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1939,6 +1978,7 @@ async def setup_bot_commands(application: Application):
         BotCommand("semsearch", "Semantic search saved"),
         BotCommand("filter", "Filter saved by category"),
         BotCommand("recap", "Weekly saved articles recap"),
+        BotCommand("stats", "Reading statistics"),
         BotCommand("status", "View your settings"),
         BotCommand("language", "Change language"),
         BotCommand("sources", "Toggle news sources"),
@@ -1962,6 +2002,7 @@ async def setup_bot_commands(application: Application):
         BotCommand("semsearch", "Умный поиск"),
         BotCommand("filter", "Фильтр по категориям"),
         BotCommand("recap", "Еженедельная сводка"),
+        BotCommand("stats", "Статистика чтения"),
         BotCommand("status", "Настройки"),
         BotCommand("language", "Язык"),
         BotCommand("sources", "Источники новостей"),
@@ -2031,6 +2072,7 @@ def create_bot_application() -> Application:
     application.add_handler(CommandHandler("language", language_command))
     application.add_handler(CommandHandler("filter", filter_command))
     application.add_handler(CommandHandler("recap", recap_command))
+    application.add_handler(CommandHandler("stats", stats_command))
     application.add_handler(CommandHandler("share", share_command))
     application.add_handler(CommandHandler("trends", trends_command))
     application.add_handler(CommandHandler("timezone", timezone_command))
