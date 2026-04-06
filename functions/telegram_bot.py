@@ -1328,6 +1328,51 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ============ SEARCH ============
 
+async def random_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /random command - get a random saved article."""
+    from .user_storage import get_all_saved_articles, get_user_language
+    from .translations import t
+    import random
+
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+
+    articles = get_all_saved_articles(telegram_id)
+
+    if not articles:
+        await update.message.reply_text(t('no_saved', user_lang), parse_mode='Markdown')
+        return
+
+    article = random.choice(articles)
+
+    title = article.get('title', 'Untitled')[:50]
+    url = article.get('url', '')
+    category = article.get('category', 'tech')
+    saved_at = article.get('saved_at', '')
+
+    cat_emoji = {
+        'ai': '🤖', 'security': '🔒', 'crypto': '💰', 'startups': '🚀',
+        'hardware': '💻', 'software': '📱', 'tech': '🔧'
+    }
+    emoji = cat_emoji.get(category, '🔧')
+    date_str = saved_at[:10] if saved_at else ''
+
+    from .security_utils import escape_markdown_v1
+    safe_title = escape_markdown_v1(title)
+
+    message = t('random_article_header', user_lang)
+
+    if url.startswith('http'):
+        message += f"{emoji} [{safe_title}]({url})"
+    else:
+        message += f"{emoji} {safe_title}"
+
+    if date_str:
+        message += f" `{date_str}`"
+
+    await update.message.reply_text(message, parse_mode='Markdown')
+
+
 async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /search command - search news by topic."""
     from .scrapers.hackernews import fetch_hackernews_sync
@@ -2003,6 +2048,7 @@ async def setup_bot_commands(application: Application):
         BotCommand("news", "Get AI news digest"),
         BotCommand("saved", "View saved articles"),
         BotCommand("export", "Export saved articles"),
+        BotCommand("random", "Read a random saved article"),
         BotCommand("search", "Search articles"),
         BotCommand("semsearch", "Semantic search saved"),
         BotCommand("filter", "Filter saved by category"),
@@ -2027,6 +2073,7 @@ async def setup_bot_commands(application: Application):
         BotCommand("news", "Получить дайджест новостей"),
         BotCommand("saved", "Сохранённые статьи"),
         BotCommand("export", "Экспорт статей"),
+        BotCommand("random", "Случайная сохраненная статья"),
         BotCommand("search", "Поиск статей"),
         BotCommand("semsearch", "Умный поиск"),
         BotCommand("filter", "Фильтр по категориям"),
@@ -2097,6 +2144,7 @@ def create_bot_application() -> Application:
     application.add_handler(CommandHandler("clear_saved", clear_saved_command))
     application.add_handler(CommandHandler("clear", clear_saved_command))  # Alias for /clear_saved
     application.add_handler(CommandHandler("export", export_command))
+    application.add_handler(CommandHandler("random", random_command))
     application.add_handler(CommandHandler("search", search_command))
     application.add_handler(CommandHandler("language", language_command))
     application.add_handler(CommandHandler("filter", filter_command))
