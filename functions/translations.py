@@ -129,6 +129,12 @@ Use /sources to toggle sources""",
         'clear_all_confirm_btn': "✅ Yes, delete all",
         'clear_all_cancel_btn': "❌ Cancel",
         
+        # Stats
+        'stats_empty': "📊 *Reading Statistics*\n\nYou haven't saved any articles yet! Save articles to see your reading stats.",
+        'stats_header': "📊 *Your Reading Statistics*\n\n",
+        'stats_total': "*Total Saved:* {total}\n",
+        'stats_top_sources': "\n*Top Sources:*\n",
+
         # Category labels
         'cat_ai': "🤖 AI",
         'cat_security': "🔒 Security",
@@ -273,6 +279,12 @@ _Работает локально - настройки сохранятся п�
         'clear_all_confirm_btn': "✅ Да, удалить всё",
         'clear_all_cancel_btn': "❌ Отмена",
         
+        # Stats
+        'stats_empty': "📊 *Статистика чтения*\n\nВы еще не сохранили ни одной статьи! Сохраняйте статьи, чтобы увидеть свою статистику.",
+        'stats_header': "📊 *Ваша статистика чтения*\n\n",
+        'stats_total': "*Всего сохранено:* {total}\n",
+        'stats_top_sources': "\n*Топ источников:*\n",
+
         # Category labels
         'cat_ai': "🤖 ИИ",
         'cat_security': "🔒 Безопасность",
