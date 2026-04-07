@@ -9,6 +9,15 @@ import asyncio
 import urllib.parse
 import ipaddress
 
+def is_safe_url_sync(url: str) -> bool:
+    """Synchronous wrapper for is_safe_url."""
+    try:
+        loop = asyncio.get_running_loop()
+        return loop.run_until_complete(is_safe_url(url))
+    except RuntimeError:
+        return asyncio.run(is_safe_url(url))
+
+
 async def is_safe_url(url: str) -> bool:
     """
     Check if a URL is safe to fetch (prevents SSRF).

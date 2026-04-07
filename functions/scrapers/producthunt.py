@@ -10,7 +10,12 @@ from defusedxml import ElementTree as ET
 from defusedxml.common import DefusedXmlException
 from xml.etree.ElementTree import ParseError
 from bs4 import BeautifulSoup
+import urllib.parse
 
+try:
+    from ..security_utils import is_safe_url_sync
+except ImportError:
+    pass
 
 # Product Hunt has an RSS feed for their front page
 PRODUCTHUNT_RSS_URL = "https://www.producthunt.com/feed"
@@ -20,8 +25,27 @@ PRODUCTHUNT_WEB_URL = "https://www.producthunt.com/"
 def _scrape_producthunt_html(client: httpx.Client, limit: int) -> List[Dict[str, Any]]:
     """Fallback HTML scraper when RSS is empty/unavailable."""
     try:
-        response = client.get(PRODUCTHUNT_WEB_URL)
-        response.raise_for_status()
+        current_url = PRODUCTHUNT_WEB_URL
+        redirects = 0
+        response = None
+        while redirects < 5:
+            if not is_safe_url_sync(current_url):
+                print(f"Product Hunt HTML fallback: Unsafe URL {current_url}")
+                return []
+            response = client.get(current_url, follow_redirects=False)
+            if response.status_code in (301, 302, 303, 307, 308):
+                location = response.headers.get("Location")
+                if not location:
+                    break
+                current_url = urllib.parse.urljoin(current_url, location)
+                redirects += 1
+            else:
+                response.raise_for_status()
+                break
+        else:
+            print("Product Hunt HTML fallback error: Too many redirects.")
+            return []
+
         soup = BeautifulSoup(response.text, "html.parser")
 
         products = []
@@ -75,8 +99,26 @@ def fetch_producthunt(limit: int = 10) -> List[Dict[str, Any]]:
             'Accept': 'application/rss+xml, application/xml, text/xml, */*'
         }
         
-        with httpx.Client(timeout=30.0, follow_redirects=True) as client:
-            response = client.get(PRODUCTHUNT_RSS_URL, headers=headers)
+        with httpx.Client(timeout=30.0, follow_redirects=False) as client:
+            current_url = PRODUCTHUNT_RSS_URL
+            redirects = 0
+            response = None
+            while redirects < 5:
+                if not is_safe_url_sync(current_url):
+                    print(f"Product Hunt RSS fallback: Unsafe URL {current_url}")
+                    return []
+                response = client.get(current_url, headers=headers)
+                if response.status_code in (301, 302, 303, 307, 308):
+                    location = response.headers.get("Location")
+                    if not location:
+                        break
+                    current_url = urllib.parse.urljoin(current_url, location)
+                    redirects += 1
+                else:
+                    break
+            else:
+                print("Product Hunt RSS fallback error: Too many redirects.")
+                return []
             
             if response.status_code != 200:
                 print(f"Product Hunt RSS returned {response.status_code}")

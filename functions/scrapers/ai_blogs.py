@@ -8,6 +8,12 @@ from bs4 import BeautifulSoup
 from typing import List, Dict, Any
 from datetime import datetime
 import asyncio
+import urllib.parse
+
+try:
+    from ..security_utils import is_safe_url, is_safe_url_sync
+except ImportError:
+    pass
 
 try:
     from ..resilience import retry_with_backoff
@@ -90,8 +96,26 @@ async def scrape_blog(client: httpx.AsyncClient, blog_key: str, limit: int = 5) 
         return []
     
     try:
-        response = await client.get(blog['url'], headers=HEADERS, follow_redirects=True)
-        response.raise_for_status()
+        current_url = blog['url']
+        redirects = 0
+        response = None
+        while redirects < 5:
+            if not await is_safe_url(current_url):
+                print(f"AI blogs scraper: Unsafe URL {current_url}")
+                return []
+            response = await client.get(current_url, headers=HEADERS, follow_redirects=False)
+            if response.status_code in (301, 302, 303, 307, 308):
+                location = response.headers.get("Location")
+                if not location:
+                    break
+                current_url = urllib.parse.urljoin(current_url, location)
+                redirects += 1
+            else:
+                response.raise_for_status()
+                break
+        else:
+            print(f"AI blogs scraper error: Too many redirects for {blog['name']}")
+            return []
         
         soup = BeautifulSoup(response.text, 'html.parser')
         posts = []
@@ -202,9 +226,30 @@ def _fetch_ai_blogs_sync_impl(limit_per_blog: int = 5) -> List[Dict[str, Any]]:
     with httpx.Client(timeout=30.0) as client:
         for blog_key, blog in AI_BLOGS.items():
             try:
-                response = client.get(blog['url'], headers=HEADERS, follow_redirects=True)
-                response.raise_for_status()
+                current_url = blog['url']
+                redirects = 0
+                response = None
+                while redirects < 5:
+                    if not is_safe_url_sync(current_url):
+                        print(f"AI blogs scraper (sync): Unsafe URL {current_url}")
+                        break
+                    response = client.get(current_url, headers=HEADERS, follow_redirects=False)
+                    if response.status_code in (301, 302, 303, 307, 308):
+                        location = response.headers.get("Location")
+                        if not location:
+                            break
+                        current_url = urllib.parse.urljoin(current_url, location)
+                        redirects += 1
+                    else:
+                        response.raise_for_status()
+                        break
+                else:
+                    print(f"AI blogs scraper (sync) error: Too many redirects for {blog['name']}")
+                    continue
                 
+                if not response or response.status_code >= 400:
+                    continue
+
                 soup = BeautifulSoup(response.text, 'html.parser')
                 posts = []
                 seen_urls = set()

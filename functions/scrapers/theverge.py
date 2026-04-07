@@ -7,6 +7,12 @@ import httpx
 from typing import List, Dict, Any
 from datetime import datetime
 from defusedxml import ElementTree as ET
+import urllib.parse
+
+try:
+    from ..security_utils import is_safe_url_sync
+except ImportError:
+    pass
 
 try:
     from ..resilience import retry_with_backoff
@@ -32,12 +38,31 @@ def fetch_theverge(limit: int = 10) -> List[Dict[str, Any]]:
         List of articles with title, url, summary
     """
     try:
-        with httpx.Client(timeout=30.0, follow_redirects=True) as client:
+        with httpx.Client(timeout=30.0, follow_redirects=False) as client:
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             }
-            response = client.get(VERGE_RSS_URL, headers=headers)
-            response.raise_for_status()
+
+            current_url = VERGE_RSS_URL
+            redirects = 0
+            response = None
+            while redirects < 5:
+                if not is_safe_url_sync(current_url):
+                    print(f"The Verge scraper: Unsafe URL {current_url}")
+                    return []
+                response = client.get(current_url, headers=headers)
+                if response.status_code in (301, 302, 303, 307, 308):
+                    location = response.headers.get("Location")
+                    if not location:
+                        break
+                    current_url = urllib.parse.urljoin(current_url, location)
+                    redirects += 1
+                else:
+                    response.raise_for_status()
+                    break
+            else:
+                print("The Verge scraper error: Too many redirects.")
+                return []
             
             # Parse XML/Atom feed
             root = ET.fromstring(response.content)
