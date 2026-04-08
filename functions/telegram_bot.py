@@ -623,6 +623,44 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(status_message, parse_mode='Markdown')
 
 
+async def pause_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /pause command - pause daily digest."""
+    from .database import get_user, create_or_update_user
+    from .user_storage import get_user_language
+    from .translations import t
+
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+    user = get_user(telegram_id)
+
+    if not user or not user.get('is_active', False):
+        await update.message.reply_text(t('pause_already', user_lang))
+        return
+
+    create_or_update_user(telegram_id, is_active=False)
+    await update.message.reply_text(t('pause_success', user_lang), parse_mode='Markdown')
+
+async def resume_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /resume command - resume daily digest."""
+    from .database import get_user, create_or_update_user
+    from .user_storage import get_user_language
+    from .translations import t
+
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+    user = get_user(telegram_id)
+
+    if not user or not user.get('schedule_time'):
+        await update.message.reply_text(t('resume_no_time', user_lang))
+        return
+
+    if user.get('is_active', False):
+        await update.message.reply_text(t('resume_already', user_lang, time=user['schedule_time']))
+        return
+
+    create_or_update_user(telegram_id, is_active=True)
+    await update.message.reply_text(t('resume_success', user_lang, time=user['schedule_time']), parse_mode='Markdown')
+
 # ============ SAVED ARTICLES ============
 
 async def _render_saved_page(update_or_query, telegram_id: int, user_lang: str, page: int, is_callback: bool = False):
@@ -2104,6 +2142,8 @@ async def setup_bot_commands(application: Application):
         BotCommand("language", "Change language"),
         BotCommand("sources", "Toggle news sources"),
         BotCommand("schedule", "Set digest schedule"),
+        BotCommand("pause", "Pause daily digest"),
+        BotCommand("resume", "Resume daily digest"),
         BotCommand("timezone", "Set timezone"),
         BotCommand("quiet_hours", "Set quiet hours"),
         BotCommand("trendalerts", "Weekly trend alerts"),
@@ -2129,6 +2169,8 @@ async def setup_bot_commands(application: Application):
         BotCommand("language", "Язык"),
         BotCommand("sources", "Источники новостей"),
         BotCommand("schedule", "Расписание"),
+        BotCommand("pause", "Пауза ежедневного дайджеста"),
+        BotCommand("resume", "Возобновить ежедневный дайджест"),
         BotCommand("timezone", "Часовой пояс"),
         BotCommand("quiet_hours", "Тихие часы"),
         BotCommand("trendalerts", "Тренд-уведомления"),
@@ -2183,6 +2225,8 @@ def create_bot_application() -> Application:
     application.add_handler(CommandHandler("settime", settime_command))
     application.add_handler(CommandHandler("sources", sources_command))
     application.add_handler(CommandHandler("status", status_command))
+    application.add_handler(CommandHandler("pause", pause_command))
+    application.add_handler(CommandHandler("resume", resume_command))
     
     # New feature commands
     application.add_handler(CommandHandler("saved", saved_command))
