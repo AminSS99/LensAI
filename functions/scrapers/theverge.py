@@ -22,6 +22,11 @@ VERGE_RSS_URL = "https://www.theverge.com/rss/index.xml"
 
 @retry_with_backoff(max_retries=2, base_delay=1.0)
 def fetch_theverge(limit: int = 10) -> List[Dict[str, Any]]:
+    try:
+        from ..security_utils import is_safe_url_sync
+    except ImportError:
+        def is_safe_url_sync(url: str) -> bool:
+            return True
     """
     Fetch latest articles from The Verge RSS feed.
     
@@ -32,12 +37,29 @@ def fetch_theverge(limit: int = 10) -> List[Dict[str, Any]]:
         List of articles with title, url, summary
     """
     try:
-        with httpx.Client(timeout=30.0, follow_redirects=True) as client:
+        with httpx.Client(timeout=30.0, follow_redirects=False) as client:
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             }
-            response = client.get(VERGE_RSS_URL, headers=headers)
-            response.raise_for_status()
+            redirects = 0
+            current_url = VERGE_RSS_URL
+            response = None
+            while redirects < 5:
+                if not is_safe_url_sync(current_url):
+                    return []
+                response = client.get(current_url, headers=headers)
+                if response.status_code in (301, 302, 303, 307, 308):
+                    location = response.headers.get("Location")
+                    if not location:
+                        break
+                    import urllib.parse
+                    current_url = urllib.parse.urljoin(current_url, location)
+                    redirects += 1
+                else:
+                    response.raise_for_status()
+                    break
+            else:
+                return []
             
             # Parse XML/Atom feed
             root = ET.fromstring(response.content)

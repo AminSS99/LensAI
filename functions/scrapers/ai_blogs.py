@@ -74,6 +74,11 @@ HEADERS = {
 
 
 async def scrape_blog(client: httpx.AsyncClient, blog_key: str, limit: int = 5) -> List[Dict[str, Any]]:
+    try:
+        from ..security_utils import is_safe_url
+    except ImportError:
+        async def is_safe_url(url: str) -> bool:
+            return True
     """
     Scrape a single AI blog for recent posts.
     
@@ -90,8 +95,26 @@ async def scrape_blog(client: httpx.AsyncClient, blog_key: str, limit: int = 5) 
         return []
     
     try:
-        response = await client.get(blog['url'], headers=HEADERS, follow_redirects=True)
-        response.raise_for_status()
+        redirects = 0
+        current_url = blog['url']
+        response = None
+        while redirects < 5:
+            if not await is_safe_url(current_url):
+                return []
+            # we need to pass follow_redirects=False (default behavior) so httpx doesn't follow automatically
+            response = await client.get(current_url, headers=HEADERS, follow_redirects=False)
+            if response.status_code in (301, 302, 303, 307, 308):
+                location = response.headers.get("Location")
+                if not location:
+                    break
+                import urllib.parse
+                current_url = urllib.parse.urljoin(current_url, location)
+                redirects += 1
+            else:
+                response.raise_for_status()
+                break
+        else:
+            return []
         
         soup = BeautifulSoup(response.text, 'html.parser')
         posts = []
@@ -196,14 +219,40 @@ def fetch_ai_blogs_sync(limit_per_blog: int = 5) -> List[Dict[str, Any]]:
 
 
 def _fetch_ai_blogs_sync_impl(limit_per_blog: int = 5) -> List[Dict[str, Any]]:
+    try:
+        from ..security_utils import is_safe_url_sync
+    except ImportError:
+        def is_safe_url_sync(url: str) -> bool:
+            return True
     """Truly synchronous implementation using httpx sync client."""
     all_posts = []
     
-    with httpx.Client(timeout=30.0) as client:
+    with httpx.Client(timeout=30.0, follow_redirects=False) as client:
         for blog_key, blog in AI_BLOGS.items():
             try:
-                response = client.get(blog['url'], headers=HEADERS, follow_redirects=True)
-                response.raise_for_status()
+                redirects = 0
+                current_url = blog['url']
+                response = None
+                while redirects < 5:
+                    if not is_safe_url_sync(current_url):
+                        break
+                    response = client.get(current_url, headers=HEADERS)
+                    if response.status_code in (301, 302, 303, 307, 308):
+                        location = response.headers.get("Location")
+                        if not location:
+                            break
+                        import urllib.parse
+                        current_url = urllib.parse.urljoin(current_url, location)
+                        redirects += 1
+                    else:
+                        response.raise_for_status()
+                        break
+                else:
+                    continue
+
+                # If we broke out due to unsafe url, continue
+                if not is_safe_url_sync(current_url):
+                    continue
                 
                 soup = BeautifulSoup(response.text, 'html.parser')
                 posts = []
