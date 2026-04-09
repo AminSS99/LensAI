@@ -67,3 +67,34 @@ def stable_hash(value: str) -> str:
     if not value:
         value = ""
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+def sanitize_html(text: str) -> str:
+    """
+    Sanitizes HTML content by stripping tags and properly spacing text.
+    Removes <script> and <style> content entirely to prevent XSS.
+
+    Args:
+        text: Input HTML string
+
+    Returns:
+        Cleaned plain text string
+    """
+    if not text:
+        return ""
+
+    try:
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(text, 'html.parser')
+
+        # Remove script and style elements completely
+        for script in soup(["script", "style"]):
+            script.decompose()
+
+        # Extract text with space separator to prevent words from merging
+        return soup.get_text(separator=' ', strip=True)
+    except ImportError:
+        # Fallback if bs4 is not available (should not happen in prod)
+        return " ".join(re.sub(r'<[^>]+>', ' ', text).split())
+    except Exception as e:
+        print(f"HTML sanitization error: {e}")
+        return " ".join(re.sub(r'<[^>]+>', ' ', text).split())

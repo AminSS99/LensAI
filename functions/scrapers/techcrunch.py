@@ -17,6 +17,13 @@ except ImportError:
             return func
         return decorator
 
+try:
+    from ..security_utils import sanitize_html
+except ImportError:
+    def sanitize_html(text: str) -> str:
+        import re
+        return " ".join(re.sub(r'<[^>]+>', ' ', text).split())
+
 
 TECHCRUNCH_RSS = "https://techcrunch.com/feed/"
 
@@ -57,8 +64,7 @@ def fetch_techcrunch(limit: int = 20) -> List[Dict[str, Any]]:
             summary = entry.get('summary', '')
             if summary:
                 # Basic HTML tag removal
-                import re
-                summary = re.sub(r'<[^>]+>', '', summary)
+                summary = sanitize_html(summary)
                 summary = summary[:300] + '...' if len(summary) > 300 else summary
             
             articles.append({

@@ -16,6 +16,13 @@ except ImportError:
             return func
         return decorator
 
+try:
+    from ..security_utils import sanitize_html
+except ImportError:
+    def sanitize_html(text: str) -> str:
+        import re
+        return " ".join(re.sub(r'<[^>]+>', ' ', text).split())
+
 
 VERGE_RSS_URL = "https://www.theverge.com/rss/index.xml"
 
@@ -65,8 +72,7 @@ def fetch_theverge(limit: int = 10) -> List[Dict[str, Any]]:
                     # Add summary if available (clean HTML)
                     if summary is not None and summary.text:
                         # Basic HTML cleaning - just extract first 200 chars of text
-                        import re
-                        clean_summary = re.sub(r'<[^>]+>', '', summary.text)
+                        clean_summary = sanitize_html(summary.text)
                         article['summary'] = clean_summary[:200] + '...' if len(clean_summary) > 200 else clean_summary
                     
                     articles.append(article)
