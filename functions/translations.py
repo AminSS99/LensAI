@@ -146,6 +146,7 @@ Use /sources to toggle sources""",
         'cat_tech': "🔧 Tech",
         
         # Keyboard button labels
+        'btn_another_random': "🎲 Another",
         'btn_news': "📰 Get News",
         'btn_search': "🔍 Search",
         'btn_saved': "🔖 Saved",
@@ -297,6 +298,7 @@ _Работает локально - настройки сохранятся п�
         'cat_tech': "🔧 Технологии",
         
         # Keyboard button labels
+        'btn_another_random': "🎲 Ещё одну",
         'btn_news': "📰 Новости",
         'btn_search': "🔍 Поиск",
         'btn_saved': "🔖 Сохранённые",

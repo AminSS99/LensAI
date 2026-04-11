@@ -897,6 +897,13 @@ async def clear_all_cancel_callback(update: Update, context: ContextTypes.DEFAUL
 
     await _render_saved_page(query, telegram_id, user_lang, page, is_callback=True)
 
+async def random_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the 'Another' random article button."""
+    query = update.callback_query
+    await query.answer()
+    await random_command(update, context, is_callback=True)
+
+
 async def search_history_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle search history button press."""
     query = update.callback_query
@@ -1356,7 +1363,7 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ============ SEARCH ============
 
-async def random_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def random_command(update: Update, context: ContextTypes.DEFAULT_TYPE, is_callback: bool = False):
     """Handle /random command - get a random saved article."""
     from .user_storage import get_all_saved_articles, get_user_language
     from .translations import t
@@ -1368,7 +1375,11 @@ async def random_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     articles = get_all_saved_articles(telegram_id)
 
     if not articles:
-        await update.message.reply_text(t('no_saved', user_lang), parse_mode='Markdown')
+        msg = t('no_saved', user_lang)
+        if is_callback:
+            await update.callback_query.edit_message_text(msg, parse_mode='Markdown')
+        else:
+            await update.message.reply_text(msg, parse_mode='Markdown')
         return
 
     article = random.choice(articles)
@@ -1398,7 +1409,35 @@ async def random_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if date_str:
         message += f" `{date_str}`"
 
-    await update.message.reply_text(message, parse_mode='Markdown')
+    from .security_utils import stable_hash
+    url_hash = stable_hash(url)[:8]
+
+    reply_markup = InlineKeyboardMarkup([
+        [InlineKeyboardButton(t('btn_summarize', user_lang), callback_data=f"summarize_url_{url_hash}")],
+        [InlineKeyboardButton(t('btn_another_random', user_lang), callback_data="random_saved")]
+    ])
+
+    if is_callback:
+        try:
+            await update.callback_query.edit_message_text(
+                message,
+                parse_mode='Markdown',
+                disable_web_page_preview=True,
+                reply_markup=reply_markup
+            )
+        except Exception as e:
+            # Message is not modified exception handling
+            if "Message is not modified" in str(e):
+                pass
+            else:
+                raise e
+    else:
+        await update.message.reply_text(
+            message,
+            parse_mode='Markdown',
+            disable_web_page_preview=True,
+            reply_markup=reply_markup
+        )
 
 
 async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2220,6 +2259,7 @@ def create_bot_application() -> Application:
     application.add_handler(CallbackQueryHandler(clear_all_cancel_callback, pattern='^clear_all_cancel_'))
     application.add_handler(CallbackQueryHandler(search_history_callback, pattern='^search_history_'))
     application.add_handler(CallbackQueryHandler(clear_search_history_callback, pattern='^clear_search_history$'))
+    application.add_handler(CallbackQueryHandler(random_callback, pattern='^random_saved$'))
     
     # Add message handler for buttons and Q&A (handles any text that isn't a command)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
