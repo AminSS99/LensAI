@@ -1358,9 +1358,15 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def random_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /random command - get a random saved article."""
-    from .user_storage import get_all_saved_articles, get_user_language
+    from .user_storage import get_all_saved_articles, get_user_language, save_temp_url
+    from .security_utils import stable_hash, escape_markdown_v1
     from .translations import t
     import random
+    import telegram.error
+
+    reply_msg = update.message if update.message else update.callback_query.message
+    if update.callback_query:
+        await update.callback_query.answer()
 
     telegram_id = update.effective_user.id
     user_lang = get_user_language(telegram_id)
@@ -1368,7 +1374,7 @@ async def random_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     articles = get_all_saved_articles(telegram_id)
 
     if not articles:
-        await update.message.reply_text(t('no_saved', user_lang), parse_mode='Markdown')
+        await reply_msg.reply_text(t('no_saved', user_lang), parse_mode='Markdown')
         return
 
     article = random.choice(articles)
@@ -1385,7 +1391,6 @@ async def random_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     emoji = cat_emoji.get(category, '🔧')
     date_str = saved_at[:10] if saved_at else ''
 
-    from .security_utils import escape_markdown_v1
     safe_title = escape_markdown_v1(title)
 
     message = t('random_article_header', user_lang)
@@ -1398,7 +1403,30 @@ async def random_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if date_str:
         message += f" `{date_str}`"
 
-    await update.message.reply_text(message, parse_mode='Markdown')
+    reply_markup = None
+    random_btn_text = t('btn_another_random', user_lang)
+
+    keyboard = []
+    if url.startswith('http'):
+        url_hash = stable_hash(url)[:8]
+        save_temp_url(url_hash, telegram_id, url)
+        keyboard.append([
+            InlineKeyboardButton(t('btn_summarize', user_lang), callback_data=f"summarize_url_{url_hash}"),
+            InlineKeyboardButton(random_btn_text, callback_data="random_article")
+        ])
+    else:
+        keyboard.append([InlineKeyboardButton(random_btn_text, callback_data="random_article")])
+
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    try:
+        if update.callback_query:
+            await update.callback_query.edit_message_text(message, parse_mode='Markdown', reply_markup=reply_markup, disable_web_page_preview=True)
+        else:
+            await reply_msg.reply_text(message, parse_mode='Markdown', reply_markup=reply_markup, disable_web_page_preview=True)
+    except telegram.error.BadRequest as e:
+        if "Message is not modified" not in str(e):
+            raise
 
 
 async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2220,6 +2248,7 @@ def create_bot_application() -> Application:
     application.add_handler(CallbackQueryHandler(clear_all_cancel_callback, pattern='^clear_all_cancel_'))
     application.add_handler(CallbackQueryHandler(search_history_callback, pattern='^search_history_'))
     application.add_handler(CallbackQueryHandler(clear_search_history_callback, pattern='^clear_search_history$'))
+    application.add_handler(CallbackQueryHandler(random_command, pattern='^random_article$'))
     
     # Add message handler for buttons and Q&A (handles any text that isn't a command)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
