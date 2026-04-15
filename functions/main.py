@@ -30,6 +30,14 @@ def telegram_webhook(request: Request):
     if request.method != 'POST':
         return 'OK', 200
     
+    # 🛡️ Validate Telegram Webhook Secret Token to prevent unauthorized requests
+    secret_token = os.environ.get('TELEGRAM_WEBHOOK_SECRET_TOKEN')
+    if secret_token:
+        request_token = request.headers.get('X-Telegram-Bot-Api-Secret-Token')
+        if request_token != secret_token:
+            print("WARNING: Unauthorized webhook request. Secret token mismatch.")
+            return 'Forbidden', 403
+
     try:
         # Parse the incoming update
         update_data = request.get_json()
