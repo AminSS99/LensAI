@@ -1354,7 +1354,27 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ============ ADMIN STATUS ============
 
+
+async def clearcache_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /clearcache command - clear all cache (Admin only)."""
+    from .translations import t
+    from .user_storage import get_user_language
+
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+
+    admin_ids = get_admin_ids()
+    if telegram_id not in admin_ids:
+        await update.message.reply_text(t('unauthorized_admin', user_lang))
+        return
+
+    from .cache import clear_cached_digest
+    clear_cached_digest("*")
+
+    await update.message.reply_text(t('clearcache_success', user_lang))
+
 # ============ SEARCH ============
+
 
 async def random_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /random command - get a random saved article."""
@@ -2110,6 +2130,7 @@ async def setup_bot_commands(application: Application):
         BotCommand("admin_status", "Admin observability"),
         BotCommand("share", "Share bot with friends"),
         BotCommand("trends", "Weekly topic trends"),
+        BotCommand("clearcache", "Clear system cache (Admin)"),
         BotCommand("help", "Show help"),
     ]
     
@@ -2135,6 +2156,7 @@ async def setup_bot_commands(application: Application):
         BotCommand("admin_status", "Статус системы"),
         BotCommand("share", "Поделиться ботом"),
         BotCommand("trends", "Тренды недели"),
+        BotCommand("clearcache", "Очистить системный кэш (Админ)"),
         BotCommand("help", "Помощь"),
     ]
     
@@ -2203,6 +2225,7 @@ def create_bot_application() -> Application:
     application.add_handler(CommandHandler("trendalerts", trendalerts_command))
     application.add_handler(CommandHandler("semsearch", semantic_search_command))
     application.add_handler(CommandHandler("admin_status", admin_status_command))
+    application.add_handler(CommandHandler("clearcache", clearcache_command))
     
     # Add callback query handlers for inline buttons
     application.add_handler(CallbackQueryHandler(toggle_source_callback, pattern='^toggle_'))
