@@ -136,6 +136,10 @@ Use /sources to toggle sources""",
         'stats_total': "*Total Saved:* {total}\n",
         'stats_top_sources': "\n*Top Sources:*\n",
 
+        # Admin
+        'clearcache_success': "✅ All cache entries have been successfully cleared!",
+        'unauthorized_admin': "⛔ Unauthorized. This command is restricted to administrators.",
+
         # Category labels
         'cat_ai': "🤖 AI",
         'cat_security': "🔒 Security",
@@ -286,6 +290,10 @@ _Работает локально - настройки сохранятся п�
         'stats_header': "📊 *Ваша статистика чтения*\n\n",
         'stats_total': "*Всего сохранено:* {total}\n",
         'stats_top_sources': "\n*Топ источников:*\n",
+
+        # Admin
+        'clearcache_success': "✅ Все записи кэша успешно удалены!",
+        'unauthorized_admin': "⛔ Отказано в доступе. Эта команда доступна только администраторам.",
 
         # Category labels
         'cat_ai': "🤖 ИИ",
