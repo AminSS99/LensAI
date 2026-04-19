@@ -11,6 +11,15 @@ from defusedxml.common import DefusedXmlException
 from xml.etree.ElementTree import ParseError
 from bs4 import BeautifulSoup
 
+try:
+    from ..security_utils import sanitize_html
+except ImportError:
+    def sanitize_html(text: str) -> str:
+        if not text:
+            return ""
+        import re
+        return " ".join(re.sub(r'<[^>]+>', ' ', text).split())
+
 
 # Product Hunt has an RSS feed for their front page
 PRODUCTHUNT_RSS_URL = "https://www.producthunt.com/feed"
@@ -98,8 +107,7 @@ def fetch_producthunt(limit: int = 10) -> List[Dict[str, Any]]:
                     # Clean up description (remove HTML)
                     desc_text = ''
                     if description is not None and description.text:
-                        import re
-                        desc_text = re.sub(r'<[^>]+>', '', description.text)[:200]
+                        desc_text = sanitize_html(description.text)[:200]
                     
                     products.append({
                         'title': title.text or '',
@@ -130,8 +138,7 @@ def fetch_producthunt(limit: int = 10) -> List[Dict[str, Any]]:
                     href = link.get('href', '')
                     desc_text = ''
                     if summary is not None and summary.text:
-                        import re
-                        desc_text = re.sub(r'<[^>]+>', '', summary.text)[:200]
+                        desc_text = sanitize_html(summary.text)[:200]
 
                     products.append({
                         'title': title.text or '',
