@@ -8,7 +8,7 @@ import re
 import asyncio
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, constants
 from telegram.ext import (
     Application, 
     CommandHandler, 
@@ -2034,6 +2034,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     await update.message.reply_text(t('thinking', user_lang), parse_mode='Markdown')
+    await context.bot.send_chat_action(chat_id=telegram_id, action=constants.ChatAction.TYPING)
     
     lang_instruction = ""
     if user_lang == 'ru':
