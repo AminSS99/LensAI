@@ -686,10 +686,18 @@ async def _render_saved_page(update_or_query, telegram_id: int, user_lang: str, 
         
         # Create delete button - use URL hash for unique ID
         from .security_utils import stable_hash
+        from .user_storage import save_temp_url
         url_hash = stable_hash(url)[:8]
+        save_temp_url(url_hash, telegram_id, url)
+
         delete_label = "🗑️"
-        # encode page in callback data so delete button can refresh the correct page
-        keyboard.append([InlineKeyboardButton(f"{delete_label} {item_num}. {title[:25]}...", callback_data=f"del_{url_hash}_{page}")])
+        summarize_label = "🧠"
+
+        # Add both summarize and delete buttons in the same row
+        keyboard.append([
+            InlineKeyboardButton(f"{summarize_label} {item_num}. {title[:20]}...", callback_data=f"summarize_url_{url_hash}"),
+            InlineKeyboardButton(f"{delete_label}", callback_data=f"del_{url_hash}_{page}")
+        ])
     
     message += t('saved_footer', user_lang)
 
@@ -1398,7 +1406,16 @@ async def random_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if date_str:
         message += f" `{date_str}`"
 
-    await update.message.reply_text(message, parse_mode='Markdown')
+    from .security_utils import stable_hash
+    from .user_storage import save_temp_url
+    url_hash = stable_hash(url)[:8]
+    save_temp_url(url_hash, telegram_id, url)
+
+    reply_markup = InlineKeyboardMarkup([
+        [InlineKeyboardButton(t('btn_summarize', user_lang), callback_data=f"summarize_url_{url_hash}")]
+    ])
+
+    await update.message.reply_text(message, parse_mode='Markdown', reply_markup=reply_markup)
 
 
 async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
