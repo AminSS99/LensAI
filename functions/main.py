@@ -30,6 +30,13 @@ def telegram_webhook(request: Request):
     if request.method != 'POST':
         return 'OK', 200
     
+    secret_token = os.environ.get('TELEGRAM_WEBHOOK_SECRET_TOKEN')
+    if secret_token:
+        import hmac
+        header_token = request.headers.get('X-Telegram-Bot-Api-Secret-Token')
+        if not header_token or not hmac.compare_digest(header_token, secret_token):
+            return 'Forbidden', 403
+
     try:
         # Parse the incoming update
         update_data = request.get_json()
