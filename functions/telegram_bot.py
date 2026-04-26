@@ -897,6 +897,12 @@ async def clear_all_cancel_callback(update: Update, context: ContextTypes.DEFAUL
 
     await _render_saved_page(query, telegram_id, user_lang, page, is_callback=True)
 
+async def random_next_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle next random article button press."""
+    await update.callback_query.answer()
+    await random_command(update, context)
+
+
 async def search_history_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle search history button press."""
     query = update.callback_query
@@ -1361,14 +1367,22 @@ async def random_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from .user_storage import get_all_saved_articles, get_user_language
     from .translations import t
     import random
+    import telegram
 
+    reply_msg = update.message if update.message else update.callback_query.message
     telegram_id = update.effective_user.id
     user_lang = get_user_language(telegram_id)
 
     articles = get_all_saved_articles(telegram_id)
 
     if not articles:
-        await update.message.reply_text(t('no_saved', user_lang), parse_mode='Markdown')
+        if update.callback_query:
+            try:
+                await update.callback_query.edit_message_text(t('no_saved', user_lang), parse_mode='Markdown')
+            except telegram.error.BadRequest:
+                pass
+        else:
+            await reply_msg.reply_text(t('no_saved', user_lang), parse_mode='Markdown')
         return
 
     article = random.choice(articles)
@@ -1398,7 +1412,16 @@ async def random_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if date_str:
         message += f" `{date_str}`"
 
-    await update.message.reply_text(message, parse_mode='Markdown')
+    keyboard = [[InlineKeyboardButton(t('btn_next_random', user_lang), callback_data="random_next")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    if update.callback_query:
+        try:
+            await update.callback_query.edit_message_text(message, parse_mode='Markdown', reply_markup=reply_markup)
+        except telegram.error.BadRequest:
+            pass
+    else:
+        await reply_msg.reply_text(message, parse_mode='Markdown', reply_markup=reply_markup)
 
 
 async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2220,6 +2243,7 @@ def create_bot_application() -> Application:
     application.add_handler(CallbackQueryHandler(clear_all_cancel_callback, pattern='^clear_all_cancel_'))
     application.add_handler(CallbackQueryHandler(search_history_callback, pattern='^search_history_'))
     application.add_handler(CallbackQueryHandler(clear_search_history_callback, pattern='^clear_search_history$'))
+    application.add_handler(CallbackQueryHandler(random_next_callback, pattern='^random_next$'))
     
     # Add message handler for buttons and Q&A (handles any text that isn't a command)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
