@@ -1458,7 +1458,7 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ============ SEARCH ============
 
 async def random_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    \"\"\"Handle /random command - get a random saved article.\"\"\"
+    """Handle /random command - get a random saved article."""
     from .user_storage import get_all_saved_articles, get_user_language
     from .translations import t
     from telegram import InlineKeyboardMarkup, InlineKeyboardButton
