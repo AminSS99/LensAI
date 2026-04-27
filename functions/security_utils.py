@@ -102,3 +102,21 @@ def stable_hash(value: str) -> str:
     if not value:
         value = ""
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+def sanitize_html(text: str) -> str:
+    """
+    Sanitize HTML content by stripping tags and removing script/style contents.
+    Replaces tags with spaces to prevent text merging.
+    """
+    if not text:
+        return ""
+    try:
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(text, 'html.parser')
+        for element in soup(['script', 'style']):
+            element.decompose()
+        return soup.get_text(separator=' ', strip=True)
+    except ImportError:
+        # Fallback if BeautifulSoup is not available
+        import re
+        return " ".join(re.sub(r'<[^>]+>', ' ', text).split())
