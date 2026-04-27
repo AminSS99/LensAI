@@ -1948,6 +1948,119 @@ async def why_digest_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         err = texts['analysis_error'].format(error=str(e)[:80])
         await query.message.reply_text(err)
 
+async def read_url_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Read a saved URL (Reader Mode)."""
+    from .user_storage import get_user_language, get_temp_url
+    from .translations import t
+    from .security_utils import is_safe_url
+    import httpx
+    import urllib.parse
+    from bs4 import BeautifulSoup
+
+    query = update.callback_query
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+
+    parts = query.data.split('_')
+    if len(parts) < 3:
+        await query.answer("Invalid request", show_alert=True)
+        return
+
+    url_hash = parts[2]
+    url = get_temp_url(url_hash, telegram_id)
+
+    if not url:
+        from .user_storage import get_all_saved_articles
+        from .security_utils import stable_hash
+
+        articles = get_all_saved_articles(telegram_id)
+        for article in articles:
+            article_url = article.get('url', '')
+            if stable_hash(article_url)[:8] == url_hash:
+                url = article_url
+                break
+
+    if not url:
+        await query.answer("Link expired. Please send the link again.", show_alert=True)
+        return
+
+    # Acknowledge early
+    await query.answer()
+
+    try:
+        # Manually follow redirects to validate each URL against SSRF
+        redirects = 0
+        current_url = url
+        response = None
+
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
+            while redirects < 5:
+                if not await is_safe_url(current_url):
+                    await query.message.reply_text("Security Error: Unsafe URL detected.")
+                    return
+
+                response = await client.get(current_url)
+
+                if response.status_code in (301, 302, 303, 307, 308):
+                    location = response.headers.get("Location")
+                    if not location:
+                        break
+                    current_url = urllib.parse.urljoin(current_url, location)
+                    redirects += 1
+                else:
+                    response.raise_for_status()
+                    break
+            else:
+                await query.message.reply_text("Error: Too many redirects.")
+                return
+
+        if not response or response.status_code >= 400:
+            if response:
+                response.raise_for_status()
+            else:
+                raise Exception("Failed to fetch content")
+
+        # Parse content safely
+        soup = await asyncio.to_thread(BeautifulSoup, response.text, 'html.parser')
+        paragraphs = soup.find_all('p')
+        text_content = "\n\n".join([p.get_text(strip=True) for p in paragraphs if len(p.get_text(strip=True)) > 20])
+
+        if not text_content:
+            text_content = soup.get_text(strip=True)
+
+        # Limit content size to avoid spam
+        text_content = text_content[:5000]
+
+        if len(text_content) < 100:
+            await query.message.reply_text("Could not extract enough text to read.")
+            return
+
+        title = ""
+        title_tag = soup.find('title')
+        if title_tag:
+            title = title_tag.get_text(strip=True)
+
+        from .security_utils import escape_markdown_v1
+        safe_title = escape_markdown_v1(title)
+
+        message_body = text_content
+        if safe_title:
+            message_body = f"📖 *{safe_title}*\n\n{text_content}"
+
+        from .message_utils import split_message
+        chunks = split_message(message_body)
+
+        for chunk in chunks:
+            try:
+                await query.message.reply_text(chunk, parse_mode='Markdown', disable_web_page_preview=True)
+            except Exception:
+                await query.message.reply_text(chunk, disable_web_page_preview=True)
+
+    except Exception as e:
+        error_msg = str(e)[:80]
+        await query.message.reply_text(f"❌ Error: {error_msg}")
+
+
 async def summarize_url_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Summarize a saved URL."""
     from .user_storage import get_user_language, get_temp_url
@@ -2100,7 +2213,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save_temp_url(url_hash, telegram_id, user_message)
 
         reply_markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton(t('btn_summarize', user_lang), callback_data=f"summarize_url_{url_hash}")]
+            [
+                InlineKeyboardButton(t('btn_read', user_lang), callback_data=f"read_url_{url_hash}"),
+                InlineKeyboardButton(t('btn_summarize', user_lang), callback_data=f"summarize_url_{url_hash}")
+            ]
         ])
 
         if is_saved:
@@ -2504,6 +2620,7 @@ def create_bot_application() -> Application:
     application.add_handler(CallbackQueryHandler(why_digest_callback, pattern='^why_digest_'))
     application.add_handler(CallbackQueryHandler(delete_article_callback, pattern='^del_'))
     application.add_handler(CallbackQueryHandler(saved_page_callback, pattern='^saved_page_'))
+    application.add_handler(CallbackQueryHandler(read_url_callback, pattern='^read_url_'))
     application.add_handler(CallbackQueryHandler(summarize_url_callback, pattern='^summarize_url_'))
     application.add_handler(CallbackQueryHandler(clear_all_prompt_callback, pattern='^clear_all_prompt_'))
     application.add_handler(CallbackQueryHandler(clear_all_confirm_callback, pattern='^clear_all_confirm_'))
