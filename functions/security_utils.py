@@ -34,6 +34,28 @@ async def is_safe_url(url: str) -> bool:
     except Exception:
         return False
 
+def is_safe_url_sync(url: str) -> bool:
+    """
+    Synchronous wrapper around is_safe_url.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        # Fallback for when we're already in an async context but calling sync code
+        import threading
+        result = [False]
+        def run():
+            result[0] = asyncio.run(is_safe_url(url))
+        thread = threading.Thread(target=run)
+        thread.start()
+        thread.join()
+        return result[0]
+    else:
+        return asyncio.run(is_safe_url(url))
+
 def escape_markdown_v1(text: str) -> str:
     """
     Escape special characters for Telegram Markdown V1.

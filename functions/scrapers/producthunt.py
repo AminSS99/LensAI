@@ -29,8 +29,31 @@ PRODUCTHUNT_WEB_URL = "https://www.producthunt.com/"
 def _scrape_producthunt_html(client: httpx.Client, limit: int) -> List[Dict[str, Any]]:
     """Fallback HTML scraper when RSS is empty/unavailable."""
     try:
-        response = client.get(PRODUCTHUNT_WEB_URL)
-        response.raise_for_status()
+        from ..security_utils import is_safe_url_sync
+    except ImportError:
+        def is_safe_url_sync(url: str) -> bool:
+            return True
+    try:
+        redirects = 0
+        current_url = PRODUCTHUNT_WEB_URL
+        response = None
+        while redirects < 5:
+            if not is_safe_url_sync(current_url):
+                return []
+            response = client.get(current_url)
+            if response.status_code in (301, 302, 303, 307, 308):
+                location = response.headers.get("Location")
+                if not location:
+                    break
+                import urllib.parse
+                current_url = urllib.parse.urljoin(current_url, location)
+                redirects += 1
+            else:
+                response.raise_for_status()
+                break
+        else:
+            return []
+
         soup = BeautifulSoup(response.text, "html.parser")
 
         products = []
@@ -69,6 +92,11 @@ def _scrape_producthunt_html(client: httpx.Client, limit: int) -> List[Dict[str,
 
 
 def fetch_producthunt(limit: int = 10) -> List[Dict[str, Any]]:
+    try:
+        from ..security_utils import is_safe_url_sync
+    except ImportError:
+        def is_safe_url_sync(url: str) -> bool:
+            return True
     """
     Fetch trending products from Product Hunt RSS feed.
     
@@ -84,8 +112,25 @@ def fetch_producthunt(limit: int = 10) -> List[Dict[str, Any]]:
             'Accept': 'application/rss+xml, application/xml, text/xml, */*'
         }
         
-        with httpx.Client(timeout=30.0, follow_redirects=True) as client:
-            response = client.get(PRODUCTHUNT_RSS_URL, headers=headers)
+        with httpx.Client(timeout=30.0, follow_redirects=False) as client:
+            redirects = 0
+            current_url = PRODUCTHUNT_RSS_URL
+            response = None
+            while redirects < 5:
+                if not is_safe_url_sync(current_url):
+                    return []
+                response = client.get(current_url, headers=headers)
+                if response.status_code in (301, 302, 303, 307, 308):
+                    location = response.headers.get("Location")
+                    if not location:
+                        break
+                    import urllib.parse
+                    current_url = urllib.parse.urljoin(current_url, location)
+                    redirects += 1
+                else:
+                    break
+            else:
+                return []
             
             if response.status_code != 200:
                 print(f"Product Hunt RSS returned {response.status_code}")
