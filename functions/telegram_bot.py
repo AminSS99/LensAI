@@ -988,31 +988,56 @@ async def filter_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /filter command - filter saved articles by category."""
     from .user_storage import get_saved_articles, get_user_language
     from .translations import t
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     
     telegram_id = update.effective_user.id
     user_lang = get_user_language(telegram_id)
     
     valid_categories = ['ai', 'security', 'crypto', 'startups', 'hardware', 'software', 'tech']
     
+    reply_msg = update.message if update.message else update.callback_query.message
+
     if not context.args:
-        await update.message.reply_text(t('filter_prompt', user_lang), parse_mode='Markdown')
+        keyboard = []
+        row = []
+        for i, cat in enumerate(valid_categories):
+            cat_label = t(f'cat_{cat}', user_lang)
+            row.append(InlineKeyboardButton(cat_label, callback_data=f"filter_cat_{cat}"))
+            if len(row) == 2 or i == len(valid_categories) - 1:
+                keyboard.append(row)
+                row = []
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        if update.callback_query:
+            await update.callback_query.edit_message_text(t('filter_prompt', user_lang), parse_mode='Markdown', reply_markup=reply_markup)
+        else:
+            await reply_msg.reply_text(t('filter_prompt', user_lang), parse_mode='Markdown', reply_markup=reply_markup)
         return
         
     category = context.args[0].lower()
     
     # Validation: Check max length
     if len(category) > 20:
-        await update.message.reply_text("❌ Category name too long.")
+        if update.callback_query:
+            await update.callback_query.edit_message_text("❌ Category name too long.")
+        else:
+            await reply_msg.reply_text("❌ Category name too long.")
         return
     if category not in valid_categories:
-        await update.message.reply_text(t('filter_prompt', user_lang), parse_mode='Markdown')
+        if update.callback_query:
+            await update.callback_query.edit_message_text(t('filter_prompt', user_lang), parse_mode='Markdown')
+        else:
+            await reply_msg.reply_text(t('filter_prompt', user_lang), parse_mode='Markdown')
         return
     
     articles = get_saved_articles(telegram_id, limit=20, category=category)
     
     if not articles:
         cat_label = t(f'cat_{category}', user_lang)
-        await update.message.reply_text(t('filter_empty', user_lang, category=cat_label), parse_mode='Markdown')
+        if update.callback_query:
+            await update.callback_query.edit_message_text(t('filter_empty', user_lang, category=cat_label), parse_mode='Markdown')
+        else:
+            await reply_msg.reply_text(t('filter_empty', user_lang, category=cat_label), parse_mode='Markdown')
         return
     
     cat_label = t(f'cat_{category}', user_lang)
@@ -1026,12 +1051,35 @@ async def filter_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             message += f"{i}. [{title}]({url})\n"
         else:
             message += f"{i}. {title}\n"
+
+    # Add a back button
+    keyboard = [[InlineKeyboardButton("⬅️ Back to Categories" if user_lang == 'en' else "⬅️ Назад к категориям", callback_data="filter_menu")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
     
     try:
-        await update.message.reply_text(message, parse_mode='Markdown', disable_web_page_preview=True)
+        if update.callback_query:
+            await update.callback_query.edit_message_text(message, parse_mode='Markdown', disable_web_page_preview=True, reply_markup=reply_markup)
+        else:
+            await reply_msg.reply_text(message, parse_mode='Markdown', disable_web_page_preview=True, reply_markup=reply_markup)
     except Exception:
-        await update.message.reply_text(message, disable_web_page_preview=True)
+        if update.callback_query:
+            await update.callback_query.edit_message_text(message, disable_web_page_preview=True, reply_markup=reply_markup)
+        else:
+            await reply_msg.reply_text(message, disable_web_page_preview=True, reply_markup=reply_markup)
 
+
+async def filter_category_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle callback from filter category buttons."""
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == "filter_menu":
+        context.args = []
+    else:
+        category = query.data.replace('filter_cat_', '')
+        context.args = [category]
+
+    await filter_command(update, context)
 
 async def recap_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /recap command - show weekly summary of saved articles."""
@@ -2509,6 +2557,8 @@ def create_bot_application() -> Application:
     application.add_handler(CallbackQueryHandler(clear_all_confirm_callback, pattern='^clear_all_confirm_'))
     application.add_handler(CallbackQueryHandler(clear_all_cancel_callback, pattern='^clear_all_cancel_'))
     application.add_handler(CallbackQueryHandler(search_history_callback, pattern='^search_history_'))
+    application.add_handler(CallbackQueryHandler(filter_category_callback, pattern='^filter_cat_'))
+    application.add_handler(CallbackQueryHandler(filter_category_callback, pattern='^filter_menu$'))
     application.add_handler(CallbackQueryHandler(clear_search_history_callback, pattern='^clear_search_history$'))
     application.add_handler(CallbackQueryHandler(predict_save_callback, pattern='^predict_save_'))
     
