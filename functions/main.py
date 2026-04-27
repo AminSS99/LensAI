@@ -7,6 +7,7 @@ import os
 import json
 import asyncio
 import traceback
+import hmac
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import functions_framework
@@ -29,6 +30,12 @@ def telegram_webhook(request: Request):
     
     if request.method != 'POST':
         return 'OK', 200
+
+    secret_token = os.environ.get('TELEGRAM_WEBHOOK_SECRET_TOKEN')
+    if secret_token:
+        header_token = request.headers.get('X-Telegram-Bot-Api-Secret-Token', '')
+        if not hmac.compare_digest(secret_token, header_token):
+            return 'Forbidden', 403
     
     try:
         # Parse the incoming update
