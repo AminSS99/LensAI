@@ -87,6 +87,14 @@ def categorize_news(news_items: List[Dict[str, Any]]) -> Dict[str, List[Dict[str
     return {k: v for k, v in categories.items() if v}
 
 
+def _safe_url(url: str) -> str:
+    """Sanitize URL for Markdown embedding."""
+    if not url:
+        return ""
+    # Minimal escaping for markdown link safety
+    return url.replace("(", "%28").replace(")", "%29").replace(" ", "%20")
+
+
 def create_simple_digest(news_items: List[Dict[str, Any]], language: str = 'en') -> str:
     """
     Create a simple, formatted digest without AI.
@@ -133,9 +141,10 @@ def create_simple_digest(news_items: List[Dict[str, Any]], language: str = 'en')
             
             emoji = get_source_emoji(source)
             
+            safe_url = _safe_url(url)
             # Format article entry
-            if url:
-                entry = f"{i}. {emoji} [{title}]({url})"
+            if safe_url:
+                entry = f"{i}. {emoji} [{title}]({safe_url})"
             else:
                 entry = f"{i}. {emoji} {title}"
             
@@ -177,8 +186,8 @@ def create_raw_list(news_items: List[Dict[str, Any]], language: str = 'en') -> s
     
     for i, article in enumerate(news_items[:20], 1):
         title = article.get('title', 'Untitled')
-        url = article.get('url', '')
-        
+        url = _safe_url(article.get('url', ''))
+
         if url:
             lines.append(f"{i}. [{title}]({url})")
         else:

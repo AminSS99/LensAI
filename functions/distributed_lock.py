@@ -3,7 +3,7 @@ Distributed Lock Module
 Implements a Firestore-based distributed lock to prevent duplicate processing across Cloud Function instances.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 try:
     from google.cloud import firestore as g_firestore
@@ -56,7 +56,7 @@ class DistributedLock:
             
         try:
             lock_ref = self.db.collection('locks').document(self.lock_id)
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             expires_at = now + timedelta(seconds=self.ttl_seconds)
 
             if g_firestore is None:
@@ -68,8 +68,15 @@ class DistributedLock:
                 if snap.exists:
                     data = snap.to_dict()
                     lock_expires = data.get('expires_at')
-                    if lock_expires and lock_expires.replace(tzinfo=None) > now:
-                        return False
+                    if lock_expires:
+                        try:
+                            # Handle both offset-aware and naive datetimes
+                            if lock_expires.tzinfo is None:
+                                lock_expires = lock_expires.replace(tzinfo=timezone.utc)
+                            if lock_expires > now:
+                                return False
+                        except Exception:
+                            return False
 
                 transaction.set(ref, {
                     'user_id': self.user_id,
@@ -115,6 +122,47 @@ class LockAcquireError(Exception):
     pass
 
 
+def cleanup_expired_locks() -> int:
+    """
+    Remove expired lock documents from Firestore.
+    Returns the number of deleted documents.
+    """
+    db = get_firestore_client()
+    if not db:
+        return 0
+
+    try:
+        now = datetime.now(timezone.utc)
+        docs = db.collection('locks').stream()
+        batch = db.batch()
+        count = 0
+
+        for doc in docs:
+            data = doc.to_dict()
+            expires = data.get('expires_at')
+            if not expires:
+                continue
+            try:
+                if expires.tzinfo is None:
+                    expires = expires.replace(tzinfo=timezone.utc)
+                if expires < now:
+                    batch.delete(doc.reference)
+                    count += 1
+                    if count % 400 == 0:
+                        batch.commit()
+                        batch = db.batch()
+            except Exception:
+                continue
+
+        if count % 400 != 0:
+            batch.commit()
+
+        return count
+    except Exception as e:
+        print(f"Lock cleanup error: {e}")
+        return 0
+
+
 def is_locked(lock_name: str, user_id: int) -> bool:
     """
     Check if a lock is currently held.
@@ -143,7 +191,9 @@ def is_locked(lock_name: str, user_id: int) -> bool:
 
         if lock_expires:
             try:
-                if lock_expires.replace(tzinfo=None) > datetime.utcnow():
+                if lock_expires.tzinfo is None:
+                    lock_expires = lock_expires.replace(tzinfo=timezone.utc)
+                if lock_expires > datetime.now(timezone.utc):
                     return True
             except Exception:
                 return False

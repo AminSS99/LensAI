@@ -9,6 +9,15 @@ from datetime import datetime
 from defusedxml import ElementTree as ET
 
 try:
+    from ..security_utils import sanitize_html
+except ImportError:
+    def sanitize_html(text: str) -> str:
+        if not text:
+            return ""
+        import re
+        return " ".join(re.sub(r'<[^>]+>', ' ', text).split())
+
+try:
     from ..resilience import retry_with_backoff
 except ImportError:
     def retry_with_backoff(*args, **kwargs):
@@ -87,8 +96,7 @@ def fetch_theverge(limit: int = 10) -> List[Dict[str, Any]]:
                     # Add summary if available (clean HTML)
                     if summary is not None and summary.text:
                         # Basic HTML cleaning - just extract first 200 chars of text
-                        import re
-                        clean_summary = re.sub(r'<[^>]+>', '', summary.text)
+                        clean_summary = sanitize_html(summary.text)
                         article['summary'] = clean_summary[:200] + '...' if len(clean_summary) > 200 else clean_summary
                     
                     articles.append(article)

@@ -10,6 +10,15 @@ from datetime import datetime
 import time
 
 try:
+    from ..security_utils import sanitize_html
+except ImportError:
+    def sanitize_html(text: str) -> str:
+        if not text:
+            return ""
+        import re
+        return " ".join(re.sub(r'<[^>]+>', ' ', text).split())
+
+try:
     from ..resilience import retry_with_backoff
 except ImportError:
     def retry_with_backoff(*args, **kwargs):
@@ -57,8 +66,7 @@ def fetch_techcrunch(limit: int = 20) -> List[Dict[str, Any]]:
             summary = entry.get('summary', '')
             if summary:
                 # Basic HTML tag removal
-                import re
-                summary = re.sub(r'<[^>]+>', '', summary)
+                summary = sanitize_html(summary)
                 summary = summary[:300] + '...' if len(summary) > 300 else summary
             
             articles.append({
