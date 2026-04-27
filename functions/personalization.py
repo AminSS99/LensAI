@@ -5,7 +5,7 @@ and uses them to rank candidate articles.
 """
 
 from typing import Any, Dict, List, Optional, Tuple
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 def get_firestore_client():
@@ -100,7 +100,7 @@ def record_digest_context(digest_id: str, telegram_id: int, articles: List[Dict[
         db.collection("digest_context").document(digest_id).set({
             "user_id": telegram_id,
             "items": context_rows,
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
         }, merge=True)
         return True
     except Exception as e:
@@ -148,7 +148,7 @@ def apply_digest_feedback(telegram_id: int, digest_id: str, rating: str) -> bool
             "source_weights": source_weights,
             "topic_weights": topic_weights,
             "feedback_count": feedback_count + 1,
-            "updated_at": datetime.utcnow().isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
         }, merge=True)
 
         return True

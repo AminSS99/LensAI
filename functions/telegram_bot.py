@@ -1,4 +1,4 @@
-﻿"""
+"""
 Telegram Bot Module
 Handles all Telegram bot interactions and commands.
 """
@@ -198,20 +198,22 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup = get_digest_reply_markup(digest_id, user_lang)
         
         from .message_utils import split_message
+        from .security_utils import sanitize_markdown_links
         chunks = split_message(header + cached_digest)
 
         for i, chunk in enumerate(chunks):
             is_last = i == len(chunks) - 1
+            safe_chunk = sanitize_markdown_links(chunk)
             try:
                 await update.message.reply_text(
-                    chunk,
+                    safe_chunk,
                     parse_mode='Markdown',
                     disable_web_page_preview=True,
                     reply_markup=reply_markup if is_last else None
                 )
             except Exception:
                 await update.message.reply_text(
-                    chunk,
+                    safe_chunk,
                     disable_web_page_preview=True,
                     reply_markup=reply_markup if is_last else None
                 )
@@ -271,14 +273,17 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             tasks.append(asyncio.to_thread(fetch_producthunt, 8))
             
         results = await asyncio.gather(*tasks, return_exceptions=True)
-        
+
         all_news = []
         for res in results:
             if isinstance(res, list):
                 all_news.extend(res)
             elif isinstance(res, Exception):
                 print(f"Error fetching news: {res}")
-                
+
+        from .main import _filter_safe_news
+        all_news = await _filter_safe_news(all_news)
+
         if not all_news:
             await update.message.reply_text(t('no_news', user_lang))
             return
@@ -330,28 +335,56 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             save_digest(telegram_id, digest)
         except Exception:
             pass
-        
+
+        # Mark articles as sent so breaking news won't repeat them
+        try:
+            from .breaking_news import record_sent_articles
+            record_sent_articles(telegram_id, items_to_summarize)
+        except Exception as e:
+            print(f"Error recording sent articles for {telegram_id}: {e}")
+
         # Send digest (split if too long for Telegram)
         reply_markup = get_digest_reply_markup(digest_id, user_lang)
-        
+
+        # Add predictive save buttons
+        try:
+            from .predictive_bookmarking import predict_saves_for_user, store_predicted_articles
+            predicted = predict_saves_for_user(telegram_id, items_to_summarize, top_n=2, threshold=0.35)
+            if predicted:
+                mapping = store_predicted_articles(predicted)
+                if mapping:
+                    pred_buttons = []
+                    for url_hash, label in mapping.items():
+                        pred_buttons.append(
+                            InlineKeyboardButton(f"🔮 {label}", callback_data=f"predict_save_{url_hash}")
+                        )
+                    keyboard = list(reply_markup.inline_keyboard) if reply_markup else []
+                    for btn in pred_buttons:
+                        keyboard.append([btn])
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+        except Exception as e:
+            print(f"Predictive bookmarking error in news: {e}")
+
         async def send_chunk(chunk, is_last=False):
+            from .security_utils import sanitize_markdown_links
+            safe_chunk = sanitize_markdown_links(chunk)
             try:
                 if is_last:
                     # Add action buttons to the last chunk.
                     await update.message.reply_text(
-                        chunk, 
-                        parse_mode='Markdown', 
+                        safe_chunk,
+                        parse_mode='Markdown',
                         disable_web_page_preview=True,
                         reply_markup=reply_markup
                     )
                 else:
-                    await update.message.reply_text(chunk, parse_mode='Markdown', disable_web_page_preview=True)
+                    await update.message.reply_text(safe_chunk, parse_mode='Markdown', disable_web_page_preview=True)
             except Exception:
                 # Fallback: send without markdown parsing
                 if is_last:
-                    await update.message.reply_text(chunk, disable_web_page_preview=True, reply_markup=reply_markup)
+                    await update.message.reply_text(safe_chunk, disable_web_page_preview=True, reply_markup=reply_markup)
                 else:
-                    await update.message.reply_text(chunk, disable_web_page_preview=True)
+                    await update.message.reply_text(safe_chunk, disable_web_page_preview=True)
         
         # Smart message splitting to avoid breaking UTF-8, URLs, or markdown
         from .message_utils import split_message
@@ -670,13 +703,14 @@ async def _render_saved_page(update_or_query, telegram_id: int, user_lang: str, 
         emoji = cat_emoji.get(category, '🔧')
         date_str = saved_at[:10] if saved_at else ''
         
-        from .security_utils import escape_markdown_v1
+        from .security_utils import escape_markdown_v1, sanitize_markdown_url
         safe_title = escape_markdown_v1(title)
-        
+        safe_url = sanitize_markdown_url(url)
+
         item_num = offset + i
 
-        if url.startswith('http'):
-            message += f"{item_num}. {emoji} [{safe_title}]({url})"
+        if safe_url.startswith('http'):
+            message += f"{item_num}. {emoji} [{safe_title}]({safe_url})"
         else:
             message += f"{item_num}. {emoji} {safe_title}"
         
@@ -761,24 +795,38 @@ async def save_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /save command - save an article."""
     from .user_storage import save_article, get_user_language, categorize_article
     from .translations import t
-    
+
     telegram_id = update.effective_user.id
     user_lang = get_user_language(telegram_id)
-    
+
     if not context.args:
         await update.message.reply_text(
             t('save_help', user_lang),
             parse_mode='Markdown'
         )
         return
-    
+
     url = context.args[0]
     title = ' '.join(context.args[1:]) if len(context.args) > 1 else url[:50]
     category = categorize_article(title, url)
-    
+
+    article_data = {
+        'title': title,
+        'url': url,
+        'source': '',
+        'category': category,
+    }
+
     if save_article(telegram_id, title, url, category=category):
         cat_label = t(f'cat_{category}', user_lang)
         await update.message.reply_text(t('article_saved_single', user_lang, category=cat_label))
+        # Queue deep dive background research
+        try:
+            from .deep_dive import queue_deep_dive
+            queue_deep_dive(telegram_id, article_data)
+            await update.message.reply_text(t('deep_dive_queued', user_lang), parse_mode='Markdown')
+        except Exception as e:
+            print(f"Deep dive queue error: {e}")
     else:
         await update.message.reply_text(t('article_exists', user_lang))
 
@@ -970,9 +1018,10 @@ async def filter_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cat_label = t(f'cat_{category}', user_lang)
     message = t('filter_results', user_lang, category=cat_label, count=len(articles))
     
+    from .security_utils import sanitize_markdown_url
     for i, article in enumerate(articles, 1):
         title = article.get('title', 'Untitled')[:50]
-        url = article.get('url', '')
+        url = sanitize_markdown_url(article.get('url', ''))
         if url.startswith('http'):
             message += f"{i}. [{title}]({url})\n"
         else:
@@ -1023,12 +1072,13 @@ async def recap_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = t('recap_header', user_lang)
     
     # Show top 5 recent articles
+    from .security_utils import sanitize_markdown_url
     for i, article in enumerate(weekly_articles[:5], 1):
         title = article.get('title', 'Untitled')[:50]
-        url = article.get('url', '')
+        url = sanitize_markdown_url(article.get('url', ''))
         category = article.get('category', 'tech')
         emoji = cat_emoji.get(category, '🔧')
-        
+
         if url.startswith('http'):
             message += f"{i}. {emoji} [{title}]({url})\n"
         else:
@@ -1385,13 +1435,14 @@ async def random_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     emoji = cat_emoji.get(category, '🔧')
     date_str = saved_at[:10] if saved_at else ''
 
-    from .security_utils import escape_markdown_v1
+    from .security_utils import escape_markdown_v1, sanitize_markdown_url
     safe_title = escape_markdown_v1(title)
+    safe_url = sanitize_markdown_url(url)
 
     message = t('random_article_header', user_lang)
 
-    if url.startswith('http'):
-        message += f"{emoji} [{safe_title}]({url})"
+    if safe_url.startswith('http'):
+        message += f"{emoji} [{safe_title}]({safe_url})"
     else:
         message += f"{emoji} {safe_title}"
 
@@ -1496,12 +1547,12 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             title = article.get('title', '')[:60]
             # Escape title for security
             safe_title = escape_markdown_v1(title)
-            
-            url = article.get('url', '')
+
+            url = sanitize_markdown_url(article.get('url', ''))
             source = article.get('source', '')
             # Escape source for security
             safe_source = escape_markdown_v1(source)
-            
+
             message += f"{i}. [{safe_title}]({url}) _{safe_source}_\n"
         
         await reply_msg.reply_text(
@@ -1696,6 +1747,10 @@ async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 all_news.extend(res)
             elif isinstance(res, Exception):
                 print(f"Error fetching news in refresh: {res}")
+
+        from .main import _filter_safe_news
+        all_news = await _filter_safe_news(all_news)
+
         if not all_news:
             error_text = "Could not fetch news."
             await query.message.reply_text(error_text)
@@ -1732,37 +1787,68 @@ async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ttl_hours=24,
         )
         record_digest_context(digest_id, telegram_id, items_to_summarize)
+
+        # Mark articles as sent so breaking news won't repeat them
+        try:
+            from .breaking_news import record_sent_articles
+            record_sent_articles(telegram_id, items_to_summarize)
+        except Exception as e:
+            print(f"Error recording sent refresh articles for {telegram_id}: {e}")
+
         # Refresh cache with latest digest variant.
         set_cached_digest(digest, ttl_minutes=15, cache_key=cache_key)
         reply_markup = get_digest_reply_markup(digest_id, user_lang)
+
+        # Add predictive save buttons
+        try:
+            from .predictive_bookmarking import predict_saves_for_user, store_predicted_articles
+            predicted = predict_saves_for_user(telegram_id, items_to_summarize, top_n=2, threshold=0.35)
+            if predicted:
+                mapping = store_predicted_articles(predicted)
+                if mapping:
+                    pred_buttons = []
+                    for url_hash, label in mapping.items():
+                        pred_buttons.append(
+                            InlineKeyboardButton(f"🔮 {label}", callback_data=f"predict_save_{url_hash}")
+                        )
+                    keyboard = list(reply_markup.inline_keyboard) if reply_markup else []
+                    for btn in pred_buttons:
+                        keyboard.append([btn])
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+        except Exception as e:
+            print(f"Predictive bookmarking error in refresh: {e}")
+
         from .message_utils import split_message
+        from .security_utils import sanitize_markdown_links
         chunks = split_message(digest)
         try:
             for i, chunk in enumerate(chunks):
+                safe_chunk = sanitize_markdown_links(chunk)
                 if i == len(chunks) - 1:
                     await query.message.reply_text(
-                        chunk,
+                        safe_chunk,
                         parse_mode='Markdown',
                         disable_web_page_preview=True,
                         reply_markup=reply_markup
                     )
                 else:
                     await query.message.reply_text(
-                        chunk,
+                        safe_chunk,
                         parse_mode='Markdown',
                         disable_web_page_preview=True
                     )
         except Exception:
             for i, chunk in enumerate(chunks):
+                safe_chunk = sanitize_markdown_links(chunk)
                 if i == len(chunks) - 1:
                     await query.message.reply_text(
-                        chunk,
+                        safe_chunk,
                         disable_web_page_preview=True,
                         reply_markup=reply_markup
                     )
                 else:
                     await query.message.reply_text(
-                        chunk,
+                        safe_chunk,
                         disable_web_page_preview=True
                     )
     except Exception as e:
@@ -2082,69 +2168,270 @@ Keep responses under 300 words unless more detail is needed.{lang_instruction}""
         await update.message.reply_text(t('ai_error', user_lang, error=str(e)[:100]))
 
 
+# ============ BREAKING NEWS COMMAND ============
+
+async def breaking_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /breaking command - toggle breaking news alerts."""
+    from .user_storage import get_user_language
+    from .translations import t
+    from .breaking_news import get_user_breaking_news_preference, set_user_breaking_news_preference
+
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+
+    if not context.args:
+        current = get_user_breaking_news_preference(telegram_id)
+        if current:
+            await update.message.reply_text(t('breaking_status_on', user_lang), parse_mode='Markdown')
+        else:
+            await update.message.reply_text(t('breaking_status_off', user_lang), parse_mode='Markdown')
+        return
+
+    arg = context.args[0].strip().lower()
+    if arg == 'on':
+        set_user_breaking_news_preference(telegram_id, True)
+        await update.message.reply_text(t('breaking_on', user_lang), parse_mode='Markdown')
+    elif arg == 'off':
+        set_user_breaking_news_preference(telegram_id, False)
+        await update.message.reply_text(t('breaking_off', user_lang), parse_mode='Markdown')
+    else:
+        current = get_user_breaking_news_preference(telegram_id)
+        if current:
+            await update.message.reply_text(t('breaking_status_on', user_lang), parse_mode='Markdown')
+        else:
+            await update.message.reply_text(t('breaking_status_off', user_lang), parse_mode='Markdown')
+
+
+# ============ STALKER COMMANDS ============
+
+async def stalk_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /stalk command - add or list stalk targets."""
+    from .user_storage import get_user_language
+    from .translations import t
+    from .stalker import add_stalk_target, list_stalk_targets
+
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+
+    if not context.args:
+        targets = list_stalk_targets(telegram_id)
+        if not targets:
+            await update.message.reply_text(t('stalk_empty', user_lang), parse_mode='Markdown')
+            return
+
+        lines = [t('stalk_list_header', user_lang)]
+        for target in targets:
+            ttype = target.get('target_type', 'company')
+            name = target.get('name', '')
+            emoji = '🏢' if ttype == 'company' else '🚀'
+            lines.append(f"{emoji} {name}")
+
+        lines.append(f"\n_Удалить: /unstalk <name>_" if user_lang == 'ru' else f"\n_Remove: /unstalk <name>_")
+        await update.message.reply_text("\n".join(lines), parse_mode='Markdown')
+        return
+
+    arg = ' '.join(context.args).strip()
+
+    if arg.lower().startswith('repo:'):
+        repo = arg[5:].strip()
+        if add_stalk_target(telegram_id, 'repo', repo):
+            await update.message.reply_text(t('stalk_added_repo', user_lang, name=repo), parse_mode='Markdown')
+        else:
+            await update.message.reply_text(t('stalk_invalid_repo', user_lang))
+    else:
+        company = arg.strip().lower()
+        if add_stalk_target(telegram_id, 'company', company):
+            await update.message.reply_text(t('stalk_added_company', user_lang, name=company), parse_mode='Markdown')
+        else:
+            await update.message.reply_text(t('stalk_duplicate', user_lang, name=company), parse_mode='Markdown')
+
+
+async def unstalk_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /unstalk command - remove a stalk target."""
+    from .user_storage import get_user_language
+    from .translations import t
+    from .stalker import remove_stalk_target
+
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+
+    if not context.args:
+        await update.message.reply_text(
+            "Usage: /unstalk <name>" if user_lang == 'en' else "Использование: /unstalk <название>",
+            parse_mode='Markdown'
+        )
+        return
+
+    name = ' '.join(context.args).strip().lower()
+    if remove_stalk_target(telegram_id, name):
+        await update.message.reply_text(t('stalk_removed', user_lang, name=name), parse_mode='Markdown')
+    else:
+        await update.message.reply_text(t('stalk_not_found', user_lang, name=name), parse_mode='Markdown')
+
+
+# ============ PREDICTIVE SAVE CALLBACK ============
+
+async def predict_save_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle predictive save button press."""
+    from .user_storage import get_user_language, save_article, categorize_article
+    from .translations import t
+    from .predictive_bookmarking import record_prediction_interaction
+    from .security_utils import stable_hash
+
+    query = update.callback_query
+    await query.answer()
+
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+
+    # callback_data format: predict_save_<url_hash>
+    data = query.data
+    parts = data.split('_')
+    if len(parts) < 3:
+        await query.answer("Invalid", show_alert=True)
+        return
+
+    url_hash = parts[2]
+
+    # Retrieve the article from temp storage (we need to store it first)
+    # For simplicity, we store predicted articles in a temp collection
+    from .user_storage import get_firestore_client
+    db = get_firestore_client()
+    article = None
+    if db:
+        try:
+            doc = db.collection('predicted_articles_temp').document(url_hash).get()
+            if doc.exists:
+                article = doc.to_dict()
+        except Exception:
+            pass
+
+    if not article:
+        await query.answer("Link expired" if user_lang == 'en' else "Ссылка устарела", show_alert=True)
+        return
+
+    title = article.get('title', 'Untitled')
+    url = article.get('url', '')
+    source = article.get('source', '')
+    category = categorize_article(title, url)
+
+    if save_article(telegram_id, title, url, source, category):
+        record_prediction_interaction(telegram_id, url_hash, 'accepted')
+        await query.edit_message_reply_markup(
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("✅ Saved", callback_data="predict_done")]
+            ])
+        )
+    else:
+        await query.answer(t('article_exists', user_lang), show_alert=True)
+
+
 # ============ BOT SETUP ============
 
 async def setup_bot_commands(application: Application):
-    """Set up bot commands for the native Telegram command menu."""
-    from telegram import BotCommand, MenuButtonCommands
-    
+    """Set up bot commands for the native Telegram command menu with emojis and bilingual support."""
+    from telegram import BotCommand, MenuButtonCommands, BotCommandScopeAllPrivateChats, BotCommandScopeDefault
+
+    # Default commands (shown when no language-specific set matches)
+    commands_default = [
+        BotCommand("start", "🚀 Start the bot"),
+        BotCommand("news", "📰 Get AI news digest"),
+        BotCommand("saved", "🔖 View saved articles"),
+        BotCommand("export", "📤 Export saved articles"),
+        BotCommand("random", "🎲 Random saved article"),
+        BotCommand("search", "🔍 Search articles"),
+        BotCommand("semsearch", "🧠 Semantic search"),
+        BotCommand("filter", "📂 Filter by category"),
+        BotCommand("recap", "📊 Weekly recap"),
+        BotCommand("stats", "📈 Reading statistics"),
+        BotCommand("status", "⚙️ Your settings"),
+        BotCommand("language", "🌐 Change language"),
+        BotCommand("sources", "📡 Toggle sources"),
+        BotCommand("schedule", "⏰ Set digest schedule"),
+        BotCommand("timezone", "🌍 Set timezone"),
+        BotCommand("quiet_hours", "🌙 Quiet hours"),
+        BotCommand("trendalerts", "📉 Trend alerts"),
+        BotCommand("admin_status", "🔧 Admin status"),
+        BotCommand("stalk", "📡 Track company/repo"),
+        BotCommand("unstalk", "🗑 Stop tracking"),
+        BotCommand("breaking", "🚨 Breaking news"),
+        BotCommand("share", "📨 Share bot"),
+        BotCommand("trends", "🔥 Weekly trends"),
+        BotCommand("help", "❓ Help"),
+    ]
+
     # English commands
     commands_en = [
-        BotCommand("start", "Start the bot"),
-        BotCommand("news", "Get AI news digest"),
-        BotCommand("saved", "View saved articles"),
-        BotCommand("export", "Export saved articles"),
-        BotCommand("random", "Read a random saved article"),
-        BotCommand("search", "Search articles"),
-        BotCommand("semsearch", "Semantic search saved"),
-        BotCommand("filter", "Filter saved by category"),
-        BotCommand("recap", "Weekly saved articles recap"),
-        BotCommand("stats", "Reading statistics"),
-        BotCommand("status", "View your settings"),
-        BotCommand("language", "Change language"),
-        BotCommand("sources", "Toggle news sources"),
-        BotCommand("schedule", "Set digest schedule"),
-        BotCommand("timezone", "Set timezone"),
-        BotCommand("quiet_hours", "Set quiet hours"),
-        BotCommand("trendalerts", "Weekly trend alerts"),
-        BotCommand("admin_status", "Admin observability"),
-        BotCommand("share", "Share bot with friends"),
-        BotCommand("trends", "Weekly topic trends"),
-        BotCommand("help", "Show help"),
+        BotCommand("start", "🚀 Start the bot"),
+        BotCommand("news", "📰 Get AI news digest"),
+        BotCommand("saved", "🔖 View saved articles"),
+        BotCommand("export", "📤 Export saved articles"),
+        BotCommand("random", "🎲 Random saved article"),
+        BotCommand("search", "🔍 Search articles"),
+        BotCommand("semsearch", "🧠 Semantic search"),
+        BotCommand("filter", "📂 Filter by category"),
+        BotCommand("recap", "📊 Weekly recap"),
+        BotCommand("stats", "📈 Reading statistics"),
+        BotCommand("status", "⚙️ Your settings"),
+        BotCommand("language", "🌐 Change language"),
+        BotCommand("sources", "📡 Toggle sources"),
+        BotCommand("schedule", "⏰ Set digest schedule"),
+        BotCommand("timezone", "🌍 Set timezone"),
+        BotCommand("quiet_hours", "🌙 Quiet hours"),
+        BotCommand("trendalerts", "📉 Trend alerts"),
+        BotCommand("admin_status", "🔧 Admin status"),
+        BotCommand("stalk", "📡 Track company/repo"),
+        BotCommand("unstalk", "🗑 Stop tracking"),
+        BotCommand("breaking", "🚨 Breaking news"),
+        BotCommand("share", "📨 Share bot"),
+        BotCommand("trends", "🔥 Weekly trends"),
+        BotCommand("help", "❓ Help"),
     ]
-    
+
     # Russian commands
     commands_ru = [
-        BotCommand("start", "Запустить бота"),
-        BotCommand("news", "Получить дайджест новостей"),
-        BotCommand("saved", "Сохранённые статьи"),
-        BotCommand("export", "Экспорт статей"),
-        BotCommand("random", "Случайная сохраненная статья"),
-        BotCommand("search", "Поиск статей"),
-        BotCommand("semsearch", "Умный поиск"),
-        BotCommand("filter", "Фильтр по категориям"),
-        BotCommand("recap", "Еженедельная сводка"),
-        BotCommand("stats", "Статистика чтения"),
-        BotCommand("status", "Настройки"),
-        BotCommand("language", "Язык"),
-        BotCommand("sources", "Источники новостей"),
-        BotCommand("schedule", "Расписание"),
-        BotCommand("timezone", "Часовой пояс"),
-        BotCommand("quiet_hours", "Тихие часы"),
-        BotCommand("trendalerts", "Тренд-уведомления"),
-        BotCommand("admin_status", "Статус системы"),
-        BotCommand("share", "Поделиться ботом"),
-        BotCommand("trends", "Тренды недели"),
-        BotCommand("help", "Помощь"),
+        BotCommand("start", "🚀 Запустить бота"),
+        BotCommand("news", "📰 Дайджест новостей"),
+        BotCommand("saved", "🔖 Сохранённые статьи"),
+        BotCommand("export", "📤 Экспорт статей"),
+        BotCommand("random", "🎲 Случайная статья"),
+        BotCommand("search", "🔍 Поиск статей"),
+        BotCommand("semsearch", "🧠 Умный поиск"),
+        BotCommand("filter", "📂 Фильтр по категориям"),
+        BotCommand("recap", "📊 Недельный обзор"),
+        BotCommand("stats", "📈 Статистика чтения"),
+        BotCommand("status", "⚙️ Настройки"),
+        BotCommand("language", "🌐 Сменить язык"),
+        BotCommand("sources", "📡 Источники новостей"),
+        BotCommand("schedule", "⏰ Расписание"),
+        BotCommand("timezone", "🌍 Часовой пояс"),
+        BotCommand("quiet_hours", "🌙 Тихие часы"),
+        BotCommand("trendalerts", "📉 Тренд-уведомления"),
+        BotCommand("admin_status", "🔧 Статус системы"),
+        BotCommand("stalk", "📡 Отслеживать компанию/репо"),
+        BotCommand("unstalk", "🗑 Прекратить отслеживание"),
+        BotCommand("breaking", "🚨 Экстренные новости"),
+        BotCommand("share", "📨 Поделиться ботом"),
+        BotCommand("trends", "🔥 Тренды недели"),
+        BotCommand("help", "❓ Помощь"),
     ]
-    
-    # Set commands for different languages
-    await application.bot.set_my_commands(commands_en, language_code="en")
-    await application.bot.set_my_commands(commands_ru, language_code="ru")
-    
+
+    # Delete any existing commands first (ensures clean update across all scopes)
+    await application.bot.delete_my_commands(scope=BotCommandScopeDefault())
+    await application.bot.delete_my_commands(scope=BotCommandScopeAllPrivateChats())
+    await application.bot.delete_my_commands(language_code="en")
+    await application.bot.delete_my_commands(language_code="ru")
+
+    # Set default commands for all private chats (visible regardless of language)
+    await application.bot.set_my_commands(commands_default, scope=BotCommandScopeAllPrivateChats())
+
+    # Set commands for different languages (Telegram picks these based on user's app language)
+    await application.bot.set_my_commands(commands_en, language_code="en", scope=BotCommandScopeAllPrivateChats())
+    await application.bot.set_my_commands(commands_ru, language_code="ru", scope=BotCommandScopeAllPrivateChats())
+
     # Set menu button to show commands (creates the blue "Menu" button at bottom-left)
     await application.bot.set_chat_menu_button(menu_button=MenuButtonCommands())
-    
+
     print("Bot commands and menu button registered successfully")
 
 def create_bot_application() -> Application:
@@ -2203,7 +2490,10 @@ def create_bot_application() -> Application:
     application.add_handler(CommandHandler("trendalerts", trendalerts_command))
     application.add_handler(CommandHandler("semsearch", semantic_search_command))
     application.add_handler(CommandHandler("admin_status", admin_status_command))
-    
+    application.add_handler(CommandHandler("breaking", breaking_command))
+    application.add_handler(CommandHandler("stalk", stalk_command))
+    application.add_handler(CommandHandler("unstalk", unstalk_command))
+
     # Add callback query handlers for inline buttons
     application.add_handler(CallbackQueryHandler(toggle_source_callback, pattern='^toggle_'))
     application.add_handler(CallbackQueryHandler(language_callback, pattern='^lang_'))
@@ -2220,6 +2510,7 @@ def create_bot_application() -> Application:
     application.add_handler(CallbackQueryHandler(clear_all_cancel_callback, pattern='^clear_all_cancel_'))
     application.add_handler(CallbackQueryHandler(search_history_callback, pattern='^search_history_'))
     application.add_handler(CallbackQueryHandler(clear_search_history_callback, pattern='^clear_search_history$'))
+    application.add_handler(CallbackQueryHandler(predict_save_callback, pattern='^predict_save_'))
     
     # Add message handler for buttons and Q&A (handles any text that isn't a command)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
@@ -2259,18 +2550,41 @@ async def send_digest_to_user(telegram_id: int, digest: str, articles_meta: list
         print(f"Error storing scheduled digest context: {e}")
 
     reply_markup = get_digest_reply_markup(digest_id, user_lang)
-    
+
+    # Add predictive save buttons if we have article metadata
+    if articles_meta:
+        try:
+            from .predictive_bookmarking import predict_saves_for_user, store_predicted_articles
+            predicted = predict_saves_for_user(telegram_id, articles_meta, top_n=2, threshold=0.35)
+            if predicted:
+                mapping = store_predicted_articles(predicted)
+                if mapping:
+                    pred_buttons = []
+                    for url_hash, label in mapping.items():
+                        pred_buttons.append(
+                            InlineKeyboardButton(f"🔮 {label}", callback_data=f"predict_save_{url_hash}")
+                        )
+                    # Append prediction buttons as new rows
+                    keyboard = list(reply_markup.inline_keyboard) if reply_markup else []
+                    for btn in pred_buttons:
+                        keyboard.append([btn])
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+        except Exception as e:
+            print(f"Predictive bookmarking error: {e}")
+
     try:
         # Smart message splitting to avoid breaking UTF-8, URLs, or markdown
         from .message_utils import split_message
+        from .security_utils import sanitize_markdown_links
         chunks = split_message(digest)
-        
+
         for i, chunk in enumerate(chunks):
+            safe_chunk = sanitize_markdown_links(chunk)
             # Add buttons only to the last chunk
             if i == len(chunks) - 1:
                 await bot.send_message(
                     chat_id=telegram_id,
-                    text=chunk,
+                    text=safe_chunk,
                     parse_mode='Markdown',
                     disable_web_page_preview=True,
                     reply_markup=reply_markup
@@ -2278,10 +2592,19 @@ async def send_digest_to_user(telegram_id: int, digest: str, articles_meta: list
             else:
                 await bot.send_message(
                     chat_id=telegram_id,
-                    text=chunk,
+                    text=safe_chunk,
                     parse_mode='Markdown',
                     disable_web_page_preview=True
                 )
+
+        # Mark digest articles as "sent" so breaking news won't repeat them
+        if articles_meta:
+            try:
+                from .breaking_news import record_sent_articles
+                record_sent_articles(telegram_id, articles_meta)
+            except Exception as e:
+                print(f"Error recording sent digest articles for {telegram_id}: {e}")
+
         return True
     except Exception as e:
         print(f"Error sending to user {telegram_id}: {e}")

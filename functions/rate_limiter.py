@@ -1,11 +1,11 @@
-﻿"""
+"""
 Rate Limiting Module
 Prevents abuse by limiting requests per user using Firestore for persistence.
 """
 
 import time
 from typing import Dict, Tuple, Optional, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 try:
     from google.cloud import firestore as g_firestore
 except Exception:
@@ -95,7 +95,7 @@ def check_rate_limit(user_id: int, action: str = 'default') -> Tuple[bool, str]:
                 'timestamps': timestamps,
                 'user_id': user_id,
                 'action': action,
-                'updated_at': datetime.utcnow()
+                'updated_at': datetime.now(timezone.utc)
             })
             
             return True, max_requests - len(timestamps)
@@ -111,10 +111,8 @@ def check_rate_limit(user_id: int, action: str = 'default') -> Tuple[bool, str]:
         
     except Exception as e:
         print(f"Rate limit error: {e}")
-        # Fail closed for high-abuse actions.
-        if action in {"news", "search", "ai_chat", "save"}:
-            return False, "Rate limit check failed. Please try again in 30 seconds."
-        return True, "Error checking limit"
+        # Fail closed for all actions to prevent abuse on DB errors.
+        return False, "Rate limit check failed. Please try again in 30 seconds."
 
 
 def reset_limits(user_id: int):

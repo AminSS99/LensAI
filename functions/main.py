@@ -4,10 +4,11 @@ Contains all HTTP and scheduled function handlers.
 """
 
 import os
+import re
 import json
 import asyncio
 import traceback
-from datetime import datetime
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 import functions_framework
 from flask import Request
@@ -29,6 +30,13 @@ def telegram_webhook(request: Request):
     
     if request.method != 'POST':
         return 'OK', 200
+    
+    # Validate secret token to ensure request came from Telegram
+    secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
+    expected = os.environ.get("WEBHOOK_SECRET_TOKEN")
+    if expected and secret != expected:
+        print("Webhook: unauthorized request (invalid secret token)")
+        return "Unauthorized", 403
     
     try:
         # Parse the incoming update
@@ -150,6 +158,29 @@ def _is_user_due_now(user: dict, now_utc: datetime) -> bool:
 
     return True
 
+async def _filter_safe_news(news_items: list) -> list:
+    """Filter out news items with unsafe URLs."""
+    from .security_utils import is_safe_url
+
+    async def check_item(item):
+        url = item.get('url', '')
+        if not url or not url.startswith('http'):
+            return False
+        return await is_safe_url(url)
+
+    results = await asyncio.gather(*[check_item(item) for item in news_items], return_exceptions=True)
+    safe_news = []
+    for item, ok in zip(news_items, results):
+        if isinstance(ok, Exception):
+            print(f"URL safety check error for {item.get('url', '')}: {ok}")
+            continue
+        if ok:
+            safe_news.append(item)
+        else:
+            print(f"Unsafe URL filtered: {item.get('url', '')}")
+    return safe_news
+
+
 async def process_scheduled_digest(target_time: str = None) -> dict:
     """
     Core logic for processing scheduled digests.
@@ -158,7 +189,8 @@ async def process_scheduled_digest(target_time: str = None) -> dict:
     Args:
         target_time: Optional time string HH:MM. If None, current Baku time is used.
     """
-    from .database import get_users_for_time, get_all_active_users, save_digest
+    from .database import get_users_for_time, get_all_active_users, save_digest, get_last_digest_sent_at
+    from .distributed_lock import DistributedLock
     from .telegram_bot import send_digest_to_user
     from .scrapers.hackernews import fetch_hackernews
     from .scrapers.techcrunch import fetch_techcrunch
@@ -202,7 +234,9 @@ async def process_scheduled_digest(target_time: str = None) -> dict:
             all_news.extend(res)
         elif isinstance(res, Exception):
             print(f"Error fetching news: {res}")
-    
+
+    all_news = await _filter_safe_news(all_news)
+
     if not all_news:
         return {'message': 'No news available', 'sent': 0}
     
@@ -226,29 +260,54 @@ async def process_scheduled_digest(target_time: str = None) -> dict:
         digests_by_lang[lang] = await summarize_news(all_news, max_items=18, language=lang)
     
     # Send to all scheduled users with their language-specific digest
+    from datetime import timedelta as dt_timedelta
+    now_utc = datetime.now(timezone.utc)
     sent_count = 0
     errors = []
+    skipped_locked = 0
+    skipped_recent = 0
     
     for lang, lang_users in users_by_lang.items():
         digest = digests_by_lang[lang]
         for user in lang_users:
             telegram_id = user.get('telegram_id')
+            if not telegram_id:
+                continue
+            
+            lock = DistributedLock('scheduled_digest', telegram_id, ttl_seconds=300)
+            acquired = lock.acquire()
+            
+            if not acquired:
+                print(f"Lock held for user {telegram_id}, skipping to prevent double-send")
+                skipped_locked += 1
+                continue
+            
             try:
-                if telegram_id:
-                    success = await send_digest_to_user(telegram_id, digest, articles_meta=all_news[:20])
-                    if success:
-                        save_digest(telegram_id, digest)
-                        sent_count += 1
-                    else:
-                        errors.append(telegram_id)
+                last_sent = get_last_digest_sent_at(telegram_id)
+                if last_sent and (now_utc - last_sent) < dt_timedelta(minutes=50):
+                    print(f"Digest already sent to {telegram_id} at {last_sent}, skipping")
+                    skipped_recent += 1
+                    lock.release()
+                    continue
+                
+                success = await send_digest_to_user(telegram_id, digest, articles_meta=all_news[:20])
+                if success:
+                    save_digest(telegram_id, digest)
+                    sent_count += 1
+                else:
+                    errors.append(telegram_id)
             except Exception as e:
                 print(f"Error sending to {telegram_id}: {e}")
                 errors.append(telegram_id)
+            finally:
+                lock.release()
                 
     return {
         'message': f'Digest sent for {current_time}',
         'sent': sent_count,
         'total_users': len(users),
+        'skipped_locked': skipped_locked,
+        'skipped_recently_sent': skipped_recent,
         'errors': errors
     }
 
@@ -323,18 +382,25 @@ def scheduled_digest(request: Request):
     HTTP Cloud Function triggered by Cloud Scheduler.
     Sends digests to users scheduled for the current time.
     """
+    ok, error = _require_internal_secret(request)
+    if not ok:
+        return error
+
     try:
         # Check for manual time override
         target_time = None
         if request.args.get('time'):
             target_time = request.args.get('time')
-            
+            if target_time and not re.match(r'^\d{2}:\d{2}$', target_time):
+                return json.dumps({'error': 'Invalid time format. Expected HH:MM.'}), 400
+
         result = asyncio.run(process_scheduled_digest(target_time))
         return json.dumps(result), 200
-        
+
     except Exception as e:
         print(f"Scheduled digest error: {e}")
-        return json.dumps({'error': str(e)}), 500
+        traceback.print_exc()
+        return json.dumps({'error': 'Internal server error'}), 500
 
 
 @functions_framework.http
@@ -343,12 +409,17 @@ def weekly_trend_alerts(request: Request):
     HTTP Cloud Function for weekly trend alerts.
     Intended to be called by Cloud Scheduler once per week.
     """
+    ok, error = _require_internal_secret(request)
+    if not ok:
+        return error
+
     try:
         result = asyncio.run(process_weekly_trend_alerts())
         return json.dumps(result), 200
     except Exception as e:
         print(f"Weekly trend alert error: {e}")
-        return json.dumps({'error': str(e)}), 500
+        traceback.print_exc()
+        return json.dumps({'error': 'Internal server error'}), 500
 
 
 # ============ ON-DEMAND NEWS FETCH FUNCTION ============
@@ -366,7 +437,11 @@ def fetch_news(request: Request):
     from .scrapers.github_trending import fetch_github_trending
     from .scrapers.producthunt import fetch_producthunt
     from .summarizer import summarize_news
-    
+
+    ok, error = _require_internal_secret(request)
+    if not ok:
+        return error
+
     try:
         sources_arg = request.args.get('sources', 'all').split(',')
         summarize = request.args.get('summarize', 'true').lower() == 'true'
@@ -401,7 +476,9 @@ def fetch_news(request: Request):
                 elif isinstance(res, Exception):
                     # Log error but continue
                     print(f"Error fetching source: {res}")
-            
+
+            all_news = await _filter_safe_news(all_news)
+
             if not all_news:
                 return {
                     'articles': [],
@@ -427,9 +504,211 @@ def fetch_news(request: Request):
 
         result = asyncio.run(fetch_async())
         return json.dumps(result), 200
-            
+
     except Exception as e:
-        return json.dumps({'error': str(e)}), 500
+        print(f"Fetch news error: {e}")
+        traceback.print_exc()
+        return json.dumps({'error': 'Internal server error'}), 500
+
+
+def _require_internal_secret(request: Request) -> tuple[bool, tuple]:
+    """Verify that the request carries the correct internal secret header."""
+    secret = request.headers.get("X-Internal-Secret")
+    expected = os.environ.get("INTERNAL_SECRET")
+    if expected and secret != expected:
+        return False, (json.dumps({"error": "Forbidden"}), 403)
+    return True, ()
+
+
+# ============ HOURLY BREAKING NEWS CHECK ============
+
+@functions_framework.http
+def hourly_news_check(request: Request):
+    """
+    HTTP Cloud Function triggered hourly by Cloud Scheduler.
+    Detects breaking news and alerts opted-in users.
+    """
+    ok, error = _require_internal_secret(request)
+    if not ok:
+        return error
+
+    try:
+        from .scrapers.hackernews import fetch_hackernews
+        from .scrapers.techcrunch import fetch_techcrunch
+        from .scrapers.ai_blogs import fetch_ai_blogs
+        from .scrapers.theverge import fetch_theverge
+        from .scrapers.github_trending import fetch_github_trending
+        from .scrapers.producthunt import fetch_producthunt
+        from .breaking_news import (
+            detect_breaking_news, format_breaking_alert,
+            get_user_breaking_news_preference,
+            can_send_breaking_to_user, record_breaking_sent_to_user,
+            filter_fresh_articles, record_sent_articles,
+            cleanup_old_temporal_patterns
+        )
+        from .database import get_all_active_users
+        from telegram import Bot
+        from .telegram_bot import get_bot_token
+
+        async def check_async():
+            tasks = [
+                fetch_hackernews(20),
+                asyncio.to_thread(fetch_techcrunch, 10),
+                fetch_ai_blogs(5),
+                asyncio.to_thread(fetch_theverge, 8),
+                asyncio.to_thread(fetch_github_trending, 5),
+                asyncio.to_thread(fetch_producthunt, 5),
+            ]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            all_news = []
+            for res in results:
+                if isinstance(res, list):
+                    all_news.extend(res)
+                elif isinstance(res, Exception):
+                    print(f"Error fetching source: {res}")
+
+            all_news = await _filter_safe_news(all_news)
+            raw_alerts = detect_breaking_news(all_news)
+
+            if not raw_alerts:
+                return {'alerts': 0, 'sent': 0}
+
+            users = get_all_active_users()
+            bot = Bot(token=get_bot_token())
+            sent = 0
+            skipped_users = 0
+            skipped_dupes = 0
+
+            for alert in raw_alerts:
+                for user in users:
+                    user_id = user.get('telegram_id')
+                    if not user_id:
+                        continue
+                    if not get_user_breaking_news_preference(user_id):
+                        continue
+
+                    # Frequency cap check
+                    if not can_send_breaking_to_user(user_id):
+                        skipped_users += 1
+                        continue
+
+                    # Filter out articles already sent to this user
+                    fresh_articles = filter_fresh_articles(alert.get('articles', []), user_id)
+                    if not fresh_articles:
+                        skipped_dupes += 1
+                        continue
+
+                    # Build personalized alert with only fresh articles
+                    personalized_alert = {**alert, 'articles': fresh_articles}
+
+                    try:
+                        from .user_storage import get_user_language
+                        lang = get_user_language(user_id)
+                        msg = format_breaking_alert(personalized_alert, lang)
+                        await bot.send_message(
+                            chat_id=user_id,
+                            text=msg,
+                            parse_mode='Markdown',
+                            disable_web_page_preview=True,
+                        )
+                        # Track sent articles so digests/breaking don't repeat them
+                        record_sent_articles(user_id, fresh_articles)
+                        record_breaking_sent_to_user(user_id)
+                        sent += 1
+                    except Exception as e:
+                        print(f"Breaking news send error to {user_id}: {e}")
+
+            # Cleanup old patterns periodically
+            cleanup_old_temporal_patterns(days=14)
+
+            return {
+                'alerts': len(raw_alerts),
+                'sent': sent,
+                'skipped_rate_limited': skipped_users,
+                'skipped_duplicates': skipped_dupes
+            }
+
+        result = asyncio.run(check_async())
+        return json.dumps(result), 200
+
+    except Exception as e:
+        print(f"Hourly news check error: {e}")
+        traceback.print_exc()
+        return json.dumps({'error': 'Internal server error'}), 500
+
+
+# ============ DEEP DIVE PROCESSOR ============
+
+@functions_framework.http
+def process_deep_dives(request: Request):
+    """
+    HTTP Cloud Function triggered periodically to process deep dive queue.
+    Intended to be called by Cloud Scheduler every 10-15 minutes.
+    """
+    ok, error = _require_internal_secret(request)
+    if not ok:
+        return error
+
+    try:
+        from .deep_dive import process_deep_dive_queue_batch, cleanup_old_deep_dives
+        result = asyncio.run(process_deep_dive_queue_batch(batch_size=5))
+        cleanup_old_deep_dives(days=7)
+        return json.dumps(result), 200
+    except Exception as e:
+        print(f"Deep dive processing error: {e}")
+        traceback.print_exc()
+        return json.dumps({'error': 'Internal server error'}), 500
+
+
+# ============ STALKER CHECK ============
+
+@functions_framework.http
+def stalker_check(request: Request):
+    """
+    HTTP Cloud Function triggered hourly to check stalked entities.
+    Sends alerts for new company news or repo releases.
+    """
+    ok, error = _require_internal_secret(request)
+    if not ok:
+        return error
+
+    try:
+        from .scrapers.hackernews import fetch_hackernews
+        from .scrapers.techcrunch import fetch_techcrunch
+        from .scrapers.ai_blogs import fetch_ai_blogs
+        from .scrapers.theverge import fetch_theverge
+        from .scrapers.github_trending import fetch_github_trending
+        from .scrapers.producthunt import fetch_producthunt
+        from .stalker import process_stalker_alerts
+
+        async def stalk_async():
+            tasks = [
+                fetch_hackernews(15),
+                asyncio.to_thread(fetch_techcrunch, 8),
+                fetch_ai_blogs(3),
+                asyncio.to_thread(fetch_theverge, 5),
+                asyncio.to_thread(fetch_github_trending, 5),
+                asyncio.to_thread(fetch_producthunt, 5),
+            ]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            all_news = []
+            for res in results:
+                if isinstance(res, list):
+                    all_news.extend(res)
+                elif isinstance(res, Exception):
+                    print(f"Error fetching source: {res}")
+
+            all_news = await _filter_safe_news(all_news)
+            result = await process_stalker_alerts(all_news)
+            return result
+
+        result = asyncio.run(stalk_async())
+        return json.dumps(result), 200
+
+    except Exception as e:
+        print(f"Stalker check error: {e}")
+        traceback.print_exc()
+        return json.dumps({'error': 'Internal server error'}), 500
 
 
 # ============ HEALTH CHECK ============
@@ -439,5 +718,5 @@ def health(request: Request):
     """Simple health check endpoint."""
     return json.dumps({
         'status': 'healthy',
-        'timestamp': datetime.utcnow().isoformat()
+        'timestamp': datetime.now(timezone.utc).isoformat()
     }), 200

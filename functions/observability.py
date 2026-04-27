@@ -4,7 +4,7 @@ Builds a simple runtime health snapshot for admin usage.
 """
 
 from typing import Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from collections import Counter
 
 
@@ -26,7 +26,7 @@ def build_health_snapshot() -> Dict[str, Any]:
     Build operational snapshot from Firestore state.
     """
     snapshot = {
-        "timestamp_utc": datetime.utcnow().isoformat(),
+        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
         "users_total": 0,
         "users_active": 0,
         "languages": {},
@@ -74,7 +74,7 @@ def build_health_snapshot() -> Dict[str, Any]:
         snapshot["trends_error"] = str(e)
 
     try:
-        now_ts = datetime.utcnow().timestamp()
+        now_ts = datetime.now(timezone.utc).timestamp()
         cache_docs = list(db.collection("cache").stream())
         valid = 0
         for doc in cache_docs:
@@ -87,15 +87,18 @@ def build_health_snapshot() -> Dict[str, Any]:
         snapshot["cache_error"] = str(e)
 
     try:
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         lock_docs = list(db.collection("locks").stream())
         active_locks = 0
         for doc in lock_docs:
             data = doc.to_dict() or {}
             expires_at = data.get("expires_at")
             try:
-                if expires_at and expires_at.replace(tzinfo=None) > now:
-                    active_locks += 1
+                if expires_at:
+                    if expires_at.tzinfo is None:
+                        expires_at = expires_at.replace(tzinfo=timezone.utc)
+                    if expires_at > now:
+                        active_locks += 1
             except Exception:
                 continue
         snapshot["active_locks"] = active_locks

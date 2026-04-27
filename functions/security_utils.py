@@ -54,6 +54,41 @@ def escape_markdown_v1(text: str) -> str:
     return re.sub(f'([{re.escape(escape_chars)}])', r'\\\1', text)
 
 
+def sanitize_markdown_url(url: str) -> str:
+    """
+    Sanitize a URL before embedding it in Markdown link syntax.
+    Encodes characters that could break out of the link context.
+    """
+    if not url:
+        return ""
+    # Encode Markdown-breaking and whitespace characters
+    replacements = {
+        " ": "%20",
+        "(": "%28",
+        ")": "%29",
+        "[": "%5B",
+        "]": "%5D",
+    }
+    for old, new in replacements.items():
+        url = url.replace(old, new)
+    return url
+
+
+def sanitize_markdown_links(text: str) -> str:
+    """
+    Post-process text containing Markdown links and sanitize every URL.
+    """
+    if not text:
+        return text
+
+    def _replace_link(match):
+        prefix = match.group(1)
+        url = match.group(2)
+        return f"{prefix}{sanitize_markdown_url(url)})"
+
+    return re.sub(r"(\[[^\]]+\]\()(https?://[^\)]+)", _replace_link, text)
+
+
 def stable_hash(value: str) -> str:
     """
     Create a deterministic hash suitable for document IDs.

@@ -5,7 +5,7 @@ Handles all database operations for users, articles, and digests.
 
 import os
 from typing import Dict, Any, List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from google.cloud import firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
 from .security_utils import stable_hash
@@ -72,7 +72,7 @@ def create_or_update_user(
     
     if existing.exists:
         # Update existing user
-        update_data = {'updated_at': datetime.utcnow()}
+        update_data = {'updated_at': datetime.now(timezone.utc)}
         if username:
             update_data['username'] = username
         if schedule_time is not _UNSET:
@@ -99,8 +99,8 @@ def create_or_update_user(
             'schedule_time': resolved_schedule,
             'timezone': resolved_timezone,
             'sources': ['hackernews', 'techcrunch', 'ai_blogs', 'theverge', 'github', 'producthunt'],
-            'created_at': datetime.utcnow(),
-            'updated_at': datetime.utcnow(),
+            'created_at': datetime.now(timezone.utc),
+            'updated_at': datetime.now(timezone.utc),
             'is_active': resolved_active
         }
         if quiet_hours is not None:
@@ -126,7 +126,7 @@ def set_user_schedule(telegram_id: int, schedule_time: str) -> bool:
     user_ref.update({
         'schedule_time': schedule_time,
         'is_active': bool(schedule_time),
-        'updated_at': datetime.utcnow()
+        'updated_at': datetime.now(timezone.utc)
     })
     return True
 
@@ -137,7 +137,7 @@ def set_user_timezone(telegram_id: int, timezone_name: str) -> bool:
     user_ref = db.collection('users').document(str(telegram_id))
     user_ref.set({
         'timezone': timezone_name,
-        'updated_at': datetime.utcnow()
+        'updated_at': datetime.now(timezone.utc)
     }, merge=True)
     return True
 
@@ -154,7 +154,7 @@ def set_user_quiet_hours(telegram_id: int, quiet_hours: Optional[Dict[str, str]]
     user_ref = db.collection('users').document(str(telegram_id))
     user_ref.set({
         'quiet_hours': quiet_hours,
-        'updated_at': datetime.utcnow()
+        'updated_at': datetime.now(timezone.utc)
     }, merge=True)
     return True
 
@@ -221,9 +221,9 @@ def toggle_user_source(telegram_id: int, source: str) -> List[str]:
     
     user_ref.update({
         'sources': sources,
-        'updated_at': datetime.utcnow()
+        'updated_at': datetime.now(timezone.utc)
     })
-    
+
     return sources
 
 
@@ -256,7 +256,7 @@ def save_articles(articles: List[Dict[str, Any]]) -> int:
         if not doc_ref.get().exists:
             article_data = {
                 **article,
-                'fetched_at': datetime.utcnow()
+                'fetched_at': datetime.now(timezone.utc)
             }
             batch.set(doc_ref, article_data)
             new_count += 1
@@ -277,7 +277,7 @@ def get_recent_articles(hours: int = 24, limit: int = 50) -> List[Dict[str, Any]
         List of articles
     """
     db = get_db()
-    cutoff = datetime.utcnow() - timedelta(hours=hours)
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
     
     articles = db.collection('articles')\
         .where(filter=FieldFilter('fetched_at', '>=', cutoff))\
@@ -307,7 +307,7 @@ def save_digest(telegram_id: int, content: str) -> str:
     digest_ref.set({
         'user_id': telegram_id,
         'content': content,
-        'sent_at': datetime.utcnow()
+        'sent_at': datetime.now(timezone.utc)
     })
     
     return digest_ref.id
@@ -326,6 +326,30 @@ def get_user_digests(telegram_id: int, limit: int = 10) -> List[Dict[str, Any]]:
     return [digest.to_dict() for digest in digests]
 
 
+def get_last_digest_sent_at(telegram_id: int) -> Optional[datetime]:
+    """
+    Get the timestamp of the most recently sent digest for a user.
+
+    Returns:
+        Aware datetime (UTC) of the last sent digest, or None if never sent.
+    """
+    db = get_db()
+    digests = db.collection('digests')\
+        .where(filter=FieldFilter('user_id', '==', telegram_id))\
+        .order_by('sent_at', direction=firestore.Query.DESCENDING)\
+        .limit(1)\
+        .stream()
+
+    for doc in digests:
+        data = doc.to_dict()
+        ts = data.get('sent_at')
+        if ts is not None:
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            return ts
+    return None
+
+
 # ============ CLEANUP OPERATIONS ============
 
 def cleanup_old_articles(days: int = 7) -> int:
@@ -339,7 +363,7 @@ def cleanup_old_articles(days: int = 7) -> int:
         Number of deleted articles
     """
     db = get_db()
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     
     old_articles = db.collection('articles')\
         .where(filter=FieldFilter('fetched_at', '<', cutoff))\

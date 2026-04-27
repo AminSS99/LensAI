@@ -90,6 +90,9 @@ test_*.env
 local_*.py
 *_local.py
 
+# Qwen IDE settings
+.qwen/
+
 # Build artifacts
 *.zip
 *.tar.gz
