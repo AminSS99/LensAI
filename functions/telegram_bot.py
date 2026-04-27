@@ -721,9 +721,17 @@ async def _render_saved_page(update_or_query, telegram_id: int, user_lang: str, 
         # Create delete button - use URL hash for unique ID
         from .security_utils import stable_hash
         url_hash = stable_hash(url)[:8]
-        delete_label = "🗑️"
-        # encode page in callback data so delete button can refresh the correct page
-        keyboard.append([InlineKeyboardButton(f"{delete_label} {item_num}. {title[:25]}...", callback_data=f"del_{url_hash}_{page}")])
+
+        # Make buttons compact and row-based
+        row = []
+        if url.startswith('http'):
+            # Temporarily save URL so summarizer can use it later
+            from .user_storage import save_temp_url
+            save_temp_url(url_hash, telegram_id, url)
+            row.append(InlineKeyboardButton(f"🧠 {item_num}", callback_data=f"summarize_url_{url_hash}"))
+
+        row.append(InlineKeyboardButton(f"🗑️ {item_num}", callback_data=f"del_{url_hash}_{page}"))
+        keyboard.append(row)
     
     message += t('saved_footer', user_lang)
 
@@ -995,7 +1003,24 @@ async def filter_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     valid_categories = ['ai', 'security', 'crypto', 'startups', 'hardware', 'software', 'tech']
     
     if not context.args:
-        await update.message.reply_text(t('filter_prompt', user_lang), parse_mode='Markdown')
+        keyboard = []
+        row = []
+        for cat in valid_categories:
+            cat_label = t(f'cat_{cat}', user_lang)
+            row.append(InlineKeyboardButton(cat_label, callback_data=f"filter_cat_{cat}"))
+            if len(row) == 2:
+                keyboard.append(row)
+                row = []
+        if row:
+            keyboard.append(row)
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        msg = t('filter_prompt', user_lang)
+
+        if update.callback_query:
+            await update.callback_query.edit_message_text(msg, reply_markup=reply_markup, parse_mode='Markdown')
+        else:
+            await update.message.reply_text(msg, reply_markup=reply_markup, parse_mode='Markdown')
         return
         
     category = context.args[0].lower()
@@ -1004,15 +1029,17 @@ async def filter_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(category) > 20:
         await update.message.reply_text("❌ Category name too long.")
         return
+    reply_msg = update.message if update.message else update.callback_query.message
+
     if category not in valid_categories:
-        await update.message.reply_text(t('filter_prompt', user_lang), parse_mode='Markdown')
+        await reply_msg.reply_text(t('filter_prompt', user_lang), parse_mode='Markdown')
         return
     
     articles = get_saved_articles(telegram_id, limit=20, category=category)
     
     if not articles:
         cat_label = t(f'cat_{category}', user_lang)
-        await update.message.reply_text(t('filter_empty', user_lang, category=cat_label), parse_mode='Markdown')
+        await reply_msg.reply_text(t('filter_empty', user_lang, category=cat_label), parse_mode='Markdown')
         return
     
     cat_label = t(f'cat_{category}', user_lang)
@@ -1028,10 +1055,33 @@ async def filter_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             message += f"{i}. {title}\n"
     
     try:
-        await update.message.reply_text(message, parse_mode='Markdown', disable_web_page_preview=True)
+        if update.callback_query:
+            await update.callback_query.edit_message_text(message, parse_mode='Markdown', disable_web_page_preview=True)
+        else:
+            await reply_msg.reply_text(message, parse_mode='Markdown', disable_web_page_preview=True)
     except Exception:
-        await update.message.reply_text(message, disable_web_page_preview=True)
+        if update.callback_query:
+            await update.callback_query.edit_message_text(message, disable_web_page_preview=True)
+        else:
+            await reply_msg.reply_text(message, disable_web_page_preview=True)
 
+
+async def filter_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle filter category button press."""
+    query = update.callback_query
+    await query.answer()
+
+    category = query.data.replace('filter_cat_', '')
+    context.args = [category]
+
+    # We call filter_command directly. We can edit the message inside filter_command,
+    # but filter_command expects update.message to be present.
+    # We'll create a mock message or just ensure filter_command safely handles callback_query.
+
+    # In our patched filter_command, when we actually show the results, we use update.message.reply_text.
+    # Let's adjust filter_command to use reply_msg = update.message if update.message else update.callback_query.message
+
+    await filter_command(update, context)
 
 async def recap_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /recap command - show weekly summary of saved articles."""
@@ -2496,6 +2546,7 @@ def create_bot_application() -> Application:
 
     # Add callback query handlers for inline buttons
     application.add_handler(CallbackQueryHandler(toggle_source_callback, pattern='^toggle_'))
+    application.add_handler(CallbackQueryHandler(filter_callback, pattern='^filter_cat_'))
     application.add_handler(CallbackQueryHandler(language_callback, pattern='^lang_'))
     application.add_handler(CallbackQueryHandler(schedule_callback, pattern='^schedule_'))
     application.add_handler(CallbackQueryHandler(rating_callback, pattern='^rate_'))
