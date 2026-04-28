@@ -1300,22 +1300,43 @@ async def semantic_search_command(update: Update, context: ContextTypes.DEFAULT_
         await update.message.reply_text("No relevant saved articles found.")
         return
 
+    from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+    from .security_utils import stable_hash
+    from .user_storage import save_temp_url
+
     safe_query = escape_markdown_v1(query)
     lines = [f"*Semantic results for:* `{safe_query}`\n"]
+
+    keyboard = []
+    current_row = []
+
     for idx, article in enumerate(results, 1):
         title = escape_markdown_v1((article.get("title") or "Untitled")[:70])
         url = article.get("url", "")
         score = article.get("_semantic_score", 0)
+
         if url.startswith("http"):
             lines.append(f"{idx}. [{title}]({url}) `score={score}`")
+            url_hash = stable_hash(url)[:8]
+            save_temp_url(url_hash, telegram_id, url)
+            current_row.append(InlineKeyboardButton(f"🧠 {idx}", callback_data=f"summarize_url_{url_hash}"))
         else:
             lines.append(f"{idx}. {title} `score={score}`")
 
+        if len(current_row) >= 5:
+            keyboard.append(current_row)
+            current_row = []
+
+    if current_row:
+        keyboard.append(current_row)
+
+    reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
     message = "\n".join(lines)
+
     try:
-        await update.message.reply_text(message, parse_mode="Markdown", disable_web_page_preview=True)
+        await update.message.reply_text(message, parse_mode="Markdown", disable_web_page_preview=True, reply_markup=reply_markup)
     except Exception:
-        await update.message.reply_text(message, disable_web_page_preview=True)
+        await update.message.reply_text(message, disable_web_page_preview=True, reply_markup=reply_markup)
 
 
 async def admin_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
