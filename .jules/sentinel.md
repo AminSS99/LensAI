@@ -17,3 +17,8 @@
 **Vulnerability:** Scrapers (`producthunt.py`, `theverge.py`, `techcrunch.py`) used a naive regex `re.sub(r'<[^>]+>', '', text)` to strip HTML tags from RSS summaries/descriptions. This insecurely leaves the contents of `<script>` and `<style>` tags intact, allowing potential Cross-Site Scripting (XSS) if the summarized text is rendered directly in an unsafe web context or messaging client without further sanitization.
 **Learning:** Regex is insufficient for secure HTML sanitization. Extracting text from untrusted HTML using a naive regex can lead to data pollution and XSS by exposing hidden javascript or CSS. Furthermore, simple removal merges adjacent text nodes (e.g. `<p>A</p><p>B</p>` becomes `AB`).
 **Prevention:** Always use a proper HTML parser (like `BeautifulSoup`) to explicitly decompose dangerous elements (`['script', 'style']`) before extracting text. When extracting text, use a space separator (`soup.get_text(separator=' ')`) to preserve formatting and prevent word merging. This was centralized into a `sanitize_html` utility in `security_utils.py`.
+
+## 2024-05-18 - Timing Attack Vulnerability in Webhook Validation
+**Vulnerability:** String comparison (`!=`) was used to validate secret tokens in webhook handlers instead of constant-time comparison, making it vulnerable to timing attacks.
+**Learning:** Standard string comparison operators leak information about how much of the string matches by failing fast on the first mismatched character.
+**Prevention:** Always use `hmac.compare_digest()` for comparing security tokens, secrets, or hashes to prevent timing attacks.
