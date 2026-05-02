@@ -2153,11 +2153,32 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_message.startswith('http://') or user_message.startswith('https://'):
         from .user_storage import save_article, save_temp_url
         from .security_utils import stable_hash
+        import httpx
+        from bs4 import BeautifulSoup
+        import asyncio
+        from telegram import constants
 
-        is_saved = save_article(telegram_id, user_message[:50], user_message)
+        chat_id = update.effective_chat.id
+        await context.bot.send_chat_action(chat_id=chat_id, action=constants.ChatAction.TYPING)
 
-        url_hash = stable_hash(user_message)[:8]
-        save_temp_url(url_hash, telegram_id, user_message)
+        url = user_message.strip()
+        title = url[:50]
+
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                response = await client.get(url, follow_redirects=True)
+                if response.status_code == 200:
+                    soup = await asyncio.to_thread(BeautifulSoup, response.text, 'html.parser')
+                    title_tag = soup.find('title')
+                    if title_tag and title_tag.string:
+                        title = title_tag.string.strip()[:100]
+        except Exception as e:
+            print(f"Error fetching title for {url}: {e}")
+
+        is_saved = save_article(telegram_id, title, url)
+
+        url_hash = stable_hash(url)[:8]
+        save_temp_url(url_hash, telegram_id, url)
 
         reply_markup = InlineKeyboardMarkup([
             [InlineKeyboardButton(t('btn_summarize', user_lang), callback_data=f"summarize_url_{url_hash}")]
