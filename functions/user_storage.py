@@ -653,6 +653,81 @@ def get_temp_url(url_hash: str, telegram_id: Optional[int] = None) -> Optional[s
         return None
 
 
+
+def save_temp_search_result(
+    url_hash: str,
+    telegram_id: int,
+    url: str,
+    title: str,
+    ttl_hours: int = 24
+) -> bool:
+    """Store a search result temporarily for saving."""
+    db = get_firestore_client()
+    if not db:
+        # Fallback to local
+        data = _load_local_data(telegram_id)
+        if 'search_results_temp' not in data:
+            data['search_results_temp'] = {}
+
+        data['search_results_temp'][url_hash] = {
+            'url': url,
+            'title': title,
+            'expires_at': time.time() + (ttl_hours * 3600)
+        }
+
+        # Cleanup expired ones locally
+        current_time = time.time()
+        expired_keys = [k for k, v in data['search_results_temp'].items() if v.get('expires_at', 0) < current_time]
+        for k in expired_keys:
+            del data['search_results_temp'][k]
+
+        _save_local_data(telegram_id, data)
+        return True
+
+    try:
+        from google.cloud import firestore
+        expires_at = datetime.now(timezone.utc).timestamp() + (ttl_hours * 3600)
+        db.collection('search_results_temp').document(url_hash).set({
+            'url': url,
+            'title': title,
+            'user_id': telegram_id,
+            'created_at': firestore.SERVER_TIMESTAMP,
+            'expires_at': expires_at
+        }, merge=True)
+        return True
+    except Exception as e:
+        print(f"Temp search result store error: {e}")
+        return False
+
+def get_temp_search_result(url_hash: str, telegram_id: Optional[int] = None) -> Optional[dict]:
+    """Fetch stored temporary search result."""
+    db = get_firestore_client()
+    if not db:
+        if not telegram_id:
+            return None
+        # Fallback to local
+        data = _load_local_data(telegram_id)
+        temp_data = data.get('search_results_temp', {}).get(url_hash)
+        if not temp_data:
+            return None
+        if time.time() > temp_data.get('expires_at', 0):
+            return None
+        return temp_data
+
+    try:
+        doc = db.collection('search_results_temp').document(url_hash).get()
+        if not doc.exists:
+            return None
+        data = doc.to_dict()
+        expires_at = data.get('expires_at')
+        if isinstance(expires_at, (int, float)) and time.time() > expires_at:
+            return None
+        return data
+    except Exception as e:
+        print(f"Temp search result read error: {e}")
+        return None
+
+
 def save_temp_digest(
     digest_id: str,
     telegram_id: int,
