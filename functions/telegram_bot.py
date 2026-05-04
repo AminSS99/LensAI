@@ -976,6 +976,48 @@ async def clear_search_history_callback(update: Update, context: ContextTypes.DE
     msg = "✅ История поиска очищена." if user_lang == 'ru' else "✅ Search history cleared."
     await query.edit_message_text(msg, parse_mode='Markdown')
 
+
+async def save_search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle save search button press."""
+    from .user_storage import get_user_language, save_article, categorize_article, get_temp_search_result
+    from .translations import t
+
+    query = update.callback_query
+
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+
+    data = query.data
+    parts = data.split('_')
+    if len(parts) < 3:
+        msg = "Неверный запрос" if user_lang == 'ru' else "Invalid request"
+        await query.answer(msg, show_alert=True)
+        return
+
+    url_hash = parts[2]
+    search_data = get_temp_search_result(url_hash, telegram_id)
+
+    if not search_data:
+        msg = "Ссылка устарела. Повторите поиск." if user_lang == 'ru' else "Link expired. Please search again."
+        await query.answer(msg, show_alert=True)
+        return
+
+    url = search_data.get('url')
+    title = search_data.get('title') or url[:50]
+    category = categorize_article(title, url)
+
+    if save_article(telegram_id, title, url, category=category):
+        cat_label = t(f'cat_{category}', user_lang)
+        await query.answer(t('article_saved_single', user_lang, category=cat_label), show_alert=True)
+        try:
+            from .deep_dive import queue_deep_dive
+            queue_deep_dive(telegram_id, {'title': title, 'url': url, 'category': category})
+        except Exception as e:
+            print(f"Deep dive queue error: {e}")
+    else:
+        await query.answer(t('article_exists', user_lang), show_alert=True)
+
+
 async def clear_saved_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /clear_saved command."""
     from .user_storage import clear_saved_articles, get_user_language
@@ -1603,8 +1645,17 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Format results
         message = t('search_results', user_lang, query=safe_query, count=len(results))
+
+        from .user_storage import save_temp_search_result
+        from .security_utils import stable_hash
+
+        keyboard = []
+        buttons_row = []
+
         for i, article in enumerate(results[:10], 1):
             title = article.get('title', '')[:60]
+            # Use original title for saving
+            original_title = title
             # Escape title for security
             safe_title = escape_markdown_v1(title)
 
@@ -1614,14 +1665,30 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             safe_source = escape_markdown_v1(source)
 
             message += f"{i}. [{safe_title}]({url}) _{safe_source}_\n"
+
+            if url:
+                url_hash = stable_hash(url)[:8]
+                save_temp_search_result(url_hash, telegram_id, url, original_title)
+                buttons_row.append(InlineKeyboardButton(f"💾 {i}", callback_data=f"save_search_{url_hash}"))
+
+                if len(buttons_row) == 5:
+                    keyboard.append(buttons_row)
+                    buttons_row = []
+
+        if buttons_row:
+            keyboard.append(buttons_row)
+
+        reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
         
         await reply_msg.reply_text(
             message,
             parse_mode='Markdown',
-            disable_web_page_preview=True
+            disable_web_page_preview=True,
+            reply_markup=reply_markup
         )
         
     except Exception as e:
+
         await reply_msg.reply_text(t('error_fetching', user_lang, error=str(e)[:100]))
 
 
@@ -2574,6 +2641,7 @@ def create_bot_application() -> Application:
     application.add_handler(CallbackQueryHandler(filter_category_callback, pattern='^filter_menu$'))
     application.add_handler(CallbackQueryHandler(clear_search_history_callback, pattern='^clear_search_history$'))
     application.add_handler(CallbackQueryHandler(predict_save_callback, pattern='^predict_save_'))
+    application.add_handler(CallbackQueryHandler(save_search_callback, pattern='^save_search_'))
     
     # Add message handler for buttons and Q&A (handles any text that isn't a command)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
