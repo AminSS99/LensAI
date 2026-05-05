@@ -849,7 +849,9 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     telegram_id = update.effective_user.id
     user_lang = get_user_language(telegram_id)
-    articles = get_all_saved_articles(telegram_id)
+
+    category_filter = context.args[0].lower() if context.args else None
+    articles = get_all_saved_articles(telegram_id, category=category_filter)
 
     if not articles:
         await update.message.reply_text(t('export_empty', user_lang), parse_mode='Markdown')
@@ -882,7 +884,8 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lines.append("")
 
     document = io.BytesIO("\n".join(lines).encode('utf-8'))
-    document.name = f"lensai_saved_articles_{datetime.now().strftime('%Y%m%d')}.md"
+    filename_category = f"_{category_filter}" if category_filter else ""
+    document.name = f"lensai_saved_articles{filename_category}_{datetime.now().strftime('%Y%m%d')}.md"
 
     await update.message.reply_document(
         document=document,
