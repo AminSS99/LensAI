@@ -725,6 +725,7 @@ async def _render_saved_page(update_or_query, telegram_id: int, user_lang: str, 
         # encode page in callback data so delete button can refresh the correct page
         keyboard.append([
             InlineKeyboardButton(f"🧠 {item_num}", callback_data=f"summarize_url_{url_hash}"),
+            InlineKeyboardButton(f"📖 {item_num}", callback_data=f"read_url_{url_hash}"),
             InlineKeyboardButton(f"{delete_label} {item_num}. {title[:20]}...", callback_data=f"del_{url_hash}_{page}")
         ])
     
@@ -1506,7 +1507,7 @@ async def random_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     summarize_label = t('btn_summarize', user_lang)
     reply_markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton(summarize_label, callback_data=f"summarize_url_{url_hash}")]
+        [InlineKeyboardButton(summarize_label, callback_data=f"summarize_url_{url_hash}"), InlineKeyboardButton(t("btn_read", user_lang), callback_data=f"read_url_{url_hash}")]
     ])
 
     await update.message.reply_text(message, parse_mode='Markdown', reply_markup=reply_markup)
@@ -2127,6 +2128,139 @@ async def summarize_url_callback(update: Update, context: ContextTypes.DEFAULT_T
 
 # ============ Q&A HANDLER ============
 
+
+async def read_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Extract and read clean text from a URL."""
+    from .user_storage import get_user_language
+    from .translations import t
+    from .security_utils import is_safe_url, escape_markdown_v1
+    import httpx
+    import urllib.parse
+    from bs4 import BeautifulSoup
+
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+    reply_msg = update.message if update.message else update.callback_query.message
+
+    if not context.args:
+        await reply_msg.reply_text("Usage: /read <url>")
+        return
+
+    url = context.args[0]
+
+    loading_msg = await reply_msg.reply_text("📖 Extracting text...")
+
+    try:
+        redirects = 0
+        current_url = url
+        response = None
+
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
+            while redirects < 5:
+                if not await is_safe_url(current_url):
+                    await loading_msg.edit_text("Security Error: Unsafe URL detected.")
+                    return
+
+                response = await client.get(current_url)
+
+                if response.status_code in (301, 302, 303, 307, 308):
+                    location = response.headers.get("Location")
+                    if not location:
+                        break
+                    current_url = urllib.parse.urljoin(current_url, location)
+                    redirects += 1
+                else:
+                    response.raise_for_status()
+                    break
+            else:
+                await loading_msg.edit_text("Error: Too many redirects.")
+                return
+
+        if not response or response.status_code >= 400:
+            if response:
+                response.raise_for_status()
+            else:
+                raise Exception("Failed to fetch content")
+
+        soup = await asyncio.to_thread(BeautifulSoup, response.text, 'html.parser')
+
+        # Remove unwanted elements
+        for element in soup(["script", "style", "nav", "footer", "header", "aside", "form"]):
+            element.extract()
+
+        paragraphs = soup.find_all(['p', 'h1', 'h2', 'h3', 'li'])
+        lines = []
+        for p in paragraphs:
+            text = p.get_text(strip=True)
+            if len(text) > 10:
+                if p.name in ['h1', 'h2', 'h3']:
+                    lines.append(f"\n*{escape_markdown_v1(text)}*")
+                elif p.name == 'li':
+                    lines.append(f"• {escape_markdown_v1(text)}")
+                else:
+                    lines.append(escape_markdown_v1(text))
+
+        text_content = "\n\n".join(lines)
+        if not text_content:
+            await loading_msg.edit_text("Could not extract enough text.")
+            return
+
+        title_tag = soup.find('title')
+        title = title_tag.get_text(strip=True) if title_tag else "Article"
+
+        header = f"*{escape_markdown_v1(title)}*\n\n"
+        full_text = header + text_content
+
+        # Smart message splitting
+        from .message_utils import split_message
+        chunks = split_message(full_text)
+
+        await loading_msg.delete()
+        for chunk in chunks:
+            try:
+                await reply_msg.reply_text(chunk, parse_mode='Markdown', disable_web_page_preview=True)
+            except Exception:
+                await reply_msg.reply_text(chunk, disable_web_page_preview=True)
+
+    except Exception as e:
+        error_msg = str(e)[:80]
+        await loading_msg.edit_text(f"❌ Error: {error_msg}")
+
+
+async def read_url_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle read button press."""
+    from .user_storage import get_temp_url
+    query = update.callback_query
+    telegram_id = update.effective_user.id
+
+    parts = query.data.split('_')
+    if len(parts) < 3:
+        await query.answer("Invalid request", show_alert=True)
+        return
+
+    url_hash = parts[2]
+    url = get_temp_url(url_hash, telegram_id)
+
+    if not url:
+        from .user_storage import get_all_saved_articles
+        from .security_utils import stable_hash
+
+        articles = get_all_saved_articles(telegram_id)
+        for article in articles:
+            article_url = article.get('url', '')
+            if stable_hash(article_url)[:8] == url_hash:
+                url = article_url
+                break
+
+    if not url:
+        await query.answer("Link expired. Please send the link again.", show_alert=True)
+        return
+
+    await query.answer("Reading...")
+    context.args = [url]
+    await read_command(update, context)
+
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle any text message - button presses or questions for the active AI model."""
     from .user_storage import get_user_language
@@ -2160,7 +2294,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save_temp_url(url_hash, telegram_id, user_message)
 
         reply_markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton(t('btn_summarize', user_lang), callback_data=f"summarize_url_{url_hash}")]
+            [InlineKeyboardButton(t('btn_summarize', user_lang), callback_data=f"summarize_url_{url_hash}"), InlineKeyboardButton(t("btn_read", user_lang), callback_data=f"read_url_{url_hash}")]
         ])
 
         if is_saved:
@@ -2402,6 +2536,7 @@ async def setup_bot_commands(application: Application):
         BotCommand("random", "🎲 Random saved article"),
         BotCommand("search", "🔍 Search articles"),
         BotCommand("semsearch", "🧠 Semantic search"),
+        BotCommand("read", "📖 Read article"),
         BotCommand("filter", "📂 Filter by category"),
         BotCommand("recap", "📊 Weekly recap"),
         BotCommand("stats", "📈 Reading statistics"),
@@ -2430,6 +2565,7 @@ async def setup_bot_commands(application: Application):
         BotCommand("random", "🎲 Random saved article"),
         BotCommand("search", "🔍 Search articles"),
         BotCommand("semsearch", "🧠 Semantic search"),
+        BotCommand("read", "📖 Read article"),
         BotCommand("filter", "📂 Filter by category"),
         BotCommand("recap", "📊 Weekly recap"),
         BotCommand("stats", "📈 Reading statistics"),
@@ -2458,6 +2594,7 @@ async def setup_bot_commands(application: Application):
         BotCommand("random", "🎲 Случайная статья"),
         BotCommand("search", "🔍 Поиск статей"),
         BotCommand("semsearch", "🧠 Умный поиск"),
+        BotCommand("read", "📖 Читать статью"),
         BotCommand("filter", "📂 Фильтр по категориям"),
         BotCommand("recap", "📊 Недельный обзор"),
         BotCommand("stats", "📈 Статистика чтения"),
@@ -2538,6 +2675,7 @@ def create_bot_application() -> Application:
     application.add_handler(CommandHandler("clear_saved", clear_saved_command))
     application.add_handler(CommandHandler("clear", clear_saved_command))  # Alias for /clear_saved
     application.add_handler(CommandHandler("export", export_command))
+    application.add_handler(CommandHandler("read", read_command))
     application.add_handler(CommandHandler("random", random_command))
     application.add_handler(CommandHandler("search", search_command))
     application.add_handler(CommandHandler("language", language_command))
@@ -2566,6 +2704,7 @@ def create_bot_application() -> Application:
     application.add_handler(CallbackQueryHandler(delete_article_callback, pattern='^del_'))
     application.add_handler(CallbackQueryHandler(saved_page_callback, pattern='^saved_page_'))
     application.add_handler(CallbackQueryHandler(summarize_url_callback, pattern='^summarize_url_'))
+    application.add_handler(CallbackQueryHandler(read_url_callback, pattern='^read_url_'))
     application.add_handler(CallbackQueryHandler(clear_all_prompt_callback, pattern='^clear_all_prompt_'))
     application.add_handler(CallbackQueryHandler(clear_all_confirm_callback, pattern='^clear_all_confirm_'))
     application.add_handler(CallbackQueryHandler(clear_all_cancel_callback, pattern='^clear_all_cancel_'))
