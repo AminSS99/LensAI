@@ -742,9 +742,13 @@ async def _render_saved_page(update_or_query, telegram_id: int, user_lang: str, 
     if nav_buttons:
         keyboard.append(nav_buttons)
 
-    # Add Clear All button
+    # Add Export All and Clear All buttons in a single row
+    export_all_text = t('export_all_btn', user_lang)
     clear_all_text = t('clear_all_btn', user_lang)
-    keyboard.append([InlineKeyboardButton(clear_all_text, callback_data=f"clear_all_prompt_{page}")])
+    keyboard.append([
+        InlineKeyboardButton(export_all_text, callback_data="export_all"),
+        InlineKeyboardButton(clear_all_text, callback_data=f"clear_all_prompt_{page}")
+    ])
 
     reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
     
@@ -852,7 +856,10 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     articles = get_all_saved_articles(telegram_id)
 
     if not articles:
-        await update.message.reply_text(t('export_empty', user_lang), parse_mode='Markdown')
+        if update.message:
+            await update.message.reply_text(t('export_empty', user_lang), parse_mode='Markdown')
+        else:
+            await update.callback_query.message.reply_text(t('export_empty', user_lang), parse_mode='Markdown')
         return
 
     lines = [
@@ -884,11 +891,25 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     document = io.BytesIO("\n".join(lines).encode('utf-8'))
     document.name = f"lensai_saved_articles_{datetime.now().strftime('%Y%m%d')}.md"
 
-    await update.message.reply_document(
-        document=document,
-        caption=t('export_caption', user_lang, count=len(articles)),
-        parse_mode='Markdown'
-    )
+    if update.message:
+        await update.message.reply_document(
+            document=document,
+            caption=t('export_caption', user_lang, count=len(articles)),
+            parse_mode='Markdown'
+        )
+    else:
+        await update.callback_query.message.reply_document(
+            document=document,
+            caption=t('export_caption', user_lang, count=len(articles)),
+            parse_mode='Markdown'
+        )
+
+
+async def export_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle export all button press."""
+    query = update.callback_query
+    await query.answer()
+    await export_command(update, context)
 
 
 async def clear_all_prompt_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2566,6 +2587,7 @@ def create_bot_application() -> Application:
     application.add_handler(CallbackQueryHandler(delete_article_callback, pattern='^del_'))
     application.add_handler(CallbackQueryHandler(saved_page_callback, pattern='^saved_page_'))
     application.add_handler(CallbackQueryHandler(summarize_url_callback, pattern='^summarize_url_'))
+    application.add_handler(CallbackQueryHandler(export_callback, pattern='^export_all$'))
     application.add_handler(CallbackQueryHandler(clear_all_prompt_callback, pattern='^clear_all_prompt_'))
     application.add_handler(CallbackQueryHandler(clear_all_confirm_callback, pattern='^clear_all_confirm_'))
     application.add_handler(CallbackQueryHandler(clear_all_cancel_callback, pattern='^clear_all_cancel_'))
