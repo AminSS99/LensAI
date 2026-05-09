@@ -1046,17 +1046,27 @@ async def filter_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cat_label = t(f'cat_{category}', user_lang)
     message = t('filter_results', user_lang, category=cat_label, count=len(articles))
     
-    from .security_utils import sanitize_markdown_url
+    from .security_utils import sanitize_markdown_url, stable_hash
+    keyboard = []
     for i, article in enumerate(articles, 1):
         title = article.get('title', 'Untitled')[:50]
-        url = sanitize_markdown_url(article.get('url', ''))
+        raw_url = article.get('url', '')
+        url = sanitize_markdown_url(raw_url)
         if url.startswith('http'):
             message += f"{i}. [{title}]({url})\n"
         else:
             message += f"{i}. {title}\n"
 
+        # Create summarize button for each item
+        if url.startswith('http'):
+            url_hash = stable_hash(raw_url)[:8]
+            summarize_label = t('btn_summarize', user_lang)
+            keyboard.append([
+                InlineKeyboardButton(f"🧠 {i}. {summarize_label}", callback_data=f"summarize_url_{url_hash}")
+            ])
+
     # Add a back button
-    keyboard = [[InlineKeyboardButton("⬅️ Back to Categories" if user_lang == 'en' else "⬅️ Назад к категориям", callback_data="filter_menu")]]
+    keyboard.append([InlineKeyboardButton("⬅️ Back to Categories" if user_lang == 'en' else "⬅️ Назад к категориям", callback_data="filter_menu")])
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     try:
@@ -2031,7 +2041,7 @@ async def summarize_url_callback(update: Update, context: ContextTypes.DEFAULT_T
     url = get_temp_url(url_hash, telegram_id)
 
     if not url:
-        from .user_storage import get_all_saved_articles
+        from .user_storage import get_all_saved_articles, save_temp_url
         from .security_utils import stable_hash
 
         articles = get_all_saved_articles(telegram_id)
@@ -2039,6 +2049,7 @@ async def summarize_url_callback(update: Update, context: ContextTypes.DEFAULT_T
             article_url = article.get('url', '')
             if stable_hash(article_url)[:8] == url_hash:
                 url = article_url
+                save_temp_url(url_hash, telegram_id, url)
                 break
 
     if not url:
