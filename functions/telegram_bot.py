@@ -23,6 +23,56 @@ BAKU_TZ = timezone(timedelta(hours=4))
 PERSONALIZED_DIGEST_ITEM_LIMIT = 14
 
 
+async def fetch_page_title(url: str) -> str:
+    """Securely fetch the page title of a given URL."""
+    redirects = 0
+    current_url = url
+    response = None
+
+    try:
+        import httpx
+        import urllib.parse
+        from bs4 import BeautifulSoup
+        from .security_utils import is_safe_url
+        import asyncio
+
+        async with httpx.AsyncClient(timeout=5.0, follow_redirects=False) as client:
+            while redirects < 5:
+                if not await is_safe_url(current_url):
+                    return current_url[:50]
+
+                response = await client.get(current_url)
+
+                if response.status_code in (301, 302, 303, 307, 308):
+                    location = response.headers.get("Location")
+                    if not location:
+                        break
+                    current_url = urllib.parse.urljoin(current_url, location)
+                    redirects += 1
+                else:
+                    response.raise_for_status()
+                    break
+            else:
+                return current_url[:50]
+
+        if not response or response.status_code >= 400:
+            return url[:50]
+
+        soup = await asyncio.to_thread(BeautifulSoup, response.text, 'html.parser')
+        title_tag = soup.find('title')
+        if title_tag and title_tag.string:
+            title = title_tag.string.strip()
+            # Collapse multiple whitespaces and newlines
+            title = " ".join(title.split())
+            if title:
+                return title[:100]
+    except Exception:
+        pass
+
+    return url[:50]
+
+
+
 def get_bot_token() -> str:
     """Get Telegram bot token from environment."""
     token = os.environ.get('TELEGRAM_BOT_TOKEN')
@@ -810,7 +860,12 @@ async def save_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     url = context.args[0]
-    title = ' '.join(context.args[1:]) if len(context.args) > 1 else url[:50]
+    if len(context.args) > 1:
+        title = ' '.join(context.args[1:])
+    else:
+        # User only provided URL, let's fetch the actual title
+        title = await fetch_page_title(url)
+
     category = categorize_article(title, url)
 
     article_data = {
@@ -2154,7 +2209,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         from .user_storage import save_article, save_temp_url
         from .security_utils import stable_hash
 
-        is_saved = save_article(telegram_id, user_message[:50], user_message)
+        # Await the actual title of the page to store instead of just using the URL
+        fetched_title = await fetch_page_title(user_message)
+
+        is_saved = save_article(telegram_id, fetched_title, user_message)
 
         url_hash = stable_hash(user_message)[:8]
         save_temp_url(url_hash, telegram_id, user_message)
