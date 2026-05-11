@@ -1047,6 +1047,11 @@ async def filter_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = t('filter_results', user_lang, category=cat_label, count=len(articles))
     
     from .security_utils import sanitize_markdown_url
+    from .security_utils import stable_hash
+
+    # We will build up the keyboard as we format the articles
+    keyboard = []
+
     for i, article in enumerate(articles, 1):
         title = article.get('title', 'Untitled')[:50]
         url = sanitize_markdown_url(article.get('url', ''))
@@ -1055,8 +1060,16 @@ async def filter_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             message += f"{i}. {title}\n"
 
-    # Add a back button
-    keyboard = [[InlineKeyboardButton("⬅️ Back to Categories" if user_lang == 'en' else "⬅️ Назад к категориям", callback_data="filter_menu")]]
+        raw_url = article.get('url', '')
+        if raw_url:
+            url_hash = stable_hash(raw_url)[:8]
+            # Append summarize button for this article to the keyboard
+            keyboard.append([
+                InlineKeyboardButton(f"🧠 {i}. {title[:20]}...", callback_data=f"summarize_url_{url_hash}")
+            ])
+
+    # Add a back button at the end
+    keyboard.append([InlineKeyboardButton("⬅️ Back to Categories" if user_lang == 'en' else "⬅️ Назад к категориям", callback_data="filter_menu")])
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     try:
