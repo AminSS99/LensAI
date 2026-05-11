@@ -8,6 +8,7 @@ import re
 import json
 import asyncio
 import traceback
+import hmac
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 import functions_framework
@@ -34,7 +35,7 @@ def telegram_webhook(request: Request):
     # Validate secret token to ensure request came from Telegram
     secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
     expected = os.environ.get("WEBHOOK_SECRET_TOKEN")
-    if expected and secret != expected:
+    if expected and not hmac.compare_digest(secret or "", expected):
         print("Webhook: unauthorized request (invalid secret token)")
         return "Unauthorized", 403
     
@@ -515,7 +516,7 @@ def _require_internal_secret(request: Request) -> tuple[bool, tuple]:
     """Verify that the request carries the correct internal secret header."""
     secret = request.headers.get("X-Internal-Secret")
     expected = os.environ.get("INTERNAL_SECRET")
-    if expected and secret != expected:
+    if expected and not hmac.compare_digest(secret or "", expected):
         return False, (json.dumps({"error": "Forbidden"}), 403)
     return True, ()
 
