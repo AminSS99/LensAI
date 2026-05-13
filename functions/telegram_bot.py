@@ -798,32 +798,81 @@ async def save_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /save command - save an article."""
     from .user_storage import save_article, get_user_language, categorize_article
     from .translations import t
+    import re
 
     telegram_id = update.effective_user.id
     user_lang = get_user_language(telegram_id)
 
-    if not context.args:
-        await update.message.reply_text(
-            t('save_help', user_lang),
-            parse_mode='Markdown'
-        )
-        return
+    url_to_save = None
+    title_to_save = None
 
-    url = context.args[0]
-    title = ' '.join(context.args[1:]) if len(context.args) > 1 else url[:50]
-    category = categorize_article(title, url)
+    # Support for extracting URLs from a replied message (e.g. replying to a digest)
+    reply_msg = update.message.reply_to_message
+    if reply_msg:
+        urls = []
+        text = reply_msg.text or reply_msg.caption or ""
+        entities = reply_msg.entities or reply_msg.caption_entities or []
+
+        for entity in entities:
+            if entity.type == 'url':
+                urls.append({'url': text[entity.offset:entity.offset+entity.length], 'title': ''})
+            elif entity.type == 'text_link':
+                urls.append({'url': entity.url, 'title': text[entity.offset:entity.offset+entity.length]})
+
+        if not urls:
+            found = re.findall(r'(https?://[^\\s)]+)', text)
+            for u in found:
+                urls.append({'url': u, 'title': ''})
+
+        if urls:
+            if not context.args:
+                if len(urls) == 1:
+                    url_to_save = urls[0]['url']
+                    title_to_save = urls[0]['title']
+                else:
+                    msg = "Please specify which link to save by providing its number. Example: `/save 2`" if user_lang == 'en' else "Пожалуйста, укажите номер ссылки для сохранения. Пример: `/save 2`"
+                    await update.message.reply_text(msg, parse_mode='Markdown')
+                    return
+            else:
+                arg = context.args[0]
+                if arg.isdigit():
+                    idx = int(arg) - 1
+                    if 0 <= idx < len(urls):
+                        url_to_save = urls[idx]['url']
+                        title_to_save = urls[idx]['title']
+                    else:
+                        msg = f"Invalid link number. The message contains {len(urls)} links." if user_lang == 'en' else f"Неверный номер ссылки. Сообщение содержит {len(urls)} ссылок."
+                        await update.message.reply_text(msg)
+                        return
+
+    # Fallback to direct URL if no reply or reply had no URLs
+    if not url_to_save:
+        if not context.args:
+            await update.message.reply_text(t('save_help', user_lang), parse_mode='Markdown')
+            return
+
+        arg = context.args[0]
+        if not arg.startswith('http://') and not arg.startswith('https://'):
+            msg = "Please provide a valid URL starting with http:// or https://" if user_lang == 'en' else "Пожалуйста, укажите корректную ссылку, начинающуюся с http:// или https://"
+            await update.message.reply_text(msg)
+            return
+
+        url_to_save = arg
+        title_to_save = ' '.join(context.args[1:]) if len(context.args) > 1 else url_to_save[:50]
+
+    title = title_to_save or url_to_save[:50]
+    category = categorize_article(title, url_to_save)
 
     article_data = {
         'title': title,
-        'url': url,
+        'url': url_to_save,
         'source': '',
         'category': category,
     }
 
-    if save_article(telegram_id, title, url, category=category):
+    if save_article(telegram_id, title, url_to_save, category=category):
         cat_label = t(f'cat_{category}', user_lang)
         await update.message.reply_text(t('article_saved_single', user_lang, category=cat_label))
-        # Queue deep dive background research
         try:
             from .deep_dive import queue_deep_dive
             queue_deep_dive(telegram_id, article_data)
