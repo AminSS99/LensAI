@@ -1046,17 +1046,33 @@ async def filter_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cat_label = t(f'cat_{category}', user_lang)
     message = t('filter_results', user_lang, category=cat_label, count=len(articles))
     
-    from .security_utils import sanitize_markdown_url
+    from .security_utils import sanitize_markdown_url, stable_hash
+    from .user_storage import save_temp_url
+
+    keyboard = []
+    summarize_row = []
+
     for i, article in enumerate(articles, 1):
         title = article.get('title', 'Untitled')[:50]
         url = sanitize_markdown_url(article.get('url', ''))
+
+        url_hash = stable_hash(url)[:8]
+        save_temp_url(url_hash, telegram_id, url)
+        summarize_row.append(InlineKeyboardButton(f"🧠 {i}", callback_data=f"summarize_url_{url_hash}"))
+        if len(summarize_row) == 5:
+            keyboard.append(summarize_row)
+            summarize_row = []
+
         if url.startswith('http'):
             message += f"{i}. [{title}]({url})\n"
         else:
             message += f"{i}. {title}\n"
 
+    if summarize_row:
+        keyboard.append(summarize_row)
+
     # Add a back button
-    keyboard = [[InlineKeyboardButton("⬅️ Back to Categories" if user_lang == 'en' else "⬅️ Назад к категориям", callback_data="filter_menu")]]
+    keyboard.append([InlineKeyboardButton("⬅️ Back to Categories" if user_lang == 'en' else "⬅️ Назад к категориям", callback_data="filter_menu")])
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     try:
@@ -1603,6 +1619,12 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Format results
         message = t('search_results', user_lang, query=safe_query, count=len(results))
+        from .security_utils import stable_hash
+        from .user_storage import save_temp_url
+
+        keyboard = []
+        summarize_row = []
+
         for i, article in enumerate(results[:10], 1):
             title = article.get('title', '')[:60]
             # Escape title for security
@@ -1613,12 +1635,25 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Escape source for security
             safe_source = escape_markdown_v1(source)
 
+            url_hash = stable_hash(url)[:8]
+            save_temp_url(url_hash, telegram_id, url)
+            summarize_row.append(InlineKeyboardButton(f"🧠 {i}", callback_data=f"summarize_url_{url_hash}"))
+            if len(summarize_row) == 5:
+                keyboard.append(summarize_row)
+                summarize_row = []
+
             message += f"{i}. [{safe_title}]({url}) _{safe_source}_\n"
+
+        if summarize_row:
+            keyboard.append(summarize_row)
+
+        reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
         
         await reply_msg.reply_text(
             message,
             parse_mode='Markdown',
-            disable_web_page_preview=True
+            disable_web_page_preview=True,
+            reply_markup=reply_markup
         )
         
     except Exception as e:
