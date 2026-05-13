@@ -2399,10 +2399,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Check if it's a URL to save
     if user_message.startswith('http://') or user_message.startswith('https://'):
         from .user_storage import save_article, save_temp_url
-        from .security_utils import stable_hash
+        from .security_utils import stable_hash, is_safe_url
         import httpx
         from bs4 import BeautifulSoup
         import asyncio
+        import urllib.parse
         from telegram import constants
 
         chat_id = update.effective_chat.id
@@ -2412,13 +2413,28 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         title = url[:50]
 
         try:
-            async with httpx.AsyncClient(timeout=3.0) as client:
-                response = await client.get(url, follow_redirects=True)
-                if response.status_code == 200:
-                    soup = await asyncio.to_thread(BeautifulSoup, response.text, 'html.parser')
-                    title_tag = soup.find('title')
-                    if title_tag and title_tag.string:
-                        title = title_tag.string.strip()[:100]
+            redirects = 0
+            current_url = url
+            async with httpx.AsyncClient(timeout=3.0, follow_redirects=False) as client:
+                while redirects < 5:
+                    if not await is_safe_url(current_url):
+                        break
+
+                    response = await client.get(current_url)
+
+                    if response.status_code in (301, 302, 303, 307, 308):
+                        location = response.headers.get("Location")
+                        if not location:
+                            break
+                        current_url = urllib.parse.urljoin(current_url, location)
+                        redirects += 1
+                    else:
+                        if response.status_code == 200:
+                            soup = await asyncio.to_thread(BeautifulSoup, response.text, 'html.parser')
+                            title_tag = soup.find('title')
+                            if title_tag and title_tag.string:
+                                title = title_tag.string.strip()[:100]
+                        break
         except Exception as e:
             print(f"Error fetching title for {url}: {e}")
 
