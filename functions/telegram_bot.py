@@ -742,9 +742,13 @@ async def _render_saved_page(update_or_query, telegram_id: int, user_lang: str, 
     if nav_buttons:
         keyboard.append(nav_buttons)
 
-    # Add Clear All button
+    # Add Export and Clear All buttons
     clear_all_text = t('clear_all_btn', user_lang)
-    keyboard.append([InlineKeyboardButton(clear_all_text, callback_data=f"clear_all_prompt_{page}")])
+    export_text = t('btn_export', user_lang)
+    keyboard.append([
+        InlineKeyboardButton(export_text, callback_data="export_saved"),
+        InlineKeyboardButton(clear_all_text, callback_data=f"clear_all_prompt_{page}")
+    ])
 
     reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
     
@@ -942,6 +946,16 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode='Markdown'
     )
 
+
+async def export_saved_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle export saved articles callback from inline button."""
+    query = update.callback_query
+    await query.answer()
+
+    # We set context.args to empty list so it behaves like the /export command without arguments
+    context.args = []
+
+    await export_command(update, context)
 
 async def clear_all_prompt_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle clear all prompt button press."""
@@ -2838,6 +2852,7 @@ def create_bot_application() -> Application:
     application.add_handler(CallbackQueryHandler(saved_page_callback, pattern='^saved_page_'))
     application.add_handler(CallbackQueryHandler(summarize_url_callback, pattern='^summarize_url_'))
     application.add_handler(CallbackQueryHandler(read_url_callback, pattern='^read_url_'))
+    application.add_handler(CallbackQueryHandler(export_saved_callback, pattern='^export_saved$'))
     application.add_handler(CallbackQueryHandler(clear_all_prompt_callback, pattern='^clear_all_prompt_'))
     application.add_handler(CallbackQueryHandler(clear_all_confirm_callback, pattern='^clear_all_confirm_'))
     application.add_handler(CallbackQueryHandler(clear_all_cancel_callback, pattern='^clear_all_cancel_'))
