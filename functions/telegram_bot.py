@@ -2412,9 +2412,29 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         title = url[:50]
 
         try:
-            async with httpx.AsyncClient(timeout=3.0) as client:
-                response = await client.get(url, follow_redirects=True)
-                if response.status_code == 200:
+            from .security_utils import is_safe_url
+            import urllib.parse
+            current_url = url
+            redirects = 0
+            response = None
+            async with httpx.AsyncClient(timeout=3.0, follow_redirects=False) as client:
+                while redirects < 5:
+                    if not await is_safe_url(current_url):
+                        print(f"Security blocked access to URL: {current_url}")
+                        break
+
+                    response = await client.get(current_url)
+
+                    if response.status_code in (301, 302, 303, 307, 308):
+                        location = response.headers.get("Location")
+                        if not location:
+                            break
+                        current_url = urllib.parse.urljoin(current_url, location)
+                        redirects += 1
+                    else:
+                        break
+
+                if response and response.status_code == 200:
                     soup = await asyncio.to_thread(BeautifulSoup, response.text, 'html.parser')
                     title_tag = soup.find('title')
                     if title_tag and title_tag.string:

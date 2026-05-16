@@ -22,3 +22,8 @@
 **Vulnerability:** The Telegram webhook and internal API endpoints in `functions/main.py` validated authorization headers (`X-Telegram-Bot-Api-Secret-Token` and `X-Internal-Secret`) using a simple string equality comparison (`!=`). This allowed attackers to potentially use timing attacks to guess the secret token byte by byte.
 **Learning:** Normal string comparison checks operators short-circuit, returning false on the first mismatched character. By measuring the precise time it takes for the server to reject a request, an attacker can determine how many characters of their guess were correct.
 **Prevention:** Always use constant-time comparison functions, such as `hmac.compare_digest()`, when verifying cryptographic materials like passwords, MACs, API tokens, or webhook secrets.
+
+## 2024-05-16 - Prevent SSRF with httpx follows_redirects
+**Vulnerability:** Found an SSRF vulnerability where `httpx.AsyncClient` was fetching user-provided URLs with `follow_redirects=True`. This bypassed the `is_safe_url` validation, allowing an attacker to provide a safe URL that redirects to an internal or link-local address.
+**Learning:** `follow_redirects=True` is dangerous for user-provided URLs, even if the initial URL is validated, because intermediate redirects are followed automatically without validation.
+**Prevention:** Always use `follow_redirects=False` and manually resolve redirects in a loop, running `await is_safe_url(current_url)` on the new `Location` target before following it.
