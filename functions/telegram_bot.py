@@ -1729,7 +1729,7 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Format results
         message = t('search_results', user_lang, query=safe_query, count=len(results))
 
-        from .user_storage import save_temp_search_result
+        from .user_storage import save_temp_search_result, save_temp_url
         from .security_utils import stable_hash
 
         keyboard = []
@@ -1752,9 +1752,11 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if url:
                 url_hash = stable_hash(url)[:8]
                 save_temp_search_result(url_hash, telegram_id, url, original_title)
+                save_temp_url(url_hash, telegram_id, url)
                 buttons_row.append(InlineKeyboardButton(f"💾 {i}", callback_data=f"save_search_{url_hash}"))
+                buttons_row.append(InlineKeyboardButton(f"🧠 {i}", callback_data=f"summarize_url_{url_hash}"))
 
-                if len(buttons_row) == 5:
+                if len(buttons_row) >= 4:
                     keyboard.append(buttons_row)
                     buttons_row = []
 
