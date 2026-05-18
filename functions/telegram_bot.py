@@ -2412,9 +2412,25 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         title = url[:50]
 
         try:
-            async with httpx.AsyncClient(timeout=3.0) as client:
-                response = await client.get(url, follow_redirects=True)
-                if response.status_code == 200:
+            from .security_utils import is_safe_url
+            async with httpx.AsyncClient(timeout=3.0, follow_redirects=False) as client:
+                current_url = url
+                response = None
+                for _ in range(5):
+                    if not await is_safe_url(current_url):
+                        break
+                    response = await client.get(current_url)
+                    if response.status_code in (301, 302, 303, 307, 308):
+                        current_url = response.headers.get("Location")
+                        if not current_url:
+                            break
+                        # Handle relative redirects
+                        if not current_url.startswith("http"):
+                            current_url = str(response.url.join(current_url))
+                    else:
+                        break
+
+                if response and response.status_code == 200:
                     soup = await asyncio.to_thread(BeautifulSoup, response.text, 'html.parser')
                     title_tag = soup.find('title')
                     if title_tag and title_tag.string:
