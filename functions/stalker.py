@@ -5,7 +5,7 @@ Users can stalk companies (to get news only from them) or GitHub repos (for rele
 
 import os
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Dict, List, Any, Optional
 
 import httpx
