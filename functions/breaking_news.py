@@ -9,11 +9,8 @@ Key features:
 - Descriptions: every article includes a short summary
 """
 
-import os
-import json
-import time
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Any, Optional, Set
+from typing import Dict, List, Any, Set
 from collections import defaultdict
 
 try:
