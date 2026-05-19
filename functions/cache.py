@@ -120,8 +120,17 @@ def clear_cached_digest(cache_key: str = "news_digest"):
         return
     try:
         if cache_key == "*":
+            batch = db.batch()
+            count = 0
             for doc in db.collection('cache').stream():
-                doc.reference.delete()
+                batch.delete(doc.reference)
+                count += 1
+                if count >= 500:
+                    batch.commit()
+                    batch = db.batch()
+                    count = 0
+            if count > 0:
+                batch.commit()
             return
         db.collection('cache').document(cache_key).delete()
     except Exception as e:
