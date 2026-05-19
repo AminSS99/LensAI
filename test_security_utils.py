@@ -1,5 +1,5 @@
 import pytest
-from functions.security_utils import escape_markdown_v1
+from functions.security_utils import escape_markdown_v1, sanitize_markdown_url
 
 def test_escape_markdown_v1_empty_string():
     """Test with empty strings and None."""
@@ -40,3 +40,28 @@ def test_escape_markdown_v1_mixed_text():
     input_str = "Check out this *awesome* repo: [Link](https://github.com/test)! It's 100% free."
     expected_str = r"Check out this \*awesome\* repo: \[Link\]\(https://github\.com/test\)\! It's 100% free\."
     assert escape_markdown_v1(input_str) == expected_str
+
+
+def test_sanitize_markdown_url_empty():
+    """Test with empty string."""
+    assert sanitize_markdown_url("") == ""
+
+def test_sanitize_markdown_url_no_special_chars():
+    """Test with a normal URL."""
+    assert sanitize_markdown_url("https://example.com/path") == "https://example.com/path"
+
+def test_sanitize_markdown_url_spaces():
+    """Test with spaces in the URL."""
+    assert sanitize_markdown_url("https://example.com/my path") == "https://example.com/my%20path"
+
+def test_sanitize_markdown_url_parentheses():
+    """Test with parentheses in the URL."""
+    assert sanitize_markdown_url("https://example.com/path(1)") == "https://example.com/path%281%29"
+
+def test_sanitize_markdown_url_brackets():
+    """Test with brackets in the URL."""
+    assert sanitize_markdown_url("https://example.com/path[2]") == "https://example.com/path%5B2%5D"
+
+def test_sanitize_markdown_url_mixed():
+    """Test with a mix of special characters in the URL."""
+    assert sanitize_markdown_url("https://example.com/my [weird] (path)") == "https://example.com/my%20%5Bweird%5D%20%28path%29"
