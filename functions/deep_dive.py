@@ -119,12 +119,17 @@ async def find_hn_discussion(url: str) -> Optional[Dict[str, Any]]:
 
 def extract_github_repo(url: str) -> Optional[str]:
     """Extract GitHub repo path from URL if applicable."""
-    if not url:
+    if not isinstance(url, str):
         return None
-    match = re.search(r'github\.com/([^/]+/[^/]+)', url)
-    if match:
-        return match.group(1)
-    return None
+    try:
+        if not url:
+            return None
+        match = re.search(r'github\.com/([^/]+/[^/]+)', url)
+        if match:
+            return match.group(1)
+        return None
+    except Exception as e:
+        return None
 
 
 async def get_github_repo_info(repo: str) -> Optional[Dict[str, Any]]:
