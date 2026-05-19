@@ -162,28 +162,3 @@ def store_predicted_articles(articles: List[Dict[str, Any]]) -> Dict[str, str]:
     return mapping
 
 
-def get_prediction_accuracy(user_id: int, days: int = 7) -> Dict[str, Any]:
-    """Get prediction accuracy stats for a user."""
-    db = _get_db()
-    if not db:
-        return {'accuracy': 0.0, 'total': 0}
-    try:
-        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-        docs = db.collection('prediction_feedback')\
-            .where('user_id', '==', user_id)\
-            .where('timestamp', '>=', cutoff)\
-            .stream()
-
-        accepted = 0
-        total = 0
-        for doc in docs:
-            data = doc.to_dict()
-            total += 1
-            if data.get('action') == 'accepted':
-                accepted += 1
-
-        accuracy = round(accepted / total, 2) if total > 0 else 0.0
-        return {'accuracy': accuracy, 'total': total, 'accepted': accepted}
-    except Exception as e:
-        print(f"Error getting prediction accuracy: {e}")
-        return {'accuracy': 0.0, 'total': 0}
