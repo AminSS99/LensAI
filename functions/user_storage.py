@@ -284,9 +284,18 @@ def clear_saved_articles(telegram_id: int):
     db = get_firestore_client()
     if db:
         try:
+            batch = db.batch()
             docs = db.collection('users').document(str(telegram_id)).collection('saved_articles').list_documents()
+            count = 0
             for doc in docs:
-                doc.delete()
+                batch.delete(doc)
+                count += 1
+                if count == 500:
+                    batch.commit()
+                    batch = db.batch()
+                    count = 0
+            if count > 0:
+                batch.commit()
             return
         except Exception as e:
             print(f"Firestore clear error: {e}")
@@ -404,9 +413,18 @@ def clear_search_history(telegram_id: int):
     db = get_firestore_client()
     if db:
         try:
+            batch = db.batch()
             docs = db.collection('users').document(str(telegram_id)).collection('search_history').list_documents()
+            count = 0
             for doc in docs:
-                doc.delete()
+                batch.delete(doc)
+                count += 1
+                if count == 500:  # Firestore limit is 500 per batch
+                    batch.commit()
+                    batch = db.batch()
+                    count = 0
+            if count > 0:
+                batch.commit()
         except Exception as e:
             print(f"Firestore clear search error: {e}")
 
