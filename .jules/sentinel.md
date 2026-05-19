@@ -22,3 +22,7 @@
 **Vulnerability:** The Telegram webhook and internal API endpoints in `functions/main.py` validated authorization headers (`X-Telegram-Bot-Api-Secret-Token` and `X-Internal-Secret`) using a simple string equality comparison (`!=`). This allowed attackers to potentially use timing attacks to guess the secret token byte by byte.
 **Learning:** Normal string comparison checks operators short-circuit, returning false on the first mismatched character. By measuring the precise time it takes for the server to reject a request, an attacker can determine how many characters of their guess were correct.
 **Prevention:** Always use constant-time comparison functions, such as `hmac.compare_digest()`, when verifying cryptographic materials like passwords, MACs, API tokens, or webhook secrets.
+## 2024-05-20 - Fail-Closed Authentication Check
+**Vulnerability:** A fail-open vulnerability existed in the `_require_internal_secret` authentication middleware where missing configuration (`INTERNAL_SECRET` not set) bypassed the authentication check completely, leaving protected internal endpoints exposed.
+**Learning:** Checking for the presence of the expected secret with `if expected and not (...)` inadvertently allows the check to pass if `expected` evaluates to `False` (like `None` or an empty string). Failsafe defaults require failing closed on misconfiguration.
+**Prevention:** Always use `if not expected or not (...)` for authentication token verifications against environment variables to ensure endpoints fail securely when configuration is missing.
