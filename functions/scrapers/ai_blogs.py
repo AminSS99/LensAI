@@ -225,84 +225,99 @@ def _fetch_ai_blogs_sync_impl(limit_per_blog: int = 5) -> List[Dict[str, Any]]:
         def is_safe_url_sync(url: str) -> bool:
             return True
     """Truly synchronous implementation using httpx sync client."""
-    all_posts = []
-    
-    with httpx.Client(timeout=30.0, follow_redirects=False) as client:
-        for blog_key, blog in AI_BLOGS.items():
-            try:
-                redirects = 0
-                current_url = blog['url']
-                response = None
-                while redirects < 5:
-                    if not is_safe_url_sync(current_url):
-                        break
-                    response = client.get(current_url, headers=HEADERS)
-                    if response.status_code in (301, 302, 303, 307, 308):
-                        location = response.headers.get("Location")
-                        if not location:
-                            break
-                        import urllib.parse
-                        current_url = urllib.parse.urljoin(current_url, location)
-                        redirects += 1
-                    else:
-                        response.raise_for_status()
-                        break
-                else:
-                    continue
+    import concurrent.futures
 
-                # If we broke out due to unsafe url, continue
+    def _process_blog(blog_key, blog, client):
+        try:
+            redirects = 0
+            current_url = blog['url']
+            response = None
+            while redirects < 5:
                 if not is_safe_url_sync(current_url):
+                    break
+                response = client.get(current_url, headers=HEADERS)
+                if response.status_code in (301, 302, 303, 307, 308):
+                    location = response.headers.get("Location")
+                    if not location:
+                        break
+                    import urllib.parse
+                    current_url = urllib.parse.urljoin(current_url, location)
+                    redirects += 1
+                else:
+                    response.raise_for_status()
+                    break
+            else:
+                return []
+
+            if not is_safe_url_sync(current_url):
+                return []
+
+            soup = BeautifulSoup(response.text, 'html.parser')
+            posts = []
+            seen_urls = set()
+
+            links = soup.select(blog['selector'])
+
+            for link in links:
+                href = link.get('href', '')
+
+                if not href or href in seen_urls:
                     continue
                 
-                soup = BeautifulSoup(response.text, 'html.parser')
-                posts = []
-                seen_urls = set()
+                if href.startswith('/'):
+                    base_url = blog['url'].split('/')[0] + '//' + blog['url'].split('/')[2]
+                    href = base_url + href
                 
-                links = soup.select(blog['selector'])
+                if not href.startswith('http'):
+                    continue
                 
-                for link in links:
-                    href = link.get('href', '')
-                    
-                    if not href or href in seen_urls:
-                        continue
-                    
-                    if href.startswith('/'):
-                        base_url = blog['url'].split('/')[0] + '//' + blog['url'].split('/')[2]
-                        href = base_url + href
-                    
-                    if not href.startswith('http'):
-                        continue
-                    
-                    seen_urls.add(href)
-                    
-                    title = link.get_text(strip=True)
-                    if not title or len(title) < 5:
-                        parent = link.parent
-                        for _ in range(3):
-                            if parent:
-                                heading = parent.find(['h1', 'h2', 'h3', 'h4'])
-                                if heading:
-                                    title = heading.get_text(strip=True)
-                                    break
-                                parent = parent.parent
-                    
-                    if title and len(title) > 5:
-                        posts.append({
-                            'title': title[:200],
-                            'url': href,
-                            'source': blog['name'],
-                            'date': datetime.now().isoformat(),
-                            'summary': ''
-                        })
-                        
-                        if len(posts) >= limit_per_blog:
-                            break
+                seen_urls.add(href)
                 
-                all_posts.extend(posts)
+                title = link.get_text(strip=True)
+                if not title or len(title) < 5:
+                    parent = link.parent
+                    for _ in range(3):
+                        if parent:
+                            heading = parent.find(['h1', 'h2', 'h3', 'h4'])
+                            if heading:
+                                title = heading.get_text(strip=True)
+                                break
+                            parent = parent.parent
                 
-            except Exception as e:
-                print(f"Error scraping {blog['name']}: {e}")
-                continue
+                if title and len(title) > 5:
+                    posts.append({
+                        'title': title[:200],
+                        'url': href,
+                        'source': blog['name'],
+                        'date': datetime.now().isoformat(),
+                        'summary': ''
+                    })
+
+                    if len(posts) >= limit_per_blog:
+                        break
+
+            return posts
+
+        except Exception as e:
+            print(f"Error scraping {blog['name']}: {e}")
+            return []
+
+    all_posts = []
+
+    with httpx.Client(timeout=30.0, follow_redirects=False) as client:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(10, max(1, len(AI_BLOGS)))) as executor:
+            future_to_blog = {
+                executor.submit(_process_blog, blog_key, blog, client): blog_key
+                for blog_key, blog in AI_BLOGS.items()
+            }
+            for future in concurrent.futures.as_completed(future_to_blog):
+                try:
+                    posts = future.result()
+                    if posts:
+                        all_posts.extend(posts)
+                except Exception as e:
+                    blog_key = future_to_blog[future]
+                    print(f"Error processing {blog_key}: {e}")
     
     return all_posts
 
