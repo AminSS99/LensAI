@@ -114,7 +114,9 @@ def fetch_hackernews_sync(limit: int = 30) -> List[Dict[str, Any]]:
 
 
 def _fetch_hackernews_sync_impl(limit: int = 30) -> List[Dict[str, Any]]:
-    """Truly synchronous implementation using httpx sync client."""
+    """Truly synchronous implementation using httpx sync client with ThreadPoolExecutor for speed."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
     with httpx.Client(timeout=30.0) as client:
         # Get top story IDs
         response = client.get(f"{HN_API_BASE}/topstories.json")
@@ -122,31 +124,42 @@ def _fetch_hackernews_sync_impl(limit: int = 30) -> List[Dict[str, Any]]:
         story_ids = response.json()[:100]
         
         stories = []
-        for story_id in story_ids:
+
+        def fetch_single_story(story_id):
             try:
                 resp = client.get(f"{HN_API_BASE}/item/{story_id}.json")
                 resp.raise_for_status()
                 story = resp.json()
-                
                 if story and is_tech_related(story):
-                    stories.append({
+                    return {
                         'title': story.get('title', ''),
                         'url': story.get('url', f"https://news.ycombinator.com/item?id={story_id}"),
                         'score': story.get('score', 0),
                         'comments': story.get('descendants', 0),
                         'source': 'Hacker News',
                         'hn_id': story_id,
-                    'time': datetime.fromtimestamp(story.get('time', 0), timezone.utc).isoformat()
-                    })
-                    
-                    if len(stories) >= limit:
-                        break
+                        'time': datetime.fromtimestamp(story.get('time', 0), timezone.utc).isoformat()
+                    }
             except Exception as e:
                 print(f"Error fetching story {story_id}: {e}")
-                continue
+            return None
+
+        # Process in batches to avoid overwhelming and allow early exit
+        batch_size = 20
+        with ThreadPoolExecutor(max_workers=batch_size) as executor:
+            for i in range(0, len(story_ids), batch_size):
+                batch_ids = story_ids[i:i+batch_size]
+                futures = [executor.submit(fetch_single_story, sid) for sid in batch_ids]
+                for future in as_completed(futures):
+                    res = future.result()
+                    if res:
+                        stories.append(res)
+
+                if len(stories) >= limit:
+                    break
         
         stories.sort(key=lambda x: x['score'], reverse=True)
-        return stories
+        return stories[:limit]
 
 
 if __name__ == "__main__":
