@@ -33,9 +33,9 @@ def telegram_webhook(request: Request):
         return 'OK', 200
     
     # Validate secret token to ensure request came from Telegram
-    secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
+    secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
     expected = os.environ.get("WEBHOOK_SECRET_TOKEN")
-    if expected and not (secret and hmac.compare_digest(secret, expected)):
+    if not expected or not hmac.compare_digest(secret, expected):
         print("Webhook: unauthorized request (invalid secret token)")
         return "Unauthorized", 403
     
