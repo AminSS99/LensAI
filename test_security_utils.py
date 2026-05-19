@@ -1,5 +1,6 @@
 import pytest
-from functions.security_utils import escape_markdown_v1
+from functions.security_utils import escape_markdown_v1, stable_hash
+import hashlib
 
 def test_escape_markdown_v1_empty_string():
     """Test with empty strings and None."""
@@ -40,3 +41,35 @@ def test_escape_markdown_v1_mixed_text():
     input_str = "Check out this *awesome* repo: [Link](https://github.com/test)! It's 100% free."
     expected_str = r"Check out this \*awesome\* repo: \[Link\]\(https://github\.com/test\)\! It's 100% free\."
     assert escape_markdown_v1(input_str) == expected_str
+
+
+def test_stable_hash_empty_string():
+    """Test with empty string and None."""
+    # empty string hash
+    expected_empty = hashlib.sha256(b"").hexdigest()
+    assert stable_hash("") == expected_empty
+    assert stable_hash(None) == expected_empty
+
+def test_stable_hash_ascii():
+    """Test with normal ascii string."""
+    text = "hello world"
+    expected = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    assert stable_hash(text) == expected
+
+def test_stable_hash_unicode():
+    """Test with unicode string (emojis, non-latin characters)."""
+    text = "hello 🌍 ñ"
+    expected = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    assert stable_hash(text) == expected
+
+def test_stable_hash_known_digest():
+    """Test with a known hardcoded digest."""
+    text = "test_string_123"
+    # manually calculated sha256
+    expected = "d76a1b0938099df3a7e42cdf3e6517d7196adbc5b778b6840c4e19f3897275a7"
+    assert stable_hash(text) == expected
+
+def test_stable_hash_deterministic():
+    """Test that the hash is deterministic."""
+    text = "consistent_hashing"
+    assert stable_hash(text) == stable_hash(text)
