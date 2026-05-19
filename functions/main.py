@@ -514,10 +514,15 @@ def fetch_news(request: Request):
 
 def _require_internal_secret(request: Request) -> tuple[bool, tuple]:
     """Verify that the request carries the correct internal secret header."""
-    secret = request.headers.get("X-Internal-Secret")
+    secret = request.headers.get("X-Internal-Secret", "")
     expected = os.environ.get("INTERNAL_SECRET")
-    if expected and not (secret and hmac.compare_digest(secret, expected)):
+
+    if not expected:
+        return False, (json.dumps({"error": "Server misconfiguration"}), 500)
+
+    if not secret or not hmac.compare_digest(secret, expected):
         return False, (json.dumps({"error": "Forbidden"}), 403)
+
     return True, ()
 
 
