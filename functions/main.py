@@ -523,6 +523,91 @@ def _require_internal_secret(request: Request) -> tuple[bool, tuple]:
 
 # ============ HOURLY BREAKING NEWS CHECK ============
 
+async def _fetch_all_sources():
+    from .scrapers.hackernews import fetch_hackernews
+    from .scrapers.techcrunch import fetch_techcrunch
+    from .scrapers.ai_blogs import fetch_ai_blogs
+    from .scrapers.theverge import fetch_theverge
+    from .scrapers.github_trending import fetch_github_trending
+    from .scrapers.producthunt import fetch_producthunt
+    import asyncio
+
+    tasks = [
+        fetch_hackernews(20),
+        asyncio.to_thread(fetch_techcrunch, 10),
+        fetch_ai_blogs(5),
+        asyncio.to_thread(fetch_theverge, 8),
+        asyncio.to_thread(fetch_github_trending, 5),
+        asyncio.to_thread(fetch_producthunt, 5),
+    ]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    all_news = []
+    for res in results:
+        if isinstance(res, list):
+            all_news.extend(res)
+        elif isinstance(res, Exception):
+            print(f"Error fetching source: {res}")
+    return all_news
+
+async def _distribute_breaking_alerts(raw_alerts):
+    from .database import get_all_active_users
+    from .breaking_news import (
+        get_user_breaking_news_preference,
+        can_send_breaking_to_user, record_breaking_sent_to_user,
+        filter_fresh_articles, record_sent_articles,
+        format_breaking_alert
+    )
+    from telegram import Bot
+    from .telegram_bot import get_bot_token
+
+    users = get_all_active_users()
+    bot = Bot(token=get_bot_token())
+    sent = 0
+    skipped_users = 0
+    skipped_dupes = 0
+
+    for alert in raw_alerts:
+        for user in users:
+            user_id = user.get('telegram_id')
+            if not user_id:
+                continue
+            if not get_user_breaking_news_preference(user_id):
+                continue
+
+            # Frequency cap check
+            if not can_send_breaking_to_user(user_id):
+                skipped_users += 1
+                continue
+
+            # Filter out articles already sent to this user
+            fresh_articles = filter_fresh_articles(alert.get('articles', []), user_id)
+            if not fresh_articles:
+                skipped_dupes += 1
+                continue
+
+            # Build personalized alert with only fresh articles
+            personalized_alert = {**alert, 'articles': fresh_articles}
+
+            try:
+                from .user_storage import get_user_language
+                lang = get_user_language(user_id)
+                msg = format_breaking_alert(personalized_alert, lang)
+                await bot.send_message(
+                    chat_id=user_id,
+                    text=msg,
+                    parse_mode='Markdown',
+                    disable_web_page_preview=True,
+                )
+                # Track sent articles so digests/breaking don't repeat them
+                record_sent_articles(user_id, fresh_articles)
+                record_breaking_sent_to_user(user_id)
+                sent += 1
+            except Exception as e:
+                print(f"Breaking news send error to {user_id}: {e}")
+
+    return sent, skipped_users, skipped_dupes
+
+
 @functions_framework.http
 def hourly_news_check(request: Request):
     """
@@ -534,90 +619,22 @@ def hourly_news_check(request: Request):
         return error
 
     try:
-        from .scrapers.hackernews import fetch_hackernews
-        from .scrapers.techcrunch import fetch_techcrunch
-        from .scrapers.ai_blogs import fetch_ai_blogs
-        from .scrapers.theverge import fetch_theverge
-        from .scrapers.github_trending import fetch_github_trending
-        from .scrapers.producthunt import fetch_producthunt
-        from .breaking_news import (
-            detect_breaking_news, format_breaking_alert,
-            get_user_breaking_news_preference,
-            can_send_breaking_to_user, record_breaking_sent_to_user,
-            filter_fresh_articles, record_sent_articles,
-            cleanup_old_temporal_patterns
-        )
-        from .database import get_all_active_users
-        from telegram import Bot
-        from .telegram_bot import get_bot_token
+        from .breaking_news import detect_breaking_news, cleanup_old_temporal_patterns
+
 
         async def check_async():
-            tasks = [
-                fetch_hackernews(20),
-                asyncio.to_thread(fetch_techcrunch, 10),
-                fetch_ai_blogs(5),
-                asyncio.to_thread(fetch_theverge, 8),
-                asyncio.to_thread(fetch_github_trending, 5),
-                asyncio.to_thread(fetch_producthunt, 5),
-            ]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            all_news = []
-            for res in results:
-                if isinstance(res, list):
-                    all_news.extend(res)
-                elif isinstance(res, Exception):
-                    print(f"Error fetching source: {res}")
+            # 1. Fetch
+            all_news = await _fetch_all_sources()
 
+            # 2. Filter and detect
             all_news = await _filter_safe_news(all_news)
             raw_alerts = detect_breaking_news(all_news)
 
             if not raw_alerts:
                 return {'alerts': 0, 'sent': 0}
 
-            users = get_all_active_users()
-            bot = Bot(token=get_bot_token())
-            sent = 0
-            skipped_users = 0
-            skipped_dupes = 0
-
-            for alert in raw_alerts:
-                for user in users:
-                    user_id = user.get('telegram_id')
-                    if not user_id:
-                        continue
-                    if not get_user_breaking_news_preference(user_id):
-                        continue
-
-                    # Frequency cap check
-                    if not can_send_breaking_to_user(user_id):
-                        skipped_users += 1
-                        continue
-
-                    # Filter out articles already sent to this user
-                    fresh_articles = filter_fresh_articles(alert.get('articles', []), user_id)
-                    if not fresh_articles:
-                        skipped_dupes += 1
-                        continue
-
-                    # Build personalized alert with only fresh articles
-                    personalized_alert = {**alert, 'articles': fresh_articles}
-
-                    try:
-                        from .user_storage import get_user_language
-                        lang = get_user_language(user_id)
-                        msg = format_breaking_alert(personalized_alert, lang)
-                        await bot.send_message(
-                            chat_id=user_id,
-                            text=msg,
-                            parse_mode='Markdown',
-                            disable_web_page_preview=True,
-                        )
-                        # Track sent articles so digests/breaking don't repeat them
-                        record_sent_articles(user_id, fresh_articles)
-                        record_breaking_sent_to_user(user_id)
-                        sent += 1
-                    except Exception as e:
-                        print(f"Breaking news send error to {user_id}: {e}")
+            # 3. Send
+            sent, skipped_users, skipped_dupes = await _distribute_breaking_alerts(raw_alerts)
 
             # Cleanup old patterns periodically
             cleanup_old_temporal_patterns(days=14)
