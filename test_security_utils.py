@@ -40,3 +40,34 @@ def test_escape_markdown_v1_mixed_text():
     input_str = "Check out this *awesome* repo: [Link](https://github.com/test)! It's 100% free."
     expected_str = r"Check out this \*awesome\* repo: \[Link\]\(https://github\.com/test\)\! It's 100% free\."
     assert escape_markdown_v1(input_str) == expected_str
+
+from unittest import mock
+from functions.security_utils import sanitize_html
+
+def test_sanitize_html_empty_string():
+    """Test sanitize_html with empty strings and None."""
+    assert sanitize_html("") == ""
+    assert sanitize_html(None) == ""
+
+def test_sanitize_html_no_html():
+    """Test sanitize_html with plain text without HTML."""
+    assert sanitize_html("Just some plain text.") == "Just some plain text."
+
+def test_sanitize_html_simple_tags():
+    """Test sanitize_html with simple HTML tags."""
+    assert sanitize_html("<p>Paragraph</p> <br/> Text") == "Paragraph Text"
+
+def test_sanitize_html_script_style():
+    """Test sanitize_html removes contents of script and style tags."""
+    html = "Hello <script>alert('xss');</script> World <style>body { color: red; }</style>!"
+    # The BeautifulSoup parser replaces tags with a space separator and strips edges
+    assert sanitize_html(html) == "Hello World !"
+
+def test_sanitize_html_fallback():
+    """Test sanitize_html fallback logic when bs4 is not available."""
+    html = "<div>Text with <b>bold</b> and <script>alert('1')</script></div>"
+
+    # Mock sys.modules to simulate bs4 import error
+    with mock.patch.dict('sys.modules', {'bs4': None}):
+        # In the regex fallback, the script tag is stripped but its content remains
+        assert sanitize_html(html) == "Text with bold and alert('1')"

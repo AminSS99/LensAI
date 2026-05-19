@@ -1,0 +1,12 @@
+🎯 **What:** The testing gap addressed
+Added missing tests for the `sanitize_html` function located in `functions/security_utils.py` to ensure accurate HTML tag removal and verify the fallback regex logic when `bs4` is unavailable.
+
+📊 **Coverage:** What scenarios are now tested
+- Empty strings and `None` inputs.
+- Plain text strings with no HTML content.
+- Strings with simple HTML tags (e.g., `<p>`, `<br/>`).
+- Strings containing `<script>` and `<style>` tags to ensure their entire contents are removed.
+- An environment simulating an `ImportError` for `BeautifulSoup` (using `unittest.mock.patch.dict('sys.modules', {'bs4': None})`) to test the fallback regular expression.
+
+✨ **Result:** The improvement in test coverage
+The `sanitize_html` function is now fully covered, including its dependency-less fallback execution path, preventing future regressions and improving system reliability when deployed in minimal environments.
