@@ -21,26 +21,26 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 APOLOGY_MESSAGES = {
     'en': """🔔 **Important Notice from LensAI**
 
-We sincerely apologize! Our bot wasn't working properly this week.
+We sincerely apologize! Our bot has been unavailable for the past 10 days.
 
 🔧 **What happened?**
-We experienced technical issues with our scheduled digest delivery system. The automatic news delivery feature was not sending digests at scheduled times due to a configuration problem with our cloud infrastructure.
+We experienced a critical infrastructure issue — our cloud billing account was suspended, which caused all bot services to stop responding. We failed to catch this immediately and deeply regret the disruption.
 
-We've now fixed the issue and everything is back to normal!
+We've now resolved the underlying issue and restored full service. We are also adding better monitoring to ensure this never happens again.
 
-📰 **Here's your weekly tech news summary - everything you may have missed:**
+📰 **Here's your tech news catch-up — everything you may have missed:**
 
 """,
     'ru': """🔔 **Важное уведомление от LensAI**
 
-Приносим искренние извинения! Наш бот работал некорректно на этой неделе.
+Приносим глубочайшие извинения! Наш бот был недоступен последние 10 дней.
 
 🔧 **Что произошло?**
-У нас возникли технические проблемы с системой доставки запланированных дайджестов. Функция автоматической доставки новостей не отправляла дайджесты по расписанию из-за проблемы с конфигурацией нашей облачной инфраструктуры.
+У нас возникла критическая проблема с инфраструктурой — наш облачный биллинговый аккаунт был приостановлен, из-за чего все сервисы бота перестали работать. К сожалению, мы не сразу обнаружили эту проблему, и приносим извинения за доставленные неудобства.
 
-Мы уже исправили проблему, и всё снова работает нормально!
+Мы уже устранили причину и полностью восстановили работу бота. Также мы внедряем улучшенный мониторинг, чтобы подобное больше не повторилось.
 
-📰 **Вот ваша еженедельная сводка технологических новостей - всё, что вы могли пропустить:**
+📰 **Вот ваша сводка технологических новостей — всё, что вы могли пропустить:**
 
 """
 }
