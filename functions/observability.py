@@ -4,7 +4,7 @@ Builds a simple runtime health snapshot for admin usage.
 """
 
 from typing import Dict, Any
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from collections import Counter
 
 
