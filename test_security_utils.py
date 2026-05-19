@@ -40,3 +40,32 @@ def test_escape_markdown_v1_mixed_text():
     input_str = "Check out this *awesome* repo: [Link](https://github.com/test)! It's 100% free."
     expected_str = r"Check out this \*awesome\* repo: \[Link\]\(https://github\.com/test\)\! It's 100% free\."
     assert escape_markdown_v1(input_str) == expected_str
+
+from functions.security_utils import sanitize_markdown_links
+
+def test_sanitize_markdown_links_empty():
+    """Test with empty strings and None."""
+    assert sanitize_markdown_links("") == ""
+    assert sanitize_markdown_links(None) is None
+
+def test_sanitize_markdown_links_no_links():
+    """Test with a string containing no markdown links."""
+    assert sanitize_markdown_links("Hello World 123") == "Hello World 123"
+
+def test_sanitize_markdown_links_basic():
+    """Test with a valid basic markdown link."""
+    input_str = "[OpenAI](https://openai.com)"
+    expected_str = "[OpenAI](https://openai.com)"
+    assert sanitize_markdown_links(input_str) == expected_str
+
+def test_sanitize_markdown_links_with_spaces_and_brackets():
+    """Test with a link that needs sanitization."""
+    input_str = "[Test](http://example.com/a [b])"
+    expected_str = "[Test](http://example.com/a%20%5Bb%5D)"
+    assert sanitize_markdown_links(input_str) == expected_str
+
+def test_sanitize_markdown_links_multiple():
+    """Test with a string containing multiple links."""
+    input_str = "Check out [Link1](https://example.com/a b) and [Link2](https://test.com/c d)."
+    expected_str = "Check out [Link1](https://example.com/a%20b) and [Link2](https://test.com/c%20d)."
+    assert sanitize_markdown_links(input_str) == expected_str

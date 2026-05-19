@@ -108,7 +108,7 @@ def sanitize_markdown_links(text: str) -> str:
         url = match.group(2)
         return f"{prefix}{sanitize_markdown_url(url)})"
 
-    return re.sub(r"(\[[^\]]+\]\()(https?://[^\)]+)", _replace_link, text)
+    return re.sub(r"(\[[^\]]+\]\()(https?://[^\)]+)\)", _replace_link, text)
 
 
 def stable_hash(value: str) -> str:
