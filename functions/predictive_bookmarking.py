@@ -92,24 +92,6 @@ def predict_saves_for_user(user_id: int, articles: List[Dict[str, Any]], top_n: 
     return scored[:top_n]
 
 
-def format_predicted_saves(predicted: List[Dict[str, Any]], lang: str = 'en') -> str:
-    """Format a short message with predicted saves for inline keyboard use."""
-    if not predicted:
-        return ""
-
-    if lang == 'ru':
-        lines = ["🔮 *Вам может понравиться:*"]
-    else:
-        lines = ["🔮 *You might like:*"]
-
-    for i, article in enumerate(predicted, 1):
-        title = article.get('title', 'Untitled')[:50]
-        score = article.get('_predicted_score', 0)
-        lines.append(f"{i}. {title} `({score})`")
-
-    return "\n".join(lines)
-
-
 def record_prediction_interaction(user_id: int, article_hash: str, action: str):
     """
     Record whether a user accepted or ignored a prediction.
