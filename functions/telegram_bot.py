@@ -1071,7 +1071,7 @@ async def save_search_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def clear_saved_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /clear_saved command."""
+    """Handle /clear_saved and /clear commands."""
     from .user_storage import clear_saved_articles, get_user_language
     from .translations import t
     
@@ -2688,6 +2688,7 @@ async def setup_bot_commands(application: Application):
         BotCommand("start", "🚀 Start the bot"),
         BotCommand("news", "📰 Get AI news digest"),
         BotCommand("saved", "🔖 View saved articles"),
+        BotCommand("clear", "🧹 Clear saved articles"),
         BotCommand("export", "📤 Export saved articles"),
         BotCommand("random", "🎲 Random saved article"),
         BotCommand("search", "🔍 Search articles"),
@@ -2716,6 +2717,7 @@ async def setup_bot_commands(application: Application):
         BotCommand("start", "🚀 Start the bot"),
         BotCommand("news", "📰 Get AI news digest"),
         BotCommand("saved", "🔖 View saved articles"),
+        BotCommand("clear", "🧹 Clear saved articles"),
         BotCommand("export", "📤 Export saved articles"),
         BotCommand("random", "🎲 Random saved article"),
         BotCommand("search", "🔍 Search articles"),
@@ -2744,6 +2746,7 @@ async def setup_bot_commands(application: Application):
         BotCommand("start", "🚀 Запустить бота"),
         BotCommand("news", "📰 Дайджест новостей"),
         BotCommand("saved", "🔖 Сохранённые статьи"),
+        BotCommand("clear", "🧹 Очистить сохраненные статьи"),
         BotCommand("export", "📤 Экспорт статей"),
         BotCommand("random", "🎲 Случайная статья"),
         BotCommand("search", "🔍 Поиск статей"),
@@ -2825,8 +2828,8 @@ def create_bot_application() -> Application:
     # New feature commands
     application.add_handler(CommandHandler("saved", saved_command))
     application.add_handler(CommandHandler("save", save_command))
-    application.add_handler(CommandHandler("clear_saved", clear_saved_command))
-    application.add_handler(CommandHandler("clear", clear_saved_command))  # Alias for /clear_saved
+    application.add_handler(CommandHandler("clear_saved", clear_saved_command)) # Keep legacy alias
+    application.add_handler(CommandHandler("clear", clear_saved_command))
     application.add_handler(CommandHandler("export", export_command))
     application.add_handler(CommandHandler("random", random_command))
     application.add_handler(CommandHandler("search", search_command))
