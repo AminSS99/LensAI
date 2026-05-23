@@ -743,7 +743,14 @@ async def _render_saved_page(update_or_query, telegram_id: int, user_lang: str, 
         keyboard.append(nav_buttons)
 
     # Add Clear All button
+    export_text = "📤 Экспорт" if user_lang == 'ru' else "📤 Export"
+    filter_text = "📂 Фильтр" if user_lang == 'ru' else "📂 Filter"
     clear_all_text = t('clear_all_btn', user_lang)
+
+    keyboard.append([
+        InlineKeyboardButton(filter_text, callback_data="filter_menu"),
+        InlineKeyboardButton(export_text, callback_data=f"export_menu_{page}")
+    ])
     keyboard.append([InlineKeyboardButton(clear_all_text, callback_data=f"clear_all_prompt_{page}")])
 
     reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
@@ -884,10 +891,11 @@ async def save_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /export command - export saved articles as a Markdown file."""
+    """Handle /export command - export saved articles as a file."""
     from .translations import t
     from .user_storage import get_all_saved_articles, get_user_language
     import io
+    import csv
 
     def _clean_export_value(value) -> str:
         if value is None:
@@ -896,47 +904,77 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             value = value.isoformat()
         return str(value).replace("\r", " ").replace("\n", " ").strip()
 
+    reply_msg = update.message if update.message else update.callback_query.message
     telegram_id = update.effective_user.id
     user_lang = get_user_language(telegram_id)
 
-    category_filter = context.args[0].lower() if context.args else None
+    # Parse args for format and category filter
+    export_format = 'md'
+    category_filter = None
+
+    if context.args:
+        for arg in context.args:
+            arg_lower = arg.lower()
+            if arg_lower in ['md', 'csv']:
+                export_format = arg_lower
+            else:
+                category_filter = arg_lower
+
     articles = get_all_saved_articles(telegram_id, category=category_filter)
 
     if not articles:
-        await update.message.reply_text(t('export_empty', user_lang), parse_mode='Markdown')
+        await reply_msg.reply_text(t('export_empty', user_lang), parse_mode='Markdown')
         return
 
-    lines = [
-        "# LensAI Saved Articles",
-        "",
-        f"Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}",
-        f"Total articles: {len(articles)}",
-        "",
-    ]
-
-    for index, article in enumerate(articles, 1):
-        title = _clean_export_value(article.get('title')) or "Untitled"
-        url = _clean_export_value(article.get('url'))
-        source = _clean_export_value(article.get('source'))
-        category = article.get('category', 'tech') or 'tech'
-        category_label = _clean_export_value(t(f'cat_{category}', user_lang))
-        saved_at = _clean_export_value(article.get('saved_at'))
-
-        lines.append(f"## {index}. {title}")
-        lines.append(f"- Category: {category_label}")
-        if source:
-            lines.append(f"- Source: {source}")
-        if saved_at:
-            lines.append(f"- Saved: {saved_at}")
-        if url:
-            lines.append(f"- URL: <{url}>")
-        lines.append("")
-
-    document = io.BytesIO("\n".join(lines).encode('utf-8'))
     filename_category = f"_{category_filter}" if category_filter else ""
-    document.name = f"lensai_saved_articles{filename_category}_{datetime.now().strftime('%Y%m%d')}.md"
 
-    await update.message.reply_document(
+    if export_format == 'csv':
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["Index", "Title", "Category", "Source", "URL", "Saved At"])
+        for index, article in enumerate(articles, 1):
+            title = _clean_export_value(article.get('title')) or "Untitled"
+            url = _clean_export_value(article.get('url'))
+            source = _clean_export_value(article.get('source'))
+            category = article.get('category', 'tech') or 'tech'
+            category_label = _clean_export_value(t(f'cat_{category}', user_lang))
+            saved_at = _clean_export_value(article.get('saved_at'))
+            writer.writerow([index, title, category_label, source, url, saved_at])
+
+        # Write BOM for Excel compatibility
+        document = io.BytesIO(b'\xef\xbb\xbf' + output.getvalue().encode('utf-8'))
+        document.name = f"lensai_saved_articles{filename_category}_{datetime.now().strftime('%Y%m%d')}.csv"
+    else:
+        lines = [
+            "# LensAI Saved Articles",
+            "",
+            f"Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}",
+            f"Total articles: {len(articles)}",
+            "",
+        ]
+
+        for index, article in enumerate(articles, 1):
+            title = _clean_export_value(article.get('title')) or "Untitled"
+            url = _clean_export_value(article.get('url'))
+            source = _clean_export_value(article.get('source'))
+            category = article.get('category', 'tech') or 'tech'
+            category_label = _clean_export_value(t(f'cat_{category}', user_lang))
+            saved_at = _clean_export_value(article.get('saved_at'))
+
+            lines.append(f"## {index}. {title}")
+            lines.append(f"- Category: {category_label}")
+            if source:
+                lines.append(f"- Source: {source}")
+            if saved_at:
+                lines.append(f"- Saved: {saved_at}")
+            if url:
+                lines.append(f"- URL: <{url}>")
+            lines.append("")
+
+        document = io.BytesIO("\n".join(lines).encode('utf-8'))
+        document.name = f"lensai_saved_articles{filename_category}_{datetime.now().strftime('%Y%m%d')}.md"
+
+    await reply_msg.reply_document(
         document=document,
         caption=t('export_caption', user_lang, count=len(articles)),
         parse_mode='Markdown'
@@ -998,6 +1036,56 @@ async def clear_all_cancel_callback(update: Update, context: ContextTypes.DEFAUL
     except (TypeError, ValueError):
         page = 0
 
+    await _render_saved_page(query, telegram_id, user_lang, page, is_callback=True)
+
+async def export_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle export menu button press."""
+    query = update.callback_query
+    await query.answer()
+    telegram_id = update.effective_user.id
+    from .user_storage import get_user_language
+
+    user_lang = get_user_language(telegram_id)
+    data = query.data
+    try:
+        page = int(data.replace('export_menu_', ''))
+    except (TypeError, ValueError):
+        page = 0
+
+    message = "📄 Выберите формат экспорта:" if user_lang == 'ru' else "📄 Choose export format:"
+    keyboard = [
+        [
+            InlineKeyboardButton("Markdown (.md)", callback_data=f"export_format_md_{page}"),
+            InlineKeyboardButton("CSV (.csv)", callback_data=f"export_format_csv_{page}")
+        ],
+        [InlineKeyboardButton("⬅️ Назад" if user_lang == 'ru' else "⬅️ Back", callback_data=f"saved_page_{page}")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await query.edit_message_text(
+        message,
+        parse_mode='Markdown',
+        reply_markup=reply_markup
+    )
+
+async def export_format_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle export format selection."""
+    query = update.callback_query
+    await query.answer()
+
+    data = query.data
+    parts = data.replace('export_format_', '').split('_')
+    export_format = parts[0]
+    page = int(parts[1]) if len(parts) > 1 else 0
+
+    # Inject format into args for export_command
+    context.args = [export_format]
+    await export_command(update, context)
+
+    # Return to saved articles page
+    telegram_id = update.effective_user.id
+    from .user_storage import get_user_language
+    user_lang = get_user_language(telegram_id)
     await _render_saved_page(query, telegram_id, user_lang, page, is_callback=True)
 
 async def search_history_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2860,6 +2948,8 @@ def create_bot_application() -> Application:
     application.add_handler(CallbackQueryHandler(clear_all_prompt_callback, pattern='^clear_all_prompt_'))
     application.add_handler(CallbackQueryHandler(clear_all_confirm_callback, pattern='^clear_all_confirm_'))
     application.add_handler(CallbackQueryHandler(clear_all_cancel_callback, pattern='^clear_all_cancel_'))
+    application.add_handler(CallbackQueryHandler(export_menu_callback, pattern='^export_menu_'))
+    application.add_handler(CallbackQueryHandler(export_format_callback, pattern='^export_format_'))
     application.add_handler(CallbackQueryHandler(search_history_callback, pattern='^search_history_'))
     application.add_handler(CallbackQueryHandler(filter_category_callback, pattern='^filter_cat_'))
     application.add_handler(CallbackQueryHandler(filter_category_callback, pattern='^filter_menu$'))
