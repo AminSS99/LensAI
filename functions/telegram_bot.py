@@ -884,10 +884,11 @@ async def save_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /export command - export saved articles as a Markdown file."""
+    """Handle /export command - export saved articles as a Markdown or CSV file."""
     from .translations import t
     from .user_storage import get_all_saved_articles, get_user_language
     import io
+    import csv
 
     def _clean_export_value(value) -> str:
         if value is None:
@@ -899,42 +900,71 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     telegram_id = update.effective_user.id
     user_lang = get_user_language(telegram_id)
 
-    category_filter = context.args[0].lower() if context.args else None
+    args_lower = [arg.lower() for arg in (context.args or [])]
+    export_csv = "csv" in args_lower
+    if export_csv:
+        args_lower.remove("csv")
+
+    category_filter = args_lower[0] if args_lower else None
     articles = get_all_saved_articles(telegram_id, category=category_filter)
 
     if not articles:
         await update.message.reply_text(t('export_empty', user_lang), parse_mode='Markdown')
         return
 
-    lines = [
-        "# LensAI Saved Articles",
-        "",
-        f"Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}",
-        f"Total articles: {len(articles)}",
-        "",
-    ]
-
-    for index, article in enumerate(articles, 1):
-        title = _clean_export_value(article.get('title')) or "Untitled"
-        url = _clean_export_value(article.get('url'))
-        source = _clean_export_value(article.get('source'))
-        category = article.get('category', 'tech') or 'tech'
-        category_label = _clean_export_value(t(f'cat_{category}', user_lang))
-        saved_at = _clean_export_value(article.get('saved_at'))
-
-        lines.append(f"## {index}. {title}")
-        lines.append(f"- Category: {category_label}")
-        if source:
-            lines.append(f"- Source: {source}")
-        if saved_at:
-            lines.append(f"- Saved: {saved_at}")
-        if url:
-            lines.append(f"- URL: <{url}>")
-        lines.append("")
-
-    document = io.BytesIO("\n".join(lines).encode('utf-8'))
     filename_category = f"_{category_filter}" if category_filter else ""
-    document.name = f"lensai_saved_articles{filename_category}_{datetime.now().strftime('%Y%m%d')}.md"
+    date_str = datetime.now().strftime('%Y%m%d')
+
+    if export_csv:
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["Title", "Category", "Source", "Saved At", "URL"])
+
+        for article in articles:
+            title = _clean_export_value(article.get('title')) or "Untitled"
+            url = _clean_export_value(article.get('url'))
+            source = _clean_export_value(article.get('source'))
+            category = article.get('category', 'tech') or 'tech'
+            category_label = _clean_export_value(t(f'cat_{category}', user_lang))
+            saved_at = _clean_export_value(article.get('saved_at'))
+
+            writer.writerow([title, category_label, source, saved_at, url])
+
+        document = io.BytesIO()
+        document.write(b'\xef\xbb\xbf')
+        document.write(output.getvalue().encode('utf-8'))
+        document.seek(0)
+        document.name = f"lensai_saved_articles{filename_category}_{date_str}.csv"
+
+    else:
+        lines = [
+            "# LensAI Saved Articles",
+            "",
+            f"Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}",
+            f"Total articles: {len(articles)}",
+            "",
+        ]
+
+        for index, article in enumerate(articles, 1):
+            title = _clean_export_value(article.get('title')) or "Untitled"
+            url = _clean_export_value(article.get('url'))
+            source = _clean_export_value(article.get('source'))
+            category = article.get('category', 'tech') or 'tech'
+            category_label = _clean_export_value(t(f'cat_{category}', user_lang))
+            saved_at = _clean_export_value(article.get('saved_at'))
+
+            lines.append(f"## {index}. {title}")
+            lines.append(f"- Category: {category_label}")
+            if source:
+                lines.append(f"- Source: {source}")
+            if saved_at:
+                lines.append(f"- Saved: {saved_at}")
+            if url:
+                lines.append(f"- URL: <{url}>")
+            lines.append("")
+
+        document = io.BytesIO("\n".join(lines).encode('utf-8'))
+        document.name = f"lensai_saved_articles{filename_category}_{date_str}.md"
 
     await update.message.reply_document(
         document=document,
