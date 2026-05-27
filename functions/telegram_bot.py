@@ -883,11 +883,12 @@ async def save_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(t('article_exists', user_lang))
 
 
-async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /export command - export saved articles as a Markdown file."""
+async def _do_export(message_obj, telegram_id: int, user_lang: str, export_format: str, category_filter: str):
+    """Internal helper to process the export of saved articles."""
     from .translations import t
-    from .user_storage import get_all_saved_articles, get_user_language
+    from .user_storage import get_all_saved_articles
     import io
+    import csv
 
     def _clean_export_value(value) -> str:
         if value is None:
@@ -896,51 +897,130 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             value = value.isoformat()
         return str(value).replace("\r", " ").replace("\n", " ").strip()
 
-    telegram_id = update.effective_user.id
-    user_lang = get_user_language(telegram_id)
-
-    category_filter = context.args[0].lower() if context.args else None
     articles = get_all_saved_articles(telegram_id, category=category_filter)
 
     if not articles:
-        await update.message.reply_text(t('export_empty', user_lang), parse_mode='Markdown')
+        await message_obj.reply_text(t('export_empty', user_lang), parse_mode='Markdown')
         return
 
-    lines = [
-        "# LensAI Saved Articles",
-        "",
-        f"Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}",
-        f"Total articles: {len(articles)}",
-        "",
-    ]
+    # If format not specified, show inline keyboard to select
+    if not export_format:
+        keyboard = [
+            [
+                InlineKeyboardButton("📄 Markdown (.md)", callback_data=f"do_export_md_{category_filter or 'all'}"),
+                InlineKeyboardButton("📊 Excel (.csv)", callback_data=f"do_export_csv_{category_filter or 'all'}")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await message_obj.reply_text(
+            "📦 *Choose export format:*\n\n_Markdown_ is great for notes like Obsidian or Notion.\n_Excel_ is great for spreadsheets.",
+            parse_mode='Markdown',
+            reply_markup=reply_markup
+        )
+        return
 
-    for index, article in enumerate(articles, 1):
-        title = _clean_export_value(article.get('title')) or "Untitled"
-        url = _clean_export_value(article.get('url'))
-        source = _clean_export_value(article.get('source'))
-        category = article.get('category', 'tech') or 'tech'
-        category_label = _clean_export_value(t(f'cat_{category}', user_lang))
-        saved_at = _clean_export_value(article.get('saved_at'))
-
-        lines.append(f"## {index}. {title}")
-        lines.append(f"- Category: {category_label}")
-        if source:
-            lines.append(f"- Source: {source}")
-        if saved_at:
-            lines.append(f"- Saved: {saved_at}")
-        if url:
-            lines.append(f"- URL: <{url}>")
-        lines.append("")
-
-    document = io.BytesIO("\n".join(lines).encode('utf-8'))
     filename_category = f"_{category_filter}" if category_filter else ""
-    document.name = f"lensai_saved_articles{filename_category}_{datetime.now().strftime('%Y%m%d')}.md"
+    timestamp = datetime.now(timezone.utc).strftime('%Y%m%d')
 
-    await update.message.reply_document(
+    if export_format == 'csv':
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(['Title', 'Category', 'Source', 'Saved At', 'URL'])
+
+        for article in articles:
+            title = _clean_export_value(article.get('title')) or "Untitled"
+            url = _clean_export_value(article.get('url'))
+            source = _clean_export_value(article.get('source'))
+            category = article.get('category', 'tech') or 'tech'
+            category_label = _clean_export_value(t(f'cat_{category}', user_lang))
+            saved_at = _clean_export_value(article.get('saved_at'))
+
+            writer.writerow([title, category_label, source, saved_at, url])
+
+        # Write UTF-8 BOM so Excel opens it correctly
+        document = io.BytesIO(b'\xef\xbb\xbf' + output.getvalue().encode('utf-8'))
+        document.name = f"lensai_saved_articles{filename_category}_{timestamp}.csv"
+    else:
+        # Markdown export
+        lines = [
+            "# LensAI Saved Articles",
+            "",
+            f"Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}",
+            f"Total articles: {len(articles)}",
+            "",
+        ]
+
+        for index, article in enumerate(articles, 1):
+            title = _clean_export_value(article.get('title')) or "Untitled"
+            url = _clean_export_value(article.get('url'))
+            source = _clean_export_value(article.get('source'))
+            category = article.get('category', 'tech') or 'tech'
+            category_label = _clean_export_value(t(f'cat_{category}', user_lang))
+            saved_at = _clean_export_value(article.get('saved_at'))
+
+            lines.append(f"## {index}. {title}")
+            lines.append(f"- Category: {category_label}")
+            if source:
+                lines.append(f"- Source: {source}")
+            if saved_at:
+                lines.append(f"- Saved: {saved_at}")
+            if url:
+                lines.append(f"- URL: <{url}>")
+            lines.append("")
+
+        document = io.BytesIO("\n".join(lines).encode('utf-8'))
+        document.name = f"lensai_saved_articles{filename_category}_{timestamp}.md"
+
+    await message_obj.reply_document(
         document=document,
         caption=t('export_caption', user_lang, count=len(articles)),
         parse_mode='Markdown'
     )
+
+
+async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /export command - export saved articles as a Markdown or CSV file."""
+    from .user_storage import get_user_language
+
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+    message_obj = update.message if update.message else update.callback_query.message
+
+    # Parse arguments
+    args = context.args or []
+    export_format = None
+    category_filter = None
+
+    for arg in args:
+        arg_lower = arg.lower()
+        if arg_lower in ['md', 'markdown']:
+            export_format = 'md'
+        elif arg_lower in ['csv', 'excel']:
+            export_format = 'csv'
+        else:
+            category_filter = arg_lower
+
+    await _do_export(message_obj, telegram_id, user_lang, export_format, category_filter)
+
+
+async def export_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle export format selection callback."""
+    query = update.callback_query
+    await query.answer()
+    from .user_storage import get_user_language
+
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+    message_obj = query.message
+
+    # Extract format and category from callback_data (e.g., 'do_export_md_all', 'do_export_csv_ai')
+    parts = query.data.split('_', 3)
+
+    if len(parts) >= 3:
+        export_format = parts[2]
+        category = parts[3] if len(parts) > 3 and parts[3] != 'all' else None
+
+        await _do_export(message_obj, telegram_id, user_lang, export_format, category)
 
 
 async def clear_all_prompt_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2869,6 +2949,7 @@ def create_bot_application() -> Application:
     application.add_handler(CallbackQueryHandler(clear_search_history_callback, pattern='^clear_search_history$'))
     application.add_handler(CallbackQueryHandler(predict_save_callback, pattern='^predict_save_'))
     application.add_handler(CallbackQueryHandler(save_search_callback, pattern='^save_search_'))
+    application.add_handler(CallbackQueryHandler(export_callback, pattern='^do_export_'))
     
     # Add message handler for buttons and Q&A (handles any text that isn't a command)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
