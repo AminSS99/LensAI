@@ -725,6 +725,7 @@ async def _render_saved_page(update_or_query, telegram_id: int, user_lang: str, 
         # encode page in callback data so delete button can refresh the correct page
         keyboard.append([
             InlineKeyboardButton(f"🧠 {item_num}", callback_data=f"summarize_url_{url_hash}"),
+            InlineKeyboardButton(f"📖 {item_num}", callback_data=f"read_url_{url_hash}"),
             InlineKeyboardButton(f"{delete_label} {item_num}. {title[:20]}...", callback_data=f"del_{url_hash}_{page}")
         ])
     
@@ -1235,8 +1236,10 @@ async def filter_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if url.startswith('http'):
             url_hash = stable_hash(raw_url)[:8]
             summarize_label = t('btn_summarize', user_lang)
+            read_label = t('btn_read', user_lang)
             keyboard.append([
-                InlineKeyboardButton(f"🧠 {i}. {summarize_label}", callback_data=f"summarize_url_{url_hash}")
+                InlineKeyboardButton(f"🧠 {i}. {summarize_label}", callback_data=f"summarize_url_{url_hash}"),
+                InlineKeyboardButton(f"📖 {i}. {read_label}", callback_data=f"read_url_{url_hash}")
             ])
 
     # Add a back button
@@ -1710,8 +1713,12 @@ async def random_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url_hash = stable_hash(url)[:8]
 
     summarize_label = t('btn_summarize', user_lang)
+    read_label = t('btn_read', user_lang)
     reply_markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton(summarize_label, callback_data=f"summarize_url_{url_hash}")]
+        [
+            InlineKeyboardButton(summarize_label, callback_data=f"summarize_url_{url_hash}"),
+            InlineKeyboardButton(read_label, callback_data=f"read_url_{url_hash}")
+        ]
     ])
 
     await update.message.reply_text(message, parse_mode='Markdown', reply_markup=reply_markup)
