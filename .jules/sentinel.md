@@ -27,3 +27,8 @@
 **Vulnerability:** The internal API authentication check `_require_internal_secret` in `functions/main.py` was implemented to fail open if the `INTERNAL_SECRET` environment variable was missing or empty (`if expected and not (...)`).
 **Learning:** Checking for the presence of an expected secret via `if expected` allows the code block to be bypassed if `expected` evaluates to false, making the authorization check fail open and allowing unauthorized access. Also, missing headers would pass `None` to `hmac.compare_digest`, causing a `TypeError`.
 **Prevention:** Always implement authentication and authorization checks using a fail-closed conditional structure (e.g., `if not expected or ...`), ensuring that missing environment variables block access rather than bypassing the check. Also, provide fallback strings when reading headers for cryptographic checks.
+
+## $(date +%Y-%m-%d) - Prevent HTTP Parameter Injection in Hacker News Scraper
+**Vulnerability:** In `find_hn_discussion` (`functions/deep_dive.py`), user-provided URLs were directly interpolated into an API URL string (`f"https://hn.algolia.com/api/v1/search?query={url}&tags=story..."`). This allowed an attacker to input a URL containing `&` characters, injecting unintended query parameters to manipulate the Algolia API request.
+**Learning:** String interpolation for URL parameters does not automatically encode special characters, leading to HTTP Parameter Pollution.
+**Prevention:** Always use the `params` dictionary argument in `httpx.get()` to let the HTTP client safely encode query parameters automatically.
