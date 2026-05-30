@@ -99,8 +99,13 @@ async def find_hn_discussion(url: str) -> Optional[Dict[str, Any]]:
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            api_url = f"https://hn.algolia.com/api/v1/search?query={url}&tags=story&hitsPerPage=3"
-            response = await client.get(api_url)
+            api_url = "https://hn.algolia.com/api/v1/search"
+            params = {
+                "query": url,
+                "tags": "story",
+                "hitsPerPage": 3
+            }
+            response = await client.get(api_url, params=params)
             response.raise_for_status()
             data = response.json()
             hits = data.get('hits', [])
