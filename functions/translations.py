@@ -60,6 +60,7 @@ Use /settime to change it!""",
 • /save <url> - Save an article
 • /saved - View all saved articles
 • /export - Export saved articles as a Markdown file
+• /random - Get a random saved article
 • /filter <category> - Filter by category (ai, security, crypto, startups, hardware, software, tech)
 • /recap - Weekly recap of saved articles
 • /clear - Clear all saved articles
@@ -236,6 +237,7 @@ Use /sources to toggle sources""",
 • /save <ссылка> - Сохранить статью
 • /saved - Просмотреть все сохранённые
 • /export - Экспорт сохранённых статей в Markdown
+• /random - Случайная сохранённая статья
 • /filter <категория> - Фильтр по категории (ai, security, crypto, startups, hardware, software, tech)
 • /recap - Недельный обзор сохранённых
 • /clear - Очистить все сохранённые
