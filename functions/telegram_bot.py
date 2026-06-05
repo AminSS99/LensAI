@@ -1598,7 +1598,9 @@ async def delete_article_callback(update: Update, context: ContextTypes.DEFAULT_
     else:
         url_hash = data.replace('del_', '')
 
-    page = int(parts[2]) if len(parts) > 2 else 0
+    page_str = parts[2] if len(parts) > 2 else "0"
+    is_random = page_str == "random"
+    page = int(page_str) if page_str.isdigit() else 0
     
     # Find the article with matching hash
     from .security_utils import stable_hash
@@ -1617,8 +1619,11 @@ async def delete_article_callback(update: Update, context: ContextTypes.DEFAULT_
     else:
         await query.answer("Article deleted!", show_alert=False)
 
-    # Refresh the current page
-    await _render_saved_page(query, telegram_id, user_lang, page, is_callback=True)
+    if is_random:
+        await _send_random_article(query.message, telegram_id, user_lang, edit=True)
+    else:
+        # Refresh the current page
+        await _render_saved_page(query, telegram_id, user_lang, page, is_callback=True)
 
 
 
@@ -1662,20 +1667,21 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ============ SEARCH ============
 
-async def random_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /random command - get a random saved article."""
-    from .user_storage import get_all_saved_articles, get_user_language
+async def _send_random_article(message_obj, telegram_id: int, user_lang: str, edit: bool = False):
+    from .user_storage import get_all_saved_articles
     from .translations import t
     from telegram import InlineKeyboardMarkup, InlineKeyboardButton
     import random
-
-    telegram_id = update.effective_user.id
-    user_lang = get_user_language(telegram_id)
+    import urllib.parse
 
     articles = get_all_saved_articles(telegram_id)
 
     if not articles:
-        await update.message.reply_text(t('no_saved', user_lang), parse_mode='Markdown')
+        msg = t('no_saved', user_lang)
+        if edit:
+            await message_obj.edit_text(msg, parse_mode='Markdown')
+        else:
+            await message_obj.reply_text(msg, parse_mode='Markdown')
         return
 
     article = random.choice(articles)
@@ -1684,6 +1690,17 @@ async def random_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = article.get('url', '')
     category = article.get('category', 'tech')
     saved_at = article.get('saved_at', '')
+
+    # Try to extract domain
+    domain = ""
+    if url:
+        try:
+            parsed_url = urllib.parse.urlparse(url)
+            domain = parsed_url.netloc
+            if domain.startswith("www."):
+                domain = domain[4:]
+        except Exception:
+            pass
 
     cat_emoji = {
         'ai': '🤖', 'security': '🔒', 'crypto': '💰', 'startups': '🚀',
@@ -1696,6 +1713,7 @@ async def random_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     safe_title = escape_markdown_v1(title)
     safe_url = sanitize_markdown_url(url)
 
+    # We construct the message text
     message = t('random_article_header', user_lang)
 
     if safe_url.startswith('http'):
@@ -1703,18 +1721,63 @@ async def random_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         message += f"{emoji} {safe_title}"
 
+    if domain:
+        from .security_utils import escape_markdown_v1
+        safe_domain = escape_markdown_v1(domain)
+        message += f" ({safe_domain})"
+
     if date_str:
         message += f" `{date_str}`"
 
     from .security_utils import stable_hash
     url_hash = stable_hash(url)[:8]
 
+    # Temporarily store the URL so read and summarize callbacks work properly
+    from .user_storage import save_temp_url
+    save_temp_url(url_hash, telegram_id, url)
+
     summarize_label = t('btn_summarize', user_lang)
+    read_label = t('btn_read', user_lang)
+    delete_label = "🗑️ Delete" if user_lang == 'en' else "🗑️ Удалить"
+    next_label = "🎲 Next" if user_lang == 'en' else "🎲 Следующая"
+
     reply_markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton(summarize_label, callback_data=f"summarize_url_{url_hash}")]
+        [
+            InlineKeyboardButton(read_label, callback_data=f"read_url_{url_hash}"),
+            InlineKeyboardButton(summarize_label, callback_data=f"summarize_url_{url_hash}")
+        ],
+        [
+            InlineKeyboardButton(delete_label, callback_data=f"del_{url_hash}_random"),
+            InlineKeyboardButton(next_label, callback_data="random_next")
+        ]
     ])
 
-    await update.message.reply_text(message, parse_mode='Markdown', reply_markup=reply_markup)
+    if edit:
+        await message_obj.edit_text(message, parse_mode='Markdown', reply_markup=reply_markup, disable_web_page_preview=True)
+    else:
+        await message_obj.reply_text(message, parse_mode='Markdown', reply_markup=reply_markup, disable_web_page_preview=True)
+
+
+async def random_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /random command - get a random saved article."""
+    from .user_storage import get_user_language
+
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+
+    await _send_random_article(update.message, telegram_id, user_lang, edit=False)
+
+
+async def random_next_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle random next button."""
+    query = update.callback_query
+    await query.answer()
+
+    telegram_id = update.effective_user.id
+    from .user_storage import get_user_language
+    user_lang = get_user_language(telegram_id)
+
+    await _send_random_article(query.message, telegram_id, user_lang, edit=True)
 
 
 async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2950,6 +3013,7 @@ def create_bot_application() -> Application:
     application.add_handler(CallbackQueryHandler(predict_save_callback, pattern='^predict_save_'))
     application.add_handler(CallbackQueryHandler(save_search_callback, pattern='^save_search_'))
     application.add_handler(CallbackQueryHandler(export_callback, pattern='^do_export_'))
+    application.add_handler(CallbackQueryHandler(random_next_callback, pattern='^random_next$'))
     
     # Add message handler for buttons and Q&A (handles any text that isn't a command)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
