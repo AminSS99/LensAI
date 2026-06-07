@@ -720,11 +720,14 @@ async def _render_saved_page(update_or_query, telegram_id: int, user_lang: str, 
         
         # Create delete button - use URL hash for unique ID
         from .security_utils import stable_hash
+        from .user_storage import save_temp_url
         url_hash = stable_hash(url)[:8]
+        save_temp_url(url_hash, telegram_id, url)
         delete_label = "🗑️"
         # encode page in callback data so delete button can refresh the correct page
         keyboard.append([
             InlineKeyboardButton(f"🧠 {item_num}", callback_data=f"summarize_url_{url_hash}"),
+            InlineKeyboardButton(f"📖 {item_num}", callback_data=f"read_url_{url_hash}"),
             InlineKeyboardButton(f"{delete_label} {item_num}. {title[:20]}...", callback_data=f"del_{url_hash}_{page}")
         ])
     
@@ -1233,10 +1236,14 @@ async def filter_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Create summarize button for each item
         if url.startswith('http'):
+            from .user_storage import save_temp_url
             url_hash = stable_hash(raw_url)[:8]
+            save_temp_url(url_hash, telegram_id, raw_url)
             summarize_label = t('btn_summarize', user_lang)
+            read_label = t('btn_read', user_lang)
             keyboard.append([
-                InlineKeyboardButton(f"🧠 {i}. {summarize_label}", callback_data=f"summarize_url_{url_hash}")
+                InlineKeyboardButton(f"🧠 {i}. {summarize_label}", callback_data=f"summarize_url_{url_hash}"),
+                InlineKeyboardButton(f"📖 {i}. {read_label}", callback_data=f"read_url_{url_hash}")
             ])
 
     # Add a back button
@@ -1504,10 +1511,11 @@ async def semantic_search_command(update: Update, context: ContextTypes.DEFAULT_
             url_hash = stable_hash(url)[:8]
             save_temp_url(url_hash, telegram_id, url)
             current_row.append(InlineKeyboardButton(f"🧠 {idx}", callback_data=f"summarize_url_{url_hash}"))
+            current_row.append(InlineKeyboardButton(f"📖 {idx}", callback_data=f"read_url_{url_hash}"))
         else:
             lines.append(f"{idx}. {title} `score={score}`")
 
-        if len(current_row) >= 5:
+        if len(current_row) >= 4:
             keyboard.append(current_row)
             current_row = []
 
@@ -1707,11 +1715,17 @@ async def random_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         message += f" `{date_str}`"
 
     from .security_utils import stable_hash
+    from .user_storage import save_temp_url
     url_hash = stable_hash(url)[:8]
+    save_temp_url(url_hash, telegram_id, url)
 
     summarize_label = t('btn_summarize', user_lang)
+    read_label = t('btn_read', user_lang)
     reply_markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton(summarize_label, callback_data=f"summarize_url_{url_hash}")]
+        [
+            InlineKeyboardButton(summarize_label, callback_data=f"summarize_url_{url_hash}"),
+            InlineKeyboardButton(read_label, callback_data=f"read_url_{url_hash}")
+        ]
     ])
 
     await update.message.reply_text(message, parse_mode='Markdown', reply_markup=reply_markup)
@@ -1809,11 +1823,10 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Format results
         message = t('search_results', user_lang, query=safe_query, count=len(results))
 
-        from .user_storage import save_temp_search_result
+        from .user_storage import save_temp_search_result, save_temp_url
         from .security_utils import stable_hash
 
         keyboard = []
-        buttons_row = []
 
         for i, article in enumerate(results[:10], 1):
             title = article.get('title', '')[:60]
@@ -1822,24 +1835,23 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Escape title for security
             safe_title = escape_markdown_v1(title)
 
-            url = sanitize_markdown_url(article.get('url', ''))
+            raw_url = article.get('url', '')
+            url = sanitize_markdown_url(raw_url)
             source = article.get('source', '')
             # Escape source for security
             safe_source = escape_markdown_v1(source)
 
             message += f"{i}. [{safe_title}]({url}) _{safe_source}_\n"
 
-            if url:
-                url_hash = stable_hash(url)[:8]
-                save_temp_search_result(url_hash, telegram_id, url, original_title)
-                buttons_row.append(InlineKeyboardButton(f"💾 {i}", callback_data=f"save_search_{url_hash}"))
+            if raw_url:
+                url_hash = stable_hash(raw_url)[:8]
+                save_temp_search_result(url_hash, telegram_id, raw_url, original_title)
+                save_temp_url(url_hash, telegram_id, raw_url)
 
-                if len(buttons_row) == 5:
-                    keyboard.append(buttons_row)
-                    buttons_row = []
-
-        if buttons_row:
-            keyboard.append(buttons_row)
+                keyboard.append([
+                    InlineKeyboardButton(f"💾 {i}", callback_data=f"save_search_{url_hash}"),
+                    InlineKeyboardButton(f"📖 {i}", callback_data=f"read_url_{url_hash}")
+                ])
 
         reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
         
