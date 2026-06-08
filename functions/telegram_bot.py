@@ -724,6 +724,7 @@ async def _render_saved_page(update_or_query, telegram_id: int, user_lang: str, 
         delete_label = "🗑️"
         # encode page in callback data so delete button can refresh the correct page
         keyboard.append([
+            InlineKeyboardButton(f"📖 {item_num}", callback_data=f"read_url_{url_hash}"),
             InlineKeyboardButton(f"🧠 {item_num}", callback_data=f"summarize_url_{url_hash}"),
             InlineKeyboardButton(f"{delete_label} {item_num}. {title[:20]}...", callback_data=f"del_{url_hash}_{page}")
         ])
@@ -1231,11 +1232,13 @@ async def filter_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             message += f"{i}. {title}\n"
 
-        # Create summarize button for each item
+        # Create read and summarize buttons for each item
         if url.startswith('http'):
             url_hash = stable_hash(raw_url)[:8]
             summarize_label = t('btn_summarize', user_lang)
+            read_label = t('btn_read', user_lang)
             keyboard.append([
+                InlineKeyboardButton(f"📖 {i}. {read_label}", callback_data=f"read_url_{url_hash}"),
                 InlineKeyboardButton(f"🧠 {i}. {summarize_label}", callback_data=f"summarize_url_{url_hash}")
             ])
 
@@ -1710,8 +1713,12 @@ async def random_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url_hash = stable_hash(url)[:8]
 
     summarize_label = t('btn_summarize', user_lang)
+    read_label = t('btn_read', user_lang)
     reply_markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton(summarize_label, callback_data=f"summarize_url_{url_hash}")]
+        [
+            InlineKeyboardButton(read_label, callback_data=f"read_url_{url_hash}"),
+            InlineKeyboardButton(summarize_label, callback_data=f"summarize_url_{url_hash}")
+        ]
     ])
 
     await update.message.reply_text(message, parse_mode='Markdown', reply_markup=reply_markup)
@@ -1832,9 +1839,11 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if url:
                 url_hash = stable_hash(url)[:8]
                 save_temp_search_result(url_hash, telegram_id, url, original_title)
+                buttons_row.append(InlineKeyboardButton(f"📖 {i}", callback_data=f"read_url_{url_hash}"))
+                buttons_row.append(InlineKeyboardButton(f"🧠 {i}", callback_data=f"summarize_url_{url_hash}"))
                 buttons_row.append(InlineKeyboardButton(f"💾 {i}", callback_data=f"save_search_{url_hash}"))
 
-                if len(buttons_row) == 5:
+                if len(buttons_row) >= 3:
                     keyboard.append(buttons_row)
                     buttons_row = []
 
@@ -2261,7 +2270,7 @@ async def summarize_url_callback(update: Update, context: ContextTypes.DEFAULT_T
     url = get_temp_url(url_hash, telegram_id)
 
     if not url:
-        from .user_storage import get_all_saved_articles, save_temp_url
+        from .user_storage import get_all_saved_articles, save_temp_url, get_temp_search_result
         from .security_utils import stable_hash
 
         articles = get_all_saved_articles(telegram_id)
@@ -2271,6 +2280,12 @@ async def summarize_url_callback(update: Update, context: ContextTypes.DEFAULT_T
                 url = article_url
                 save_temp_url(url_hash, telegram_id, url)
                 break
+
+        if not url:
+            search_result = get_temp_search_result(url_hash, telegram_id)
+            if search_result and 'url' in search_result:
+                url = search_result['url']
+                save_temp_url(url_hash, telegram_id, url)
 
     if not url:
         await query.answer("Link expired. Please send the link again.", show_alert=True)
@@ -2380,7 +2395,7 @@ async def read_url_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = get_temp_url(url_hash, telegram_id)
 
     if not url:
-        from .user_storage import get_all_saved_articles
+        from .user_storage import get_all_saved_articles, get_temp_search_result
         from .security_utils import stable_hash
 
         articles = get_all_saved_articles(telegram_id)
@@ -2389,6 +2404,11 @@ async def read_url_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if stable_hash(article_url)[:8] == url_hash:
                 url = article_url
                 break
+
+        if not url:
+            search_result = get_temp_search_result(url_hash, telegram_id)
+            if search_result and 'url' in search_result:
+                url = search_result['url']
 
     if not url:
         await query.answer("Link expired. Please send the link again.", show_alert=True)
