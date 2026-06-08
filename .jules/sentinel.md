@@ -27,3 +27,8 @@
 **Vulnerability:** The internal API authentication check `_require_internal_secret` in `functions/main.py` was implemented to fail open if the `INTERNAL_SECRET` environment variable was missing or empty (`if expected and not (...)`).
 **Learning:** Checking for the presence of an expected secret via `if expected` allows the code block to be bypassed if `expected` evaluates to false, making the authorization check fail open and allowing unauthorized access. Also, missing headers would pass `None` to `hmac.compare_digest`, causing a `TypeError`.
 **Prevention:** Always implement authentication and authorization checks using a fail-closed conditional structure (e.g., `if not expected or ...`), ensuring that missing environment variables block access rather than bypassing the check. Also, provide fallback strings when reading headers for cryptographic checks.
+
+## 2024-06-05 - [HIGH] Prevent HTTP Parameter Pollution via F-string URL Construction
+**Vulnerability:** The Algolia HN API URL in `functions/deep_dive.py` was built using f-string string interpolation: `api_url = f"https://hn.algolia.com/api/v1/search?query={url}&tags=story&hitsPerPage=3"`. This allowed for HTTP Parameter Pollution or manipulation if the `url` variable contained special URL characters (e.g., `&`, `=`, `#`).
+**Learning:** Constructing HTTP queries with basic string formatting is prone to injection flaws and URL malformation because variables are not safely URL-encoded before being appended.
+**Prevention:** Always use the dedicated `params` dictionary argument provided by modern HTTP clients (like `httpx.get(url, params=...)` or `requests.get(url, params=...)`) to ensure all user input or variable data is automatically and safely URL-encoded prior to transmission.
