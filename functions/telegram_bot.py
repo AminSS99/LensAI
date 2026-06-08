@@ -132,7 +132,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     safe_username = escape_markdown_v1(username)
     
     welcome_message = t('welcome', user_lang, username=safe_username)
-    await update.message.reply_text(
+    reply_msg = update.message or update.callback_query.message
+    await reply_msg.reply_text(
         welcome_message, 
         parse_mode='Markdown'
         # No reply_markup - using native bot commands instead
@@ -147,7 +148,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     telegram_id = update.effective_user.id
     user_lang = get_user_language(telegram_id)
     
-    await update.message.reply_text(t('help_text', user_lang), parse_mode='Markdown')
+    reply_msg = update.message or update.callback_query.message
+    await reply_msg.reply_text(t('help_text', user_lang), parse_mode='Markdown')
 
 
 async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -442,7 +444,8 @@ async def schedule_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         current_text = f"\n\n_Текущее время: {current_time}_" if user_lang == 'ru' else f"\n\n_Current time: {current_time}_"
         header += current_text
     
-    await update.message.reply_text(
+    reply_msg = update.message or update.callback_query.message
+    await reply_msg.reply_text(
         header,
         reply_markup=reply_markup,
         parse_mode='Markdown'
@@ -544,7 +547,8 @@ async def sources_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await update.message.reply_text(
+    reply_msg = update.message or update.callback_query.message
+    await reply_msg.reply_text(
         t('sources_header', user_lang),
         reply_markup=reply_markup,
         parse_mode='Markdown'
@@ -653,7 +657,19 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     status_message += f"\n\nQuiet hours: {quiet_text}"
 
-    await update.message.reply_text(status_message, parse_mode='Markdown')
+    keyboard = [
+        [
+            InlineKeyboardButton("⚙️ Sources" if user_lang == 'en' else "⚙️ Источники", callback_data='manage_sources'),
+            InlineKeyboardButton("⏰ Schedule" if user_lang == 'en' else "⏰ Расписание", callback_data='manage_schedule')
+        ],
+        [
+            InlineKeyboardButton("🌍 Timezone" if user_lang == 'en' else "🌍 Часовой пояс", callback_data='manage_timezone'),
+            InlineKeyboardButton("🌐 Language" if user_lang == 'en' else "🌐 Язык", callback_data='manage_language')
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await update.message.reply_text(status_message, parse_mode='Markdown', reply_markup=reply_markup)
 
 
 # ============ SAVED ARTICLES ============
@@ -1371,10 +1387,11 @@ async def timezone_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     telegram_id = update.effective_user.id
     from .database import set_user_timezone, get_user
 
+    reply_msg = update.message or update.callback_query.message
     if not context.args:
         user = get_user(telegram_id) or {}
         current_tz = user.get("timezone", "Asia/Baku")
-        await update.message.reply_text(
+        await reply_msg.reply_text(
             f"Current timezone: {current_tz}\nUse: /timezone Region/City\nExample: /timezone Europe/Berlin"
         )
         return
@@ -1383,11 +1400,11 @@ async def timezone_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         ZoneInfo(timezone_name)
     except Exception:
-        await update.message.reply_text("Invalid timezone. Use IANA format like Europe/Berlin or Asia/Baku.")
+        await reply_msg.reply_text("Invalid timezone. Use IANA format like Europe/Berlin or Asia/Baku.")
         return
 
     set_user_timezone(telegram_id, timezone_name)
-    await update.message.reply_text(f"Timezone updated to {timezone_name}.")
+    await reply_msg.reply_text(f"Timezone updated to {timezone_name}.")
 
 
 async def quiet_hours_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1582,6 +1599,22 @@ async def admin_status_command(update: Update, context: ContextTypes.DEFAULT_TYP
     except Exception:
         await update.message.reply_text(message)
 
+
+
+async def manage_settings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle settings management buttons from status command."""
+    query = update.callback_query
+    await query.answer()
+
+    data = query.data
+    if data == 'manage_sources':
+        await sources_command(update, context)
+    elif data == 'manage_schedule':
+        await schedule_command(update, context)
+    elif data == 'manage_timezone':
+        await timezone_command(update, context)
+    elif data == 'manage_language':
+        await language_command(update, context)
 
 async def delete_article_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle delete article button press."""
@@ -1889,7 +1922,8 @@ async def language_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await update.message.reply_text(
+    reply_msg = update.message or update.callback_query.message
+    await reply_msg.reply_text(
         t('select_language', current_lang),
         reply_markup=reply_markup,
         parse_mode='Markdown'
@@ -2949,6 +2983,7 @@ def create_bot_application() -> Application:
     application.add_handler(CommandHandler("unstalk", unstalk_command))
 
     # Add callback query handlers for inline buttons
+    application.add_handler(CallbackQueryHandler(manage_settings_callback, pattern='^manage_'))
     application.add_handler(CallbackQueryHandler(toggle_source_callback, pattern='^toggle_'))
     application.add_handler(CallbackQueryHandler(language_callback, pattern='^lang_'))
     application.add_handler(CallbackQueryHandler(schedule_callback, pattern='^schedule_'))
