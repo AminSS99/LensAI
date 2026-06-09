@@ -2395,10 +2395,23 @@ async def summarize_url_callback(update: Update, context: ContextTypes.DEFAULT_T
         )
 
         # Send back summary
+        import urllib.parse
+        encoded_url = urllib.parse.quote(url)
+        share_url = f"https://t.me/share/url?url={encoded_url}"
+
+        keyboard = [
+            [
+                InlineKeyboardButton("🌐 Original", url=url),
+                InlineKeyboardButton("📖 Read", callback_data=f"read_url_{url_hash}"),
+                InlineKeyboardButton("↗️ Share", url=share_url)
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
         try:
-            await query.message.reply_text(answer, parse_mode='Markdown', disable_web_page_preview=True)
+            await query.message.reply_text(answer, parse_mode='Markdown', disable_web_page_preview=True, reply_markup=reply_markup)
         except Exception:
-            await query.message.reply_text(answer, disable_web_page_preview=True)
+            await query.message.reply_text(answer, disable_web_page_preview=True, reply_markup=reply_markup)
 
     except Exception as e:
         error_msg = str(e)[:80]
@@ -2489,17 +2502,43 @@ async def read_url_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Add title if available
         title = ""
+        word_count = len(text_content.split())
+        read_time = max(1, word_count // 200)
+        read_time_str = f"~{read_time} мин" if user_lang == 'ru' else f"~{read_time} min"
+
         if soup.title and soup.title.string:
-            title = f"**{soup.title.string.strip()}**\n\n"
+            from .security_utils import escape_markdown_v1
+            safe_title = escape_markdown_v1(soup.title.string.strip())
+            title = f"**{safe_title}** ⏱ _{read_time_str}_\n\n"
 
         full_text = title + text_content
         chunks = split_message_simple(full_text, max_length=4000)
 
-        for chunk in chunks:
+        import urllib.parse
+        encoded_url = urllib.parse.quote(url)
+        share_url = f"https://t.me/share/url?url={encoded_url}"
+
+        keyboard = [
+            [
+                InlineKeyboardButton("🌐 Original", url=url),
+                InlineKeyboardButton("🧠 Summarize", callback_data=f"summarize_url_{url_hash}"),
+                InlineKeyboardButton("↗️ Share", url=share_url)
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        for i, chunk in enumerate(chunks):
+            is_last = (i == len(chunks) - 1)
             try:
-                await query.message.reply_text(chunk, parse_mode='Markdown', disable_web_page_preview=True)
+                if is_last:
+                    await query.message.reply_text(chunk, parse_mode='Markdown', disable_web_page_preview=True, reply_markup=reply_markup)
+                else:
+                    await query.message.reply_text(chunk, parse_mode='Markdown', disable_web_page_preview=True)
             except Exception:
-                await query.message.reply_text(chunk, disable_web_page_preview=True)
+                if is_last:
+                    await query.message.reply_text(chunk, disable_web_page_preview=True, reply_markup=reply_markup)
+                else:
+                    await query.message.reply_text(chunk, disable_web_page_preview=True)
 
     except Exception as e:
         error_msg = str(e)[:80]
