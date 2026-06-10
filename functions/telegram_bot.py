@@ -6,6 +6,7 @@ Handles all Telegram bot interactions and commands.
 import os
 import re
 import asyncio
+import urllib.parse
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, constants
@@ -742,7 +743,8 @@ async def _render_saved_page(update_or_query, telegram_id: int, user_lang: str, 
         keyboard.append([
             InlineKeyboardButton(f"📖 {item_num}", callback_data=f"read_url_{url_hash}"),
             InlineKeyboardButton(f"🧠 {item_num}", callback_data=f"summarize_url_{url_hash}"),
-            InlineKeyboardButton(f"{delete_label} {item_num}. {title[:20]}...", callback_data=f"del_{url_hash}_{page}")
+            InlineKeyboardButton(f"↗️ {item_num}", url=f"https://t.me/share/url?url={urllib.parse.quote(url)}&text={urllib.parse.quote(title)}"),
+            InlineKeyboardButton(f"{delete_label} {item_num}. {title[:15]}...", callback_data=f"del_{url_hash}_{page}")
         ])
     
     message += t('saved_footer', user_lang)
@@ -1255,7 +1257,8 @@ async def filter_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             read_label = t('btn_read', user_lang)
             keyboard.append([
                 InlineKeyboardButton(f"📖 {i}. {read_label}", callback_data=f"read_url_{url_hash}"),
-                InlineKeyboardButton(f"🧠 {i}. {summarize_label}", callback_data=f"summarize_url_{url_hash}")
+                InlineKeyboardButton(f"🧠 {i}. {summarize_label}", callback_data=f"summarize_url_{url_hash}"),
+                InlineKeyboardButton(f"↗️ {i}", url=f"https://t.me/share/url?url={urllib.parse.quote(url)}&text={urllib.parse.quote(title)}")
             ])
 
     # Add a back button
@@ -1750,7 +1753,8 @@ async def random_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup([
         [
             InlineKeyboardButton(read_label, callback_data=f"read_url_{url_hash}"),
-            InlineKeyboardButton(summarize_label, callback_data=f"summarize_url_{url_hash}")
+            InlineKeyboardButton(summarize_label, callback_data=f"summarize_url_{url_hash}"),
+            InlineKeyboardButton("↗️", url=f"https://t.me/share/url?url={urllib.parse.quote(url)}&text={urllib.parse.quote(title)}")
         ]
     ])
 
@@ -1875,8 +1879,9 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 buttons_row.append(InlineKeyboardButton(f"📖 {i}", callback_data=f"read_url_{url_hash}"))
                 buttons_row.append(InlineKeyboardButton(f"🧠 {i}", callback_data=f"summarize_url_{url_hash}"))
                 buttons_row.append(InlineKeyboardButton(f"💾 {i}", callback_data=f"save_search_{url_hash}"))
+                buttons_row.append(InlineKeyboardButton(f"↗️ {i}", url=f"https://t.me/share/url?url={urllib.parse.quote(url)}&text={urllib.parse.quote(original_title)}"))
 
-                if len(buttons_row) >= 3:
+                if len(buttons_row) >= 4:
                     keyboard.append(buttons_row)
                     buttons_row = []
 
