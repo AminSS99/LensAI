@@ -761,9 +761,13 @@ async def _render_saved_page(update_or_query, telegram_id: int, user_lang: str, 
     if nav_buttons:
         keyboard.append(nav_buttons)
 
-    # Add Clear All button
+    # Add Export and Clear All buttons
     clear_all_text = t('clear_all_btn', user_lang)
-    keyboard.append([InlineKeyboardButton(clear_all_text, callback_data=f"clear_all_prompt_{page}")])
+    export_text = t('export_btn', user_lang)
+    keyboard.append([
+        InlineKeyboardButton(export_text, callback_data="do_export_prompt_all"),
+        InlineKeyboardButton(clear_all_text, callback_data=f"clear_all_prompt_{page}")
+    ])
 
     reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
     
@@ -923,7 +927,7 @@ async def _do_export(message_obj, telegram_id: int, user_lang: str, export_forma
         return
 
     # If format not specified, show inline keyboard to select
-    if not export_format:
+    if not export_format or export_format == 'prompt':
         keyboard = [
             [
                 InlineKeyboardButton("📄 Markdown (.md)", callback_data=f"do_export_md_{category_filter or 'all'}"),
@@ -1695,7 +1699,10 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for source, count in sources.most_common(5):
             message += f"• {source}: {count}\n"
 
-    await update.message.reply_text(message, parse_mode='Markdown')
+    export_text = t('export_btn', user_lang)
+    reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton(export_text, callback_data="do_export_prompt_all")]])
+
+    await update.message.reply_text(message, parse_mode='Markdown', reply_markup=reply_markup)
 
 # ============ ADMIN STATUS ============
 
