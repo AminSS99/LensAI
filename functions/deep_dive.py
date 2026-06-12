@@ -126,7 +126,7 @@ def extract_github_repo(url: str) -> Optional[str]:
     """Extract GitHub repo path from URL if applicable."""
     if not url:
         return None
-    match = re.search(r'github\.com/([^/]+/[^/]+)', url)
+    match = re.search(r'github\.com/([A-Za-z0-9\-]+/[A-Za-z0-9\-_.]+)', url)
     if match:
         return match.group(1)
     return None

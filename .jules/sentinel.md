@@ -32,3 +32,8 @@
 **Vulnerability:** The Algolia HN API URL in `functions/deep_dive.py` was built using f-string string interpolation: `api_url = f"https://hn.algolia.com/api/v1/search?query={url}&tags=story&hitsPerPage=3"`. This allowed for HTTP Parameter Pollution or manipulation if the `url` variable contained special URL characters (e.g., `&`, `=`, `#`).
 **Learning:** Constructing HTTP queries with basic string formatting is prone to injection flaws and URL malformation because variables are not safely URL-encoded before being appended.
 **Prevention:** Always use the dedicated `params` dictionary argument provided by modern HTTP clients (like `httpx.get(url, params=...)` or `requests.get(url, params=...)`) to ensure all user input or variable data is automatically and safely URL-encoded prior to transmission.
+
+## 2024-06-11 - [HIGH] Fix SSRF and Path Traversal in GitHub URL extraction
+**Vulnerability:** The function `extract_github_repo` in `functions/deep_dive.py` used a permissive regular expression `r'github\.com/([^/]+/[^/]+)'` to extract the repository path. This allowed URL-encoded path traversal payloads (e.g., `%2F..`) and query parameters to be extracted and directly interpolated into internal GitHub API requests (`https://api.github.com/repos/{repo}`).
+**Learning:** Using overly permissive capture groups (like `[^/]+`) for URL parsing allows attackers to include malicious characters that can alter the structure of downstream network requests.
+**Prevention:** Always use strict character classes (e.g., `[A-Za-z0-9\-]+/[A-Za-z0-9\-_.]+`) when extracting and validating repository names or similar identifiers from URLs to prevent injection and traversal vulnerabilities.
