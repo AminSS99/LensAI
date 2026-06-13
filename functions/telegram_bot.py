@@ -1634,14 +1634,16 @@ async def delete_article_callback(update: Update, context: ContextTypes.DEFAULT_
     user_lang = get_user_language(telegram_id)
     
     # Get the URL hash and page from callback data
-    data = query.data  # e.g., "del_abc12345_0"
+    data = query.data  # e.g., "del_abc12345_0" or "del_abc12345_random"
     parts = data.split('_')
     if len(parts) >= 2:
         url_hash = parts[1]
     else:
         url_hash = data.replace('del_', '')
 
-    page = int(parts[2]) if len(parts) > 2 else 0
+    page = parts[2] if len(parts) > 2 else 0
+    if isinstance(page, str) and page.isdigit():
+        page = int(page)
     
     # Find the article with matching hash
     from .security_utils import stable_hash
@@ -1660,8 +1662,14 @@ async def delete_article_callback(update: Update, context: ContextTypes.DEFAULT_
     else:
         await query.answer("Article deleted!", show_alert=False)
 
-    # Refresh the current page
-    await _render_saved_page(query, telegram_id, user_lang, page, is_callback=True)
+    # Conditionally handle the response rendering
+    if page == 'random':
+        # Refresh with a new random article by deleting the old message and calling random_command
+        await query.message.delete()
+        await random_command(update, context)
+    else:
+        # Refresh the current page
+        await _render_saved_page(query, telegram_id, user_lang, page, is_callback=True)
 
 
 
@@ -1762,6 +1770,9 @@ async def random_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton(read_label, callback_data=f"read_url_{url_hash}"),
             InlineKeyboardButton(summarize_label, callback_data=f"summarize_url_{url_hash}"),
             InlineKeyboardButton("↗️", url=f"https://t.me/share/url?url={urllib.parse.quote(url)}&text={urllib.parse.quote(title)}")
+        ],
+        [
+            InlineKeyboardButton("🗑️ Delete", callback_data=f"del_{url_hash}_random")
         ]
     ])
 
