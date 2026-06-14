@@ -182,6 +182,7 @@ Use /sources to toggle sources""",
         'btn_schedule': "⏰ Schedule",
         'btn_help': "❓ Help",
         'btn_share': "📤 Share",
+        'btn_next_random': "🎲 Next Random",
     },
     'ru': {
         # Existing keys
@@ -360,6 +361,7 @@ _Работает локально - настройки сохранятся п�
         'btn_schedule': "⏰ Расписание",
         'btn_help': "❓ Помощь",
         'btn_share': "📤 Поделиться",
+        'btn_next_random': "🎲 Следующая случайная",
     }
 }
 
