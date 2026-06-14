@@ -1720,8 +1720,10 @@ async def random_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     articles = get_all_saved_articles(telegram_id)
 
+    msg_obj = update.message if update.message else update.callback_query.message
+
     if not articles:
-        await update.message.reply_text(t('no_saved', user_lang), parse_mode='Markdown')
+        await msg_obj.reply_text(t('no_saved', user_lang), parse_mode='Markdown')
         return
 
     article = random.choice(articles)
@@ -1762,10 +1764,21 @@ async def random_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton(read_label, callback_data=f"read_url_{url_hash}"),
             InlineKeyboardButton(summarize_label, callback_data=f"summarize_url_{url_hash}"),
             InlineKeyboardButton("↗️", url=f"https://t.me/share/url?url={urllib.parse.quote(url)}&text={urllib.parse.quote(title)}")
+        ],
+        [
+            InlineKeyboardButton(t('btn_next_random', user_lang), callback_data="random_next")
         ]
     ])
 
-    await update.message.reply_text(message, parse_mode='Markdown', reply_markup=reply_markup)
+    await msg_obj.reply_text(message, parse_mode='Markdown', reply_markup=reply_markup)
+
+
+async def random_next_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle next random article button."""
+    query = update.callback_query
+    await query.answer()
+    await query.message.delete()
+    await random_command(update, context)
 
 
 async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3056,6 +3069,7 @@ def create_bot_application() -> Application:
     application.add_handler(CallbackQueryHandler(predict_save_callback, pattern='^predict_save_'))
     application.add_handler(CallbackQueryHandler(save_search_callback, pattern='^save_search_'))
     application.add_handler(CallbackQueryHandler(export_callback, pattern='^do_export_'))
+    application.add_handler(CallbackQueryHandler(random_next_callback, pattern='^random_next$'))
     
     # Add message handler for buttons and Q&A (handles any text that isn't a command)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
