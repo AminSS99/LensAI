@@ -2605,8 +2605,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # The big persistent keyboard has been disabled, so these checks are no longer needed.
     # Users should use the /slash commands from the menu.
     
-    # Check if it's a URL to save
-    if user_message.startswith('http://') or user_message.startswith('https://'):
+    # Check if it's a pure URL to save
+    import re
+    is_pure_url = bool(re.match(r'^https?://[^\s]+$', user_message.strip()))
+    if is_pure_url:
         from .user_storage import save_article, save_temp_url
         from .security_utils import stable_hash, is_safe_url
         import httpx
@@ -2681,6 +2683,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     await context.bot.send_chat_action(chat_id=chat_id, action=constants.ChatAction.TYPING)
     
+    # Context extraction from replied messages
+    reply_context = ""
+    if update.message.reply_to_message:
+        reply_text = update.message.reply_to_message.text or update.message.reply_to_message.caption or ""
+        if reply_text:
+            reply_context = f"\n\nContext from replied message:\n{reply_text[:1500]}"
+
     lang_instruction = ""
     if user_lang == 'ru':
         lang_instruction = " Respond in Russian."
@@ -2702,7 +2711,7 @@ Users may ask you:
 
 Be concise, informative, and friendly. Use emojis sparingly. 
 If the question is about a specific news item, provide context and explain its significance.
-Keep responses under 300 words unless more detail is needed.{lang_instruction}"""
+Keep responses under 300 words unless more detail is needed.{lang_instruction}{reply_context}"""
                 },
                 {"role": "user", "content": user_message}
             ],
