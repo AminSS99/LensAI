@@ -2605,8 +2605,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # The big persistent keyboard has been disabled, so these checks are no longer needed.
     # Users should use the /slash commands from the menu.
     
+    import re
     # Check if it's a URL to save
-    if user_message.startswith('http://') or user_message.startswith('https://'):
+    if re.match(r'^https?://[^\s]+$', user_message):
         from .user_storage import save_article, save_temp_url
         from .security_utils import stable_hash, is_safe_url
         import httpx
@@ -2678,6 +2679,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(t('rate_limited', user_lang, seconds='60'))
         return
     
+    reply_context = ""
+    if update.message.reply_to_message:
+        reply_context = update.message.reply_to_message.text or update.message.reply_to_message.caption or ""
+
+    if reply_context:
+        user_message = f"Context from replied message: {reply_context}\n\nUser Question: {user_message}"
+
     chat_id = update.effective_chat.id
     await context.bot.send_chat_action(chat_id=chat_id, action=constants.ChatAction.TYPING)
     
