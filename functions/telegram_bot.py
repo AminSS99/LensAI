@@ -912,6 +912,7 @@ async def _do_export(message_obj, telegram_id: int, user_lang: str, export_forma
     from .user_storage import get_all_saved_articles
     import io
     import csv
+    import html
 
     def _clean_export_value(value) -> str:
         if value is None:
@@ -932,11 +933,14 @@ async def _do_export(message_obj, telegram_id: int, user_lang: str, export_forma
             [
                 InlineKeyboardButton("📄 Markdown (.md)", callback_data=f"do_export_md_{category_filter or 'all'}"),
                 InlineKeyboardButton("📊 Excel (.csv)", callback_data=f"do_export_csv_{category_filter or 'all'}")
+            ],
+            [
+                InlineKeyboardButton("🔖 Browser Bookmarks (.html)", callback_data=f"do_export_html_{category_filter or 'all'}")
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await message_obj.reply_text(
-            "📦 *Choose export format:*\n\n_Markdown_ is great for notes like Obsidian or Notion.\n_Excel_ is great for spreadsheets.",
+            "📦 *Choose export format:*\n\n_Markdown_ is great for notes.\n_Excel_ is great for spreadsheets.\n_Bookmarks_ imports directly to your browser.",
             parse_mode='Markdown',
             reply_markup=reply_markup
         )
@@ -963,6 +967,35 @@ async def _do_export(message_obj, telegram_id: int, user_lang: str, export_forma
         # Write UTF-8 BOM so Excel opens it correctly
         document = io.BytesIO(b'\xef\xbb\xbf' + output.getvalue().encode('utf-8'))
         document.name = f"lensai_saved_articles{filename_category}_{timestamp}.csv"
+    elif export_format == 'html':
+        # Browser Bookmark export
+        lines = [
+            "<!DOCTYPE NETSCAPE-Bookmark-file-1>",
+            "<META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=UTF-8\">",
+            "<TITLE>Bookmarks</TITLE>",
+            "<H1>Bookmarks</H1>",
+            "<DL><p>",
+            "    <DT><H3>LensAI Saved Articles</H3>",
+            "    <DL><p>"
+        ]
+
+        for article in articles:
+            title = _clean_export_value(article.get('title')) or "Untitled"
+            url = _clean_export_value(article.get('url'))
+
+            safe_title = html.escape(title)
+            safe_url = html.escape(url) if url else ""
+
+            lines.append(f'        <DT><A HREF="{safe_url}">{safe_title}</A>')
+
+        lines.extend([
+            "    </DL><p>",
+            "</DL><p>"
+        ])
+
+        document = io.BytesIO("\n".join(lines).encode('utf-8'))
+        document.name = f"lensai_saved_articles{filename_category}_{timestamp}.html"
+
     else:
         # Markdown export
         lines = [
@@ -1020,6 +1053,8 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             export_format = 'md'
         elif arg_lower in ['csv', 'excel']:
             export_format = 'csv'
+        elif arg_lower in ['html', 'bookmarks', 'bookmark']:
+            export_format = 'html'
         else:
             category_filter = arg_lower
 
