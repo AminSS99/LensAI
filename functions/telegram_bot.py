@@ -932,11 +932,14 @@ async def _do_export(message_obj, telegram_id: int, user_lang: str, export_forma
             [
                 InlineKeyboardButton("📄 Markdown (.md)", callback_data=f"do_export_md_{category_filter or 'all'}"),
                 InlineKeyboardButton("📊 Excel (.csv)", callback_data=f"do_export_csv_{category_filter or 'all'}")
+            ],
+            [
+                InlineKeyboardButton("🔖 Browser Bookmarks (.html)", callback_data=f"do_export_html_{category_filter or 'all'}")
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await message_obj.reply_text(
-            "📦 *Choose export format:*\n\n_Markdown_ is great for notes like Obsidian or Notion.\n_Excel_ is great for spreadsheets.",
+            "📦 *Choose export format:*\n\n_Markdown_ is great for notes like Obsidian or Notion.\n_Excel_ is great for spreadsheets.\n_Browser Bookmarks_ lets you import directly into any web browser.",
             parse_mode='Markdown',
             reply_markup=reply_markup
         )
@@ -945,7 +948,39 @@ async def _do_export(message_obj, telegram_id: int, user_lang: str, export_forma
     filename_category = f"_{category_filter}" if category_filter else ""
     timestamp = datetime.now(timezone.utc).strftime('%Y%m%d')
 
-    if export_format == 'csv':
+    if export_format == 'html':
+        import html
+        lines = [
+            "<!DOCTYPE NETSCAPE-Bookmark-file-1>",
+            "<!-- This is an automatically generated file.",
+            "     It will be read and overwritten.",
+            "     DO NOT EDIT! -->",
+            "<META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=UTF-8\">",
+            "<TITLE>Bookmarks</TITLE>",
+            "<H1>Bookmarks</H1>",
+            "<DL><p>",
+            "    <DT><H3 ADD_DATE=\"0\" LAST_MODIFIED=\"0\">LensAI Saved Articles</H3>",
+            "    <DL><p>"
+        ]
+
+        for article in articles:
+            title = _clean_export_value(article.get('title')) or "Untitled"
+            url = _clean_export_value(article.get('url')) or ""
+            # Some platforms use epoch timestamps, default to 0 if not parsable
+            add_date = "0"
+
+            escaped_title = html.escape(title)
+            escaped_url = html.escape(url)
+
+            lines.append(f"        <DT><A HREF=\"{escaped_url}\" ADD_DATE=\"{add_date}\">{escaped_title}</A>")
+
+        lines.append("    </DL><p>")
+        lines.append("</DL><p>")
+
+        document = io.BytesIO("\n".join(lines).encode('utf-8'))
+        document.name = f"lensai_saved_articles{filename_category}_{timestamp}.html"
+
+    elif export_format == 'csv':
         output = io.StringIO()
         writer = csv.writer(output)
         writer.writerow(['Title', 'Category', 'Source', 'Saved At', 'URL'])
@@ -1020,6 +1055,8 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             export_format = 'md'
         elif arg_lower in ['csv', 'excel']:
             export_format = 'csv'
+        elif arg_lower in ['html', 'bookmarks']:
+            export_format = 'html'
         else:
             category_filter = arg_lower
 
