@@ -918,7 +918,10 @@ async def _do_export(message_obj, telegram_id: int, user_lang: str, export_forma
             return ""
         if hasattr(value, "isoformat"):
             value = value.isoformat()
-        return str(value).replace("\r", " ").replace("\n", " ").strip()
+        val_str = str(value).replace("\r", " ").replace("\n", " ").strip()
+        if val_str and val_str[0] in ('=', '+', '-', '@'):
+            val_str = "'" + val_str
+        return val_str
 
     articles = get_all_saved_articles(telegram_id, category=category_filter)
 
