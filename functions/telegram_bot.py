@@ -1373,7 +1373,13 @@ async def recap_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = t('recap_header', user_lang)
     
     # Show top 5 recent articles
-    from .security_utils import sanitize_markdown_url
+    from .security_utils import sanitize_markdown_url, stable_hash
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    keyboard = []
+
+    summarize_label = t('btn_summarize', user_lang)
+    read_label = t('btn_read', user_lang)
+
     for i, article in enumerate(weekly_articles[:5], 1):
         title = article.get('title', 'Untitled')[:50]
         url = sanitize_markdown_url(article.get('url', ''))
@@ -1384,13 +1390,22 @@ async def recap_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             message += f"{i}. {emoji} [{title}]({url})\n"
         else:
             message += f"{i}. {emoji} {title}\n"
+
+        if url.startswith('http'):
+            url_hash = stable_hash(article.get('url', ''))[:8]
+            keyboard.append([
+                InlineKeyboardButton(f"📖 {i}. {read_label}", callback_data=f"read_url_{url_hash}"),
+                InlineKeyboardButton(f"🧠 {i}. {summarize_label}", callback_data=f"summarize_url_{url_hash}")
+            ])
+
+    reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
     
     message += f"\n_Total: {len(weekly_articles)} articles this week_"
     
     try:
-        await update.message.reply_text(message, parse_mode='Markdown', disable_web_page_preview=True)
+        await update.message.reply_text(message, parse_mode='Markdown', disable_web_page_preview=True, reply_markup=reply_markup)
     except Exception:
-        await update.message.reply_text(message, disable_web_page_preview=True)
+        await update.message.reply_text(message, disable_web_page_preview=True, reply_markup=reply_markup)
 
 
 async def share_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
