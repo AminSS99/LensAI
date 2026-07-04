@@ -1,11 +1,12 @@
-1. **Goal**: Introduce a "Summarize" inline button for saved articles so users can quickly generate AI summaries of specific URLs without manually sending the link or re-copying it.
-2. **Where to Add Summarize Buttons**:
-   - `saved_command`: Currently paginates and shows inline "Delete 🗑️" buttons. We will add a "Summarize 🧠" inline button alongside each "Delete 🗑️" button.
-   - `random_command`: Currently shows a random article with no reply markup. We will add a "Summarize 🧠" inline button.
-   - `filter_command`: Currently lists filtered articles. We will add "Summarize 🧠" buttons for the first few items or attach a generic keyboard for the listed items.
-   - `search_command`: Currently lists search results. We will attach summarize buttons here too if applicable, or we'll stick to just saved items as per "Summarize saved URL". The feature description implies making "Summarize" easily accessible where articles are listed. The `/random` and `/saved` commands are perfect places.
-3. **Existing Infrastructure**: The `summarize_url_<hash>` callback handler is already implemented (`summarize_url_callback`). We just need to add the buttons that trigger it.
-4. **Execution**:
-   - Update `_render_saved_page` in `functions/telegram_bot.py` to include a summarize button before the delete button in the inline keyboard array.
-   - Update `random_command` in `functions/telegram_bot.py` to add a reply markup containing a summarize button for the chosen article.
-   - Run tests and `pre_commit_instructions` to ensure safety and functionality.
+1. **Goal**: Add a "🗑️ Unsave" button to the article reading view (`read_url_callback`) so users can remove an article after reading it.
+2. **Implementation details**:
+   - In `functions/telegram_bot.py`, `read_url_callback` renders chunks of text. The last chunk gets a `reply_markup` with "Original", "Summarize", and "Share".
+   - We will add "🗑️ Unsave" with `callback_data=f"del_{url_hash}_read"`.
+   - Update `delete_article_callback` to handle the `read` flag (like it handles `random`). When `is_read = True`, it will delete the article, answer the query, and delete the message without needing to call a command to re-render. Since `read_url_callback` splits messages, deleting the last message chunk is sufficient (or simply editing the last chunk's reply markup to remove the buttons, with an "Article deleted" notification). Wait, editing the buttons to remove them might be cleaner. Let's just edit the message reply markup.
+3. **Plan steps**:
+   1. Use `replace_with_git_merge_diff` to add the "Unsave" button in `read_url_callback`.
+   2. Use `replace_with_git_merge_diff` to update `delete_article_callback` to handle `read` context.
+   3. Verify changes using `grep` or `cat`.
+   4. Run tests with `python -m pytest test*.py`.
+   5. Complete pre commit steps to ensure proper testing, verification, review, and reflection are done.
+   6. Submit the change.

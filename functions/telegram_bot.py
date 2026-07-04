@@ -1697,10 +1697,13 @@ async def delete_article_callback(update: Update, context: ContextTypes.DEFAULT_
         url_hash = data.replace('del_', '')
 
     is_random = False
+    is_read = False
     page = 0
     if len(parts) > 2:
         if parts[2] == 'random':
             is_random = True
+        elif parts[2] == 'read':
+            is_read = True
         elif parts[2].isdigit():
             page = int(parts[2])
     
@@ -1725,6 +1728,8 @@ async def delete_article_callback(update: Update, context: ContextTypes.DEFAULT_
     if is_random:
         await query.message.delete()
         await random_command(update, context)
+    elif is_read:
+        await query.edit_message_reply_markup(reply_markup=None)
     else:
         await _render_saved_page(query, telegram_id, user_lang, page, is_callback=True)
 
@@ -2614,6 +2619,9 @@ async def read_url_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 InlineKeyboardButton("🌐 Original", url=url),
                 InlineKeyboardButton("🧠 Summarize", callback_data=f"summarize_url_{url_hash}"),
                 InlineKeyboardButton("↗️ Share", url=share_url)
+            ],
+            [
+                InlineKeyboardButton("🗑️ Unsave", callback_data=f"del_{url_hash}_read")
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
