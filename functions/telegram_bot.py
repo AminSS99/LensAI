@@ -1697,10 +1697,13 @@ async def delete_article_callback(update: Update, context: ContextTypes.DEFAULT_
         url_hash = data.replace('del_', '')
 
     is_random = False
+    is_standalone = False
     page = 0
     if len(parts) > 2:
         if parts[2] == 'random':
             is_random = True
+        elif parts[2] == 'standalone':
+            is_standalone = True
         elif parts[2].isdigit():
             page = int(parts[2])
     
@@ -1722,7 +1725,9 @@ async def delete_article_callback(update: Update, context: ContextTypes.DEFAULT_
         await query.answer("Article deleted!", show_alert=False)
 
     # Refresh the current page or show another random article
-    if is_random:
+    if is_standalone:
+        await query.edit_message_reply_markup(reply_markup=None)
+    elif is_random:
         await query.message.delete()
         await random_command(update, context)
     else:
@@ -2494,7 +2499,8 @@ async def summarize_url_callback(update: Update, context: ContextTypes.DEFAULT_T
             [
                 InlineKeyboardButton("🌐 Original", url=url),
                 InlineKeyboardButton("📖 Read", callback_data=f"read_url_{url_hash}"),
-                InlineKeyboardButton("↗️ Share", url=share_url)
+                InlineKeyboardButton("↗️ Share", url=share_url),
+                InlineKeyboardButton("🗑️", callback_data=f"del_{url_hash}_standalone")
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -2613,7 +2619,8 @@ async def read_url_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [
                 InlineKeyboardButton("🌐 Original", url=url),
                 InlineKeyboardButton("🧠 Summarize", callback_data=f"summarize_url_{url_hash}"),
-                InlineKeyboardButton("↗️ Share", url=share_url)
+                InlineKeyboardButton("↗️ Share", url=share_url),
+                InlineKeyboardButton("🗑️", callback_data=f"del_{url_hash}_standalone")
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
