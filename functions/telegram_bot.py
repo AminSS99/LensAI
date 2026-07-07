@@ -358,12 +358,13 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if mapping:
                     pred_buttons = []
                     for url_hash, label in mapping.items():
-                        pred_buttons.append(
-                            InlineKeyboardButton(f"🔮 {label}", callback_data=f"predict_save_{url_hash}")
-                        )
+                        pred_buttons.append([
+                            InlineKeyboardButton(f"🔮 {label}", callback_data=f"predict_save_{url_hash}"),
+                            InlineKeyboardButton("❌", callback_data=f"predict_ignore_{url_hash}")
+                        ])
                     keyboard = list(reply_markup.inline_keyboard) if reply_markup else []
-                    for btn in pred_buttons:
-                        keyboard.append([btn])
+                    for row in pred_buttons:
+                        keyboard.append(row)
                     reply_markup = InlineKeyboardMarkup(keyboard)
         except Exception as e:
             print(f"Predictive bookmarking error in news: {e}")
@@ -2232,12 +2233,13 @@ async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if mapping:
                     pred_buttons = []
                     for url_hash, label in mapping.items():
-                        pred_buttons.append(
-                            InlineKeyboardButton(f"🔮 {label}", callback_data=f"predict_save_{url_hash}")
-                        )
+                        pred_buttons.append([
+                            InlineKeyboardButton(f"🔮 {label}", callback_data=f"predict_save_{url_hash}"),
+                            InlineKeyboardButton("❌", callback_data=f"predict_ignore_{url_hash}")
+                        ])
                     keyboard = list(reply_markup.inline_keyboard) if reply_markup else []
-                    for btn in pred_buttons:
-                        keyboard.append([btn])
+                    for row in pred_buttons:
+                        keyboard.append(row)
                     reply_markup = InlineKeyboardMarkup(keyboard)
         except Exception as e:
             print(f"Predictive bookmarking error in refresh: {e}")
@@ -2949,6 +2951,53 @@ async def predict_save_callback(update: Update, context: ContextTypes.DEFAULT_TY
         await query.answer(t('article_exists', user_lang), show_alert=True)
 
 
+async def predict_ignore_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle predictive ignore (dismiss) button press."""
+    from .predictive_bookmarking import record_prediction_interaction
+
+    query = update.callback_query
+    await query.answer()
+
+    telegram_id = update.effective_user.id
+
+    data = query.data
+    parts = data.split('_')
+    if len(parts) < 3:
+        return
+
+    url_hash = parts[2]
+    record_prediction_interaction(telegram_id, url_hash, 'ignored')
+
+    # Remove this specific row from the keyboard
+    if query.message and query.message.reply_markup:
+        old_keyboard = query.message.reply_markup.inline_keyboard
+        new_keyboard = []
+        for row in old_keyboard:
+            # Check if this row contains the button that was clicked
+            should_keep = True
+            for btn in row:
+                if btn.callback_data == data or btn.callback_data == f"predict_save_{url_hash}":
+                    should_keep = False
+                    break
+            if should_keep:
+                new_keyboard.append(row)
+
+        reply_markup = InlineKeyboardMarkup(new_keyboard) if new_keyboard else None
+        try:
+            await query.edit_message_reply_markup(reply_markup=reply_markup)
+        except Exception:
+            pass
+
+
+async def predict_done_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle clicking on the '✅ Saved' button gracefully."""
+    query = update.callback_query
+    from .user_storage import get_user_language
+    from .translations import t
+    user_lang = get_user_language(update.effective_user.id)
+    await query.answer(t('article_exists', user_lang))
+
+
 # ============ BOT SETUP ============
 
 async def setup_bot_commands(application: Application):
@@ -3141,6 +3190,8 @@ def create_bot_application() -> Application:
     application.add_handler(CallbackQueryHandler(filter_category_callback, pattern='^filter_menu$'))
     application.add_handler(CallbackQueryHandler(clear_search_history_callback, pattern='^clear_search_history$'))
     application.add_handler(CallbackQueryHandler(predict_save_callback, pattern='^predict_save_'))
+    application.add_handler(CallbackQueryHandler(predict_ignore_callback, pattern='^predict_ignore_'))
+    application.add_handler(CallbackQueryHandler(predict_done_callback, pattern='^predict_done$'))
     application.add_handler(CallbackQueryHandler(save_search_callback, pattern='^save_search_'))
     application.add_handler(CallbackQueryHandler(export_callback, pattern='^do_export_'))
     application.add_handler(CallbackQueryHandler(random_next_callback, pattern='^random_next$'))
@@ -3194,13 +3245,14 @@ async def send_digest_to_user(telegram_id: int, digest: str, articles_meta: list
                 if mapping:
                     pred_buttons = []
                     for url_hash, label in mapping.items():
-                        pred_buttons.append(
-                            InlineKeyboardButton(f"🔮 {label}", callback_data=f"predict_save_{url_hash}")
-                        )
+                        pred_buttons.append([
+                            InlineKeyboardButton(f"🔮 {label}", callback_data=f"predict_save_{url_hash}"),
+                            InlineKeyboardButton("❌", callback_data=f"predict_ignore_{url_hash}")
+                        ])
                     # Append prediction buttons as new rows
                     keyboard = list(reply_markup.inline_keyboard) if reply_markup else []
-                    for btn in pred_buttons:
-                        keyboard.append([btn])
+                    for row in pred_buttons:
+                        keyboard.append(row)
                     reply_markup = InlineKeyboardMarkup(keyboard)
         except Exception as e:
             print(f"Predictive bookmarking error: {e}")
