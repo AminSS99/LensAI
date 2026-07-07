@@ -1283,16 +1283,17 @@ async def filter_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cat_label = t(f'cat_{category}', user_lang)
     message = t('filter_results', user_lang, category=cat_label, count=len(articles))
     
-    from .security_utils import sanitize_markdown_url, stable_hash
+    from .security_utils import sanitize_markdown_url, stable_hash, escape_markdown_v1
     keyboard = []
     for i, article in enumerate(articles, 1):
         title = article.get('title', 'Untitled')[:50]
+        safe_title = escape_markdown_v1(title)
         raw_url = article.get('url', '')
         url = sanitize_markdown_url(raw_url)
         if url.startswith('http'):
-            message += f"{i}. [{title}]({url})\n"
+            message += f"{i}. [{safe_title}]({url})\n"
         else:
-            message += f"{i}. {title}\n"
+            message += f"{i}. {safe_title}\n"
 
         # Create read and summarize buttons for each item
         if url.startswith('http'):
@@ -1373,7 +1374,7 @@ async def recap_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = t('recap_header', user_lang)
     
     # Show top 5 recent articles
-    from .security_utils import sanitize_markdown_url, stable_hash
+    from .security_utils import sanitize_markdown_url, stable_hash, escape_markdown_v1
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     keyboard = []
 
@@ -1382,14 +1383,15 @@ async def recap_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     for i, article in enumerate(weekly_articles[:5], 1):
         title = article.get('title', 'Untitled')[:50]
+        safe_title = escape_markdown_v1(title)
         url = sanitize_markdown_url(article.get('url', ''))
         category = article.get('category', 'tech')
         emoji = cat_emoji.get(category, '🔧')
 
         if url.startswith('http'):
-            message += f"{i}. {emoji} [{title}]({url})\n"
+            message += f"{i}. {emoji} [{safe_title}]({url})\n"
         else:
-            message += f"{i}. {emoji} {title}\n"
+            message += f"{i}. {emoji} {safe_title}\n"
 
         if url.startswith('http'):
             url_hash = stable_hash(article.get('url', ''))[:8]
