@@ -934,6 +934,8 @@ async def _do_export(message_obj, telegram_id: int, user_lang: str, export_forma
     import io
     import csv
 
+    import json
+
     def _clean_export_value(value) -> str:
         if value is None:
             return ""
@@ -958,12 +960,13 @@ async def _do_export(message_obj, telegram_id: int, user_lang: str, export_forma
                 InlineKeyboardButton("📊 Excel (.csv)", callback_data=f"do_export_csv_{category_filter or 'all'}")
             ],
             [
-                InlineKeyboardButton("🔖 Bookmarks (.html)", callback_data=f"do_export_html_{category_filter or 'all'}")
+                InlineKeyboardButton("🔖 Bookmarks (.html)", callback_data=f"do_export_html_{category_filter or 'all'}"),
+                InlineKeyboardButton("🤖 JSON (.json)", callback_data=f"do_export_json_{category_filter or 'all'}")
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await message_obj.reply_text(
-            "📦 *Choose export format:*\n\n_Markdown_ is great for notes like Obsidian or Notion.\n_Excel_ is great for spreadsheets.\n_Bookmarks_ can be imported directly into your browser.",
+            "📦 *Choose export format:*\n\n_Markdown_ is great for notes like Obsidian or Notion.\n_Excel_ is great for spreadsheets.\n_Bookmarks_ can be imported directly into your browser.\n_JSON_ is perfect for importing to scripts and APIs.",
             parse_mode='Markdown',
             reply_markup=reply_markup
         )
@@ -1004,6 +1007,11 @@ async def _do_export(message_obj, telegram_id: int, user_lang: str, export_forma
 
         document = io.BytesIO("\n".join(lines).encode('utf-8'))
         document.name = f"lensai_saved_articles{filename_category}_{timestamp}.html"
+    elif export_format == 'json':
+        # Serialize to JSON with proper indent
+        json_data = json.dumps(articles, indent=2, ensure_ascii=False)
+        document = io.BytesIO(json_data.encode('utf-8'))
+        document.name = f"lensai_saved_articles{filename_category}_{timestamp}.json"
     elif export_format == 'csv':
         output = io.StringIO()
         writer = csv.writer(output)
@@ -1081,6 +1089,8 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             export_format = 'csv'
         elif arg_lower in ['html', 'bookmarks']:
             export_format = 'html'
+        elif arg_lower in ['json']:
+            export_format = 'json'
         else:
             category_filter = arg_lower
 
