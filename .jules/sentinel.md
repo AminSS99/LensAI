@@ -37,3 +37,8 @@
 **Vulnerability:** The function `extract_github_repo` in `functions/deep_dive.py` used a permissive regular expression `r'github\.com/([^/]+/[^/]+)'` to extract the repository path. This allowed URL-encoded path traversal payloads (e.g., `%2F..`) and query parameters to be extracted and directly interpolated into internal GitHub API requests (`https://api.github.com/repos/{repo}`).
 **Learning:** Using overly permissive capture groups (like `[^/]+`) for URL parsing allows attackers to include malicious characters that can alter the structure of downstream network requests.
 **Prevention:** Always use strict character classes (e.g., `[A-Za-z0-9\-]+/[A-Za-z0-9\-_.]+`) when extracting and validating repository names or similar identifiers from URLs to prevent injection and traversal vulnerabilities.
+
+## 2024-06-25 - [HIGH] Fix Markdown injection / formatting breakage
+**Vulnerability:** The functions `filter_command` and `recap_command` in `functions/telegram_bot.py` placed user-provided and unescaped article titles directly into Markdown links when generating responses. This allowed unescaped characters like `[` and `]` to break Telegram Markdown V1 formatting, potentially causing display issues or errors in rendering the response.
+**Learning:** Dynamically generated text elements (such as titles from scraped or user-saved articles) that are injected into Markdown templates can break the rendering engine if they contain markdown syntax characters.
+**Prevention:** Always sanitize dynamically generated text using formatting-safe escapes (like `escape_markdown_v1`) before interpolating it into a string that will be sent via an API requiring `parse_mode='Markdown'`.
