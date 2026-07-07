@@ -896,7 +896,27 @@ async def save_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if save_article(telegram_id, title, url_to_save, category=category):
         cat_label = t(f'cat_{category}', user_lang)
-        await update.message.reply_text(t('article_saved_single', user_lang, category=cat_label))
+
+        from .security_utils import stable_hash
+        from .user_storage import save_temp_url
+        url_hash = stable_hash(url_to_save)[:8]
+        save_temp_url(url_hash, telegram_id, url_to_save)
+
+        read_label = t('btn_read', user_lang)
+        summarize_label = t('btn_summarize', user_lang)
+        del_label = "🗑️ " + ("Удалить" if user_lang == 'ru' else "Delete")
+        reply_markup = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton(f"📖 {read_label}", callback_data=f"read_url_{url_hash}"),
+                InlineKeyboardButton(f"🧠 {summarize_label}", callback_data=f"summarize_url_{url_hash}")
+            ],
+            [
+                InlineKeyboardButton(del_label, callback_data=f"del_{url_hash}_single")
+            ]
+        ])
+
+        await update.message.reply_text(t('article_saved_single', user_lang, category=cat_label), reply_markup=reply_markup)
+
         try:
             from .deep_dive import queue_deep_dive
             queue_deep_dive(telegram_id, article_data)
@@ -1700,10 +1720,13 @@ async def delete_article_callback(update: Update, context: ContextTypes.DEFAULT_
         url_hash = data.replace('del_', '')
 
     is_random = False
+    is_single = False
     page = 0
     if len(parts) > 2:
         if parts[2] == 'random':
             is_random = True
+        elif parts[2] == 'single':
+            is_single = True
         elif parts[2].isdigit():
             page = int(parts[2])
     
@@ -1728,6 +1751,9 @@ async def delete_article_callback(update: Update, context: ContextTypes.DEFAULT_
     if is_random:
         await query.message.delete()
         await random_command(update, context)
+    elif is_single:
+        msg = "🗑️ " + t('article_deleted', user_lang)
+        await query.message.edit_text(msg, reply_markup=None)
     else:
         await _render_saved_page(query, telegram_id, user_lang, page, is_callback=True)
 
