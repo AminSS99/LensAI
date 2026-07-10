@@ -1009,7 +1009,13 @@ async def _do_export(message_obj, telegram_id: int, user_lang: str, export_forma
         document.name = f"lensai_saved_articles{filename_category}_{timestamp}.html"
     elif export_format == 'json':
         # Serialize to JSON with proper indent
-        json_data = json.dumps(articles, indent=2, ensure_ascii=False)
+        class DateTimeEncoder(json.JSONEncoder):
+            def default(self, obj):
+                if hasattr(obj, 'isoformat'):
+                    return obj.isoformat()
+                return super().default(obj)
+
+        json_data = json.dumps(articles, indent=2, ensure_ascii=False, cls=DateTimeEncoder)
         document = io.BytesIO(json_data.encode('utf-8'))
         document.name = f"lensai_saved_articles{filename_category}_{timestamp}.json"
     elif export_format == 'csv':
@@ -2534,7 +2540,8 @@ async def summarize_url_callback(update: Update, context: ContextTypes.DEFAULT_T
             [
                 InlineKeyboardButton("🌐 Original", url=url),
                 InlineKeyboardButton("📖 Read", callback_data=f"read_url_{url_hash}"),
-                InlineKeyboardButton("↗️ Share", url=share_url)
+                InlineKeyboardButton("↗️ Share", url=share_url),
+                InlineKeyboardButton("🗑️", callback_data=f"del_{url_hash}_single")
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -2653,7 +2660,8 @@ async def read_url_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [
                 InlineKeyboardButton("🌐 Original", url=url),
                 InlineKeyboardButton("🧠 Summarize", callback_data=f"summarize_url_{url_hash}"),
-                InlineKeyboardButton("↗️ Share", url=share_url)
+                InlineKeyboardButton("↗️ Share", url=share_url),
+                InlineKeyboardButton("🗑️", callback_data=f"del_{url_hash}_single")
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
