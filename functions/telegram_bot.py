@@ -2896,11 +2896,16 @@ async def stalk_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     arg = ' '.join(context.args).strip()
 
     if arg.lower().startswith('repo:'):
+        import re
         repo = arg[5:].strip()
+        if not re.match(r'^[A-Za-z0-9\-]+/[A-Za-z0-9\-_.]+$', repo):
+            await update.message.reply_text(t('stalk_invalid_repo', user_lang), parse_mode='Markdown')
+            return
+
         if add_stalk_target(telegram_id, 'repo', repo):
             await update.message.reply_text(t('stalk_added_repo', user_lang, name=repo), parse_mode='Markdown')
         else:
-            await update.message.reply_text(t('stalk_invalid_repo', user_lang))
+            await update.message.reply_text(t('stalk_duplicate', user_lang, name=repo), parse_mode='Markdown')
     else:
         company = arg.strip().lower()
         if add_stalk_target(telegram_id, 'company', company):
