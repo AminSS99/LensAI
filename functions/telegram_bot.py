@@ -2764,6 +2764,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [
                 InlineKeyboardButton(t('btn_summarize', user_lang), callback_data=f"summarize_url_{url_hash}"),
                 InlineKeyboardButton(t('btn_read', user_lang), callback_data=f"read_url_{url_hash}")
+            ],
+            [
+                InlineKeyboardButton(t('btn_unsave', user_lang), callback_data=f"del_{url_hash}_single")
             ]
         ])
 
