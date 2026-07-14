@@ -28,7 +28,11 @@ async def is_safe_url(url: str) -> bool:
             if '%' in ip_str:
                 ip_str = ip_str.split('%')[0]
             ip = ipaddress.ip_address(ip_str)
-            if not ip.is_global or ip.is_link_local or ip.is_unspecified:
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_unspecified or ip.is_reserved or ip.is_multicast:
+                return False
+            if not ip.is_global:
+                return False
+            if str(ip) in ('0.0.0.0', '::'):
                 return False
         return True
     except Exception:
