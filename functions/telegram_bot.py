@@ -1731,12 +1731,15 @@ async def delete_article_callback(update: Update, context: ContextTypes.DEFAULT_
 
     is_random = False
     is_single = False
+    is_keep = False
     page = 0
     if len(parts) > 2:
         if parts[2] == 'random':
             is_random = True
         elif parts[2] == 'single':
             is_single = True
+        elif parts[2] == 'keep':
+            is_keep = True
         elif parts[2].isdigit():
             page = int(parts[2])
     
@@ -1764,6 +1767,8 @@ async def delete_article_callback(update: Update, context: ContextTypes.DEFAULT_
     elif is_single:
         msg = "🗑️ " + t('article_deleted', user_lang)
         await query.message.edit_text(msg, reply_markup=None)
+    elif is_keep:
+        await query.edit_message_reply_markup(reply_markup=None)
     else:
         await _render_saved_page(query, telegram_id, user_lang, page, is_callback=True)
 
@@ -2530,11 +2535,13 @@ async def summarize_url_callback(update: Update, context: ContextTypes.DEFAULT_T
         encoded_url = urllib.parse.quote(url)
         share_url = f"https://t.me/share/url?url={encoded_url}"
 
+        del_label = "🗑️ " + ("Удалить" if user_lang == 'ru' else "Delete")
         keyboard = [
             [
                 InlineKeyboardButton("🌐 Original", url=url),
                 InlineKeyboardButton("📖 Read", callback_data=f"read_url_{url_hash}"),
-                InlineKeyboardButton("↗️ Share", url=share_url)
+                InlineKeyboardButton("↗️ Share", url=share_url),
+                InlineKeyboardButton(del_label, callback_data=f"del_{url_hash}_keep")
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -2649,11 +2656,13 @@ async def read_url_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         encoded_url = urllib.parse.quote(url)
         share_url = f"https://t.me/share/url?url={encoded_url}"
 
+        del_label = "🗑️ " + ("Удалить" if user_lang == 'ru' else "Delete")
         keyboard = [
             [
                 InlineKeyboardButton("🌐 Original", url=url),
                 InlineKeyboardButton("🧠 Summarize", callback_data=f"summarize_url_{url_hash}"),
-                InlineKeyboardButton("↗️ Share", url=share_url)
+                InlineKeyboardButton("↗️ Share", url=share_url),
+                InlineKeyboardButton(del_label, callback_data=f"del_{url_hash}_keep")
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
