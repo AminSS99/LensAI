@@ -962,6 +962,9 @@ async def _do_export(message_obj, telegram_id: int, user_lang: str, export_forma
             [
                 InlineKeyboardButton("🔖 Bookmarks (.html)", callback_data=f"do_export_html_{category_filter or 'all'}"),
                 InlineKeyboardButton("🤖 JSON (.json)", callback_data=f"do_export_json_{category_filter or 'all'}")
+            ],
+            [
+                InlineKeyboardButton(t('clear_all_cancel_btn', user_lang), callback_data="do_export_cancel")
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -1101,6 +1104,11 @@ async def export_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle export format selection callback."""
     query = update.callback_query
     await query.answer()
+
+    if query.data == "do_export_cancel":
+        await query.message.delete()
+        return
+
     from .user_storage import get_user_language
 
     telegram_id = update.effective_user.id
