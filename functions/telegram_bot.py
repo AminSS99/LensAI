@@ -9,11 +9,12 @@ import asyncio
 import urllib.parse
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, constants
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, constants, InlineQueryResultArticle, InputTextMessageContent
 from telegram.ext import (
     Application, 
     CommandHandler, 
     CallbackQueryHandler,
+    InlineQueryHandler,
     MessageHandler,
     filters,
     ContextTypes
@@ -1458,6 +1459,74 @@ async def share_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_lang = get_user_language(telegram_id)
     
     await update.message.reply_text(t('share_bot', user_lang), parse_mode='Markdown')
+
+
+async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle inline queries to search and share saved articles."""
+    from .user_storage import get_all_saved_articles
+    from .security_utils import escape_markdown_v1
+    from .translations import get_message
+
+    query = update.inline_query.query
+    telegram_id = update.inline_query.from_user.id
+
+    # Get all saved articles (no category filter)
+    articles = get_all_saved_articles(telegram_id)
+
+    if not articles:
+        await update.inline_query.answer([], cache_time=10, is_personal=True)
+        return
+
+    results = []
+    query_lower = query.lower().strip()
+
+    # Filter articles based on query
+    filtered_articles = []
+    if not query_lower:
+        filtered_articles = articles[:50]
+    else:
+        for article in articles:
+            title = article.get('title', '').lower()
+            url = article.get('url', '').lower()
+            category = article.get('category', '').lower()
+
+            if query_lower in title or query_lower in url or query_lower in category:
+                filtered_articles.append(article)
+                if len(filtered_articles) >= 50:
+                    break
+
+    # Category emoji mapping for nice UI
+    cat_emoji = {
+        'ai': '🤖', 'security': '🔒', 'crypto': '💰', 'startups': '🚀',
+        'hardware': '💻', 'software': '📱', 'tech': '🔧'
+    }
+
+    from uuid import uuid4
+
+    for article in filtered_articles:
+        title = article.get('title', 'Untitled')
+        url = article.get('url', '')
+        category = article.get('category', 'tech')
+        emoji = cat_emoji.get(category, '🔧')
+
+        safe_title = escape_markdown_v1(title)
+
+        message_text = f"{emoji} [{safe_title}]({url})" if url else f"{emoji} {safe_title}"
+
+        results.append(
+            InlineQueryResultArticle(
+                id=str(uuid4()),
+                title=title,
+                description=f"{emoji} {category.capitalize()}" + (f" • {url}" if url else ""),
+                input_message_content=InputTextMessageContent(
+                    message_text=message_text,
+                    parse_mode="Markdown",
+                    disable_web_page_preview=False
+                )
+            )
+        )
+
+    await update.inline_query.answer(results, cache_time=10, is_personal=True)
 
 
 async def trends_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3259,6 +3328,9 @@ def create_bot_application() -> Application:
     application.add_handler(CallbackQueryHandler(export_callback, pattern='^do_export_'))
     application.add_handler(CallbackQueryHandler(random_next_callback, pattern='^random_next$'))
     
+    # Add inline query handler for searching and sharing saved articles
+    application.add_handler(InlineQueryHandler(inline_query_handler))
+
     # Add message handler for buttons and Q&A (handles any text that isn't a command)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
