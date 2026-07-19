@@ -1436,7 +1436,8 @@ async def recap_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             url_hash = stable_hash(article.get('url', ''))[:8]
             keyboard.append([
                 InlineKeyboardButton(f"📖 {i}. {read_label}", callback_data=f"read_url_{url_hash}"),
-                InlineKeyboardButton(f"🧠 {i}. {summarize_label}", callback_data=f"summarize_url_{url_hash}")
+                InlineKeyboardButton(f"🧠 {i}. {summarize_label}", callback_data=f"summarize_url_{url_hash}"),
+                InlineKeyboardButton(f"↗️ {i}", url=f"https://t.me/share/url?url={urllib.parse.quote(url)}&text={urllib.parse.quote(title)}")
             ])
 
     reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
@@ -2774,7 +2775,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 InlineKeyboardButton(t('btn_read', user_lang), callback_data=f"read_url_{url_hash}")
             ],
             [
-                InlineKeyboardButton(t('btn_unsave', user_lang), callback_data=f"del_{url_hash}_single")
+                InlineKeyboardButton(t('btn_unsave', user_lang), callback_data=f"del_{url_hash}_single"),
+                InlineKeyboardButton("↗️", url=f"https://t.me/share/url?url={urllib.parse.quote(url)}&text={urllib.parse.quote(title)}")
             ]
         ])
 
