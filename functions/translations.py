@@ -184,6 +184,8 @@ Use /sources to toggle sources""",
         'btn_help': "❓ Help",
         'btn_share': "📤 Share",
         'btn_next_random': "🎲 Next Random",
+        'btn_similar': "🔍 Similar",
+        'similar_header': "🔍 *Similar Articles*\n\n",
     },
     'ru': {
         # Existing keys
@@ -364,6 +366,8 @@ _Работает локально - настройки сохранятся п�
         'btn_help': "❓ Помощь",
         'btn_share': "📤 Поделиться",
         'btn_next_random': "🎲 Следующая случайная",
+        'btn_similar': "🔍 Похожие",
+        'similar_header': "🔍 *Похожие статьи*\n\n",
     }
 }
 
