@@ -1881,6 +1881,7 @@ async def random_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [
             InlineKeyboardButton(read_label, callback_data=f"read_url_{url_hash}"),
             InlineKeyboardButton(summarize_label, callback_data=f"summarize_url_{url_hash}"),
+            InlineKeyboardButton(t('btn_similar', user_lang), callback_data=f"similar_url_{url_hash}"),
             InlineKeyboardButton("↗️", url=f"https://t.me/share/url?url={urllib.parse.quote(url)}&text={urllib.parse.quote(title)}")
         ],
         [
@@ -2549,6 +2550,9 @@ async def summarize_url_callback(update: Update, context: ContextTypes.DEFAULT_T
             [
                 InlineKeyboardButton("🌐 Original", url=url),
                 InlineKeyboardButton("📖 Read", callback_data=f"read_url_{url_hash}"),
+                InlineKeyboardButton(t('btn_similar', user_lang), callback_data=f"similar_url_{url_hash}")
+            ],
+            [
                 InlineKeyboardButton("↗️ Share", url=share_url),
                 InlineKeyboardButton(del_label, callback_data=f"del_{url_hash}_keep")
             ]
@@ -2565,7 +2569,92 @@ async def summarize_url_callback(update: Update, context: ContextTypes.DEFAULT_T
         await query.message.reply_text(t('summary_error', user_lang, error=error_msg))
 
 
+
+
+async def similar_url_callback(update, context):
+    """Find similar saved articles to a specific saved URL."""
+    from .user_storage import get_user_language, get_all_saved_articles
+    from .translations import t
+    from .security_utils import escape_markdown_v1, stable_hash, sanitize_markdown_url
+    from .semantic_search import semantic_search_articles
+    import urllib.parse
+    from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+
+    query = update.callback_query
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+
+    parts = query.data.split('_')
+    if len(parts) < 3:
+        await query.answer("Invalid request", show_alert=True)
+        return
+
+    url_hash = parts[2]
+
+    articles = get_all_saved_articles(telegram_id)
+    target_article = None
+
+    for article in articles:
+        if stable_hash(article.get('url', ''))[:8] == url_hash:
+            target_article = article
+            break
+
+    if not target_article:
+        await query.answer("Article not found in saved list.", show_alert=True)
+        return
+
+    title = target_article.get('title', '')
+    if not title:
+        await query.answer("Cannot find similar items without a title.", show_alert=True)
+        return
+
+    await query.answer("Searching...")
+
+    # Exclude the target article itself
+    other_articles = [a for a in articles if stable_hash(a.get('url', ''))[:8] != url_hash]
+
+    similar = semantic_search_articles(title, other_articles, limit=5)
+
+    if not similar:
+        await query.message.reply_text("🔍 No similar articles found.", parse_mode='Markdown')
+        return
+
+    message = t('similar_header', user_lang)
+
+    keyboard = []
+
+    for i, article in enumerate(similar, 1):
+        sim_title = article.get('title', 'Untitled')[:50]
+        safe_title = escape_markdown_v1(sim_title)
+        raw_url = article.get('url', '')
+        url = sanitize_markdown_url(raw_url)
+        score = article.get("_semantic_score", 0)
+
+        if url.startswith('http'):
+            message += f"{i}. [{safe_title}]({url})\n"
+        else:
+            message += f"{i}. {safe_title}\n"
+
+        if url.startswith('http'):
+            sim_hash = stable_hash(raw_url)[:8]
+            summarize_label = t('btn_summarize', user_lang)
+            read_label = t('btn_read', user_lang)
+            keyboard.append([
+                InlineKeyboardButton(f"📖 {i}", callback_data=f"read_url_{sim_hash}"),
+                InlineKeyboardButton(f"🧠 {i}", callback_data=f"summarize_url_{sim_hash}"),
+                InlineKeyboardButton(f"🔍 {i}", callback_data=f"similar_url_{sim_hash}"),
+                InlineKeyboardButton(f"↗️ {i}", url=f"https://t.me/share/url?url={urllib.parse.quote(url)}&text={urllib.parse.quote(sim_title)}")
+            ])
+
+    reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
+
+    try:
+        await query.message.reply_text(message, parse_mode='Markdown', disable_web_page_preview=True, reply_markup=reply_markup)
+    except Exception:
+        await query.message.reply_text(message, disable_web_page_preview=True, reply_markup=reply_markup)
+
 # ============ Q&A HANDLER ============
+
 
 async def read_url_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Read a saved URL directly in Telegram."""
@@ -2670,6 +2759,9 @@ async def read_url_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [
                 InlineKeyboardButton("🌐 Original", url=url),
                 InlineKeyboardButton("🧠 Summarize", callback_data=f"summarize_url_{url_hash}"),
+                InlineKeyboardButton(t('btn_similar', user_lang), callback_data=f"similar_url_{url_hash}")
+            ],
+            [
                 InlineKeyboardButton("↗️ Share", url=share_url),
                 InlineKeyboardButton(del_label, callback_data=f"del_{url_hash}_keep")
             ]
@@ -2694,7 +2786,10 @@ async def read_url_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text(f"❌ Could not read article: {error_msg}")
 
 
+
+
 # ============ Q&A HANDLER ============
+
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle any text message - button presses or questions for the active AI model."""
@@ -3246,6 +3341,7 @@ def create_bot_application() -> Application:
     application.add_handler(CallbackQueryHandler(delete_article_callback, pattern='^del_'))
     application.add_handler(CallbackQueryHandler(saved_page_callback, pattern='^saved_page_'))
     application.add_handler(CallbackQueryHandler(summarize_url_callback, pattern='^summarize_url_'))
+    application.add_handler(CallbackQueryHandler(similar_url_callback, pattern='^similar_url_'))
     application.add_handler(CallbackQueryHandler(read_url_callback, pattern='^read_url_'))
     application.add_handler(CallbackQueryHandler(clear_all_prompt_callback, pattern='^clear_all_prompt_'))
     application.add_handler(CallbackQueryHandler(clear_all_confirm_callback, pattern='^clear_all_confirm_'))
