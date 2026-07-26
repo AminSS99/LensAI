@@ -9,12 +9,13 @@ import asyncio
 import urllib.parse
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, constants
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, constants, InlineQueryResultArticle, InputTextMessageContent
 from telegram.ext import (
     Application, 
     CommandHandler, 
     CallbackQueryHandler,
     MessageHandler,
+    InlineQueryHandler,
     filters,
     ContextTypes
 )
@@ -2791,6 +2792,67 @@ async def read_url_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ============ Q&A HANDLER ============
 
 
+
+async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle inline queries to share saved articles."""
+    from .user_storage import get_all_saved_articles, get_user_language
+    from .translations import t
+    from .security_utils import escape_markdown_v1
+    import uuid
+
+    query = update.inline_query.query
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+
+    # Get all saved articles for this user
+    articles = get_all_saved_articles(telegram_id)
+
+    # Filter articles if query exists
+    if query:
+        query_lower = query.lower()
+        articles = [
+            a for a in articles
+            if query_lower in a.get('title', '').lower()
+            or query_lower in a.get('category', '').lower()
+        ]
+
+    # Limit to 50 results (Telegram's limit)
+    articles = articles[:50]
+
+    results = []
+    for article in articles:
+        title = article.get('title', 'Untitled')
+        url = article.get('url', '')
+        category = article.get('category', 'tech')
+
+        # Determine emoji based on category
+        emoji_map = {
+            'ai': '🤖', 'security': '🔒', 'crypto': '💰',
+            'startups': '🚀', 'hardware': '💻', 'software': '📱', 'tech': '🔧'
+        }
+        emoji = emoji_map.get(category, '📰')
+
+        # Prepare message text
+        safe_title = escape_markdown_v1(title)
+        safe_url = escape_markdown_v1(url)
+        message_text = t('inline_share_text', user_lang, title=safe_title, url=safe_url)
+
+        result_id = str(uuid.uuid4())
+        results.append(
+            InlineQueryResultArticle(
+                id=result_id,
+                title=f"{emoji} {title}",
+                description=url,
+                input_message_content=InputTextMessageContent(
+                    message_text=message_text,
+                    parse_mode='Markdown'
+                )
+            )
+        )
+
+    await update.inline_query.answer(results, is_personal=True, cache_time=0)
+
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle any text message - button presses or questions for the active AI model."""
     from .user_storage import get_user_language
@@ -3357,6 +3419,9 @@ def create_bot_application() -> Application:
     application.add_handler(CallbackQueryHandler(export_callback, pattern='^do_export_'))
     application.add_handler(CallbackQueryHandler(random_next_callback, pattern='^random_next$'))
     
+    # Add inline query handler for sharing saved articles
+    application.add_handler(InlineQueryHandler(inline_query_handler))
+
     # Add message handler for buttons and Q&A (handles any text that isn't a command)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
