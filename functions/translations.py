@@ -134,6 +134,7 @@ Use /sources to toggle sources""",
         'clear_all_confirm_btn': "✅ Yes, delete all",
         'clear_all_cancel_btn': "❌ Cancel",
         'export_btn': "📤 Export",
+        'inline_share_text': "📰 *{title}*\n\n{url}\n\n_Shared via @LensAI\\_bot_",
         
         # Stats
         'stats_empty': "📊 *Reading Statistics*\n\nYou haven't saved any articles yet! Save articles to see your reading stats.",
@@ -316,6 +317,7 @@ _Работает локально - настройки сохранятся п�
         'clear_all_confirm_btn': "✅ Да, удалить всё",
         'clear_all_cancel_btn': "❌ Отмена",
         'export_btn': "📤 Экспорт",
+        'inline_share_text': "📰 *{title}*\n\n{url}\n\n_Поделились через @LensAI\\_bot_",
         
         # Stats
         'stats_empty': "📊 *Статистика чтения*\n\nВы еще не сохранили ни одной статьи! Сохраняйте статьи, чтобы увидеть свою статистику.",
