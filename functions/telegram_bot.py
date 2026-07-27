@@ -1462,6 +1462,51 @@ async def share_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(t('share_bot', user_lang), parse_mode='Markdown')
 
 
+async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle inline queries to search and share saved articles."""
+    from .user_storage import get_all_saved_articles
+    from .security_utils import escape_markdown_v1
+    from .semantic_search import semantic_search_articles
+
+    query = update.inline_query.query or ""
+    telegram_id = update.inline_query.from_user.id
+
+    articles = get_all_saved_articles(telegram_id)
+    if not articles:
+        await update.inline_query.answer([], cache_time=60, is_personal=True)
+        return
+
+    if query:
+        # Search using semantic search or basic text match
+        results = semantic_search_articles(query, articles, limit=20)
+    else:
+        # Just use recent
+        results = articles[:20]
+
+    inline_results = []
+    for idx, art in enumerate(results):
+        title = art.get('title', 'Untitled')
+        url = art.get('url', '')
+        if not url:
+            continue
+
+        safe_title = escape_markdown_v1(title)
+
+        # Message format
+        msg_text = f"📰 *{safe_title}*\n\n[Read Article]({url})"
+
+        inline_results.append(
+            InlineQueryResultArticle(
+                id=str(idx),
+                title=title,
+                description=url,
+                input_message_content=InputTextMessageContent(msg_text, parse_mode='Markdown')
+            )
+        )
+
+    await update.inline_query.answer(inline_results[:50], cache_time=10, is_personal=True)
+
+
 async def trends_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /trends command - show weekly topic trends."""
     from .user_storage import get_user_language
@@ -3425,6 +3470,9 @@ def create_bot_application() -> Application:
     # Add message handler for buttons and Q&A (handles any text that isn't a command)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
+    # Add inline query handler for sharing saved articles
+    application.add_handler(InlineQueryHandler(inline_query_handler))
+
     # Set up bot commands for native Telegram menu (will be called after initialization)
     application.post_init = setup_bot_commands
     
