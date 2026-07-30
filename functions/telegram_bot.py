@@ -668,11 +668,22 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [
             InlineKeyboardButton("🌍 Timezone" if user_lang == 'en' else "🌍 Часовой пояс", callback_data='manage_timezone'),
             InlineKeyboardButton("🌐 Language" if user_lang == 'en' else "🌐 Язык", callback_data='manage_language')
+        ],
+        [
+            InlineKeyboardButton("🌙 Quiet Hours" if user_lang == 'en' else "🌙 Тихие часы", callback_data='manage_quiet_hours'),
+            InlineKeyboardButton("🚨 Breaking News" if user_lang == 'en' else "🚨 Молнии", callback_data='manage_breaking')
+        ],
+        [
+            InlineKeyboardButton("📊 Reading Stats" if user_lang == 'en' else "📊 Статистика", callback_data='manage_stats')
         ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    await update.message.reply_text(status_message, parse_mode='Markdown', reply_markup=reply_markup)
+    reply_msg = update.message if update.message else update.callback_query.message
+    if update.callback_query:
+        await update.callback_query.edit_message_text(status_message, parse_mode='Markdown', reply_markup=reply_markup)
+    else:
+        await reply_msg.reply_text(status_message, parse_mode='Markdown', reply_markup=reply_markup)
 
 
 # ============ SAVED ARTICLES ============
@@ -1538,7 +1549,7 @@ async def timezone_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from .database import set_user_timezone, get_user
 
     reply_msg = update.message or update.callback_query.message
-    if not context.args:
+    if not getattr(context, 'args', None):
         user = get_user(telegram_id) or {}
         current_tz = user.get("timezone", "Asia/Baku")
         await reply_msg.reply_text(
@@ -1562,31 +1573,33 @@ async def quiet_hours_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     telegram_id = update.effective_user.id
     from .database import set_user_quiet_hours, get_user
 
-    if not context.args:
+    reply_msg = update.message if update.message else update.callback_query.message
+
+    if not getattr(context, 'args', None):
         user = get_user(telegram_id) or {}
         qh = user.get("quiet_hours")
         if qh and qh.get("start") and qh.get("end"):
-            await update.message.reply_text(
+            await reply_msg.reply_text(
                 f"Current quiet hours: {qh.get('start')} - {qh.get('end')}\nUse: /quiet_hours HH:MM-HH:MM or /quiet_hours off"
             )
         else:
-            await update.message.reply_text("Quiet hours are disabled.\nUse: /quiet_hours 23:00-07:00")
+            await reply_msg.reply_text("Quiet hours are disabled.\nUse: /quiet_hours 23:00-07:00")
         return
 
     value = context.args[0].strip().lower()
     if value == "off":
         set_user_quiet_hours(telegram_id, None)
-        await update.message.reply_text("Quiet hours disabled.")
+        await reply_msg.reply_text("Quiet hours disabled.")
         return
 
     match = re.match(r"^([0-2]\d:[0-5]\d)-([0-2]\d:[0-5]\d)$", value)
     if not match:
-        await update.message.reply_text("Invalid format. Use /quiet_hours HH:MM-HH:MM (example: /quiet_hours 23:00-07:00)")
+        await reply_msg.reply_text("Invalid format. Use /quiet_hours HH:MM-HH:MM (example: /quiet_hours 23:00-07:00)")
         return
 
     start, end = match.group(1), match.group(2)
     set_user_quiet_hours(telegram_id, {"start": start, "end": end})
-    await update.message.reply_text(f"Quiet hours set: {start} - {end}")
+    await reply_msg.reply_text(f"Quiet hours set: {start} - {end}")
 
 
 async def trendalerts_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1757,6 +1770,7 @@ async def manage_settings_callback(update: Update, context: ContextTypes.DEFAULT
     await query.answer()
 
     data = query.data
+
     if data == 'manage_sources':
         await sources_command(update, context)
     elif data == 'manage_schedule':
@@ -1765,6 +1779,12 @@ async def manage_settings_callback(update: Update, context: ContextTypes.DEFAULT
         await timezone_command(update, context)
     elif data == 'manage_language':
         await language_command(update, context)
+    elif data == 'manage_quiet_hours':
+        await quiet_hours_command(update, context)
+    elif data == 'manage_breaking':
+        await breaking_command(update, context)
+    elif data == 'manage_stats':
+        await stats_command(update, context)
 
 async def delete_article_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle delete article button press."""
@@ -1837,10 +1857,11 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     telegram_id = update.effective_user.id
     user_lang = get_user_language(telegram_id)
+    reply_msg = update.message if update.message else update.callback_query.message
 
     articles = get_all_saved_articles(telegram_id)
     if not articles:
-        await update.message.reply_text(t('stats_empty', user_lang), parse_mode='Markdown')
+        await reply_msg.reply_text(t('stats_empty', user_lang), parse_mode='Markdown')
         return
 
     total_saved = len(articles)
@@ -1866,7 +1887,7 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     export_text = t('export_btn', user_lang)
     reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton(export_text, callback_data="do_export_prompt_all")]])
 
-    await update.message.reply_text(message, parse_mode='Markdown', reply_markup=reply_markup)
+    await reply_msg.reply_text(message, parse_mode='Markdown', reply_markup=reply_markup)
 
 # ============ ADMIN STATUS ============
 
@@ -3065,28 +3086,29 @@ async def breaking_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     telegram_id = update.effective_user.id
     user_lang = get_user_language(telegram_id)
+    reply_msg = update.message if update.message else update.callback_query.message
 
-    if not context.args:
+    if not getattr(context, 'args', None):
         current = get_user_breaking_news_preference(telegram_id)
         if current:
-            await update.message.reply_text(t('breaking_status_on', user_lang), parse_mode='Markdown')
+            await reply_msg.reply_text(t('breaking_status_on', user_lang), parse_mode='Markdown')
         else:
-            await update.message.reply_text(t('breaking_status_off', user_lang), parse_mode='Markdown')
+            await reply_msg.reply_text(t('breaking_status_off', user_lang), parse_mode='Markdown')
         return
 
     arg = context.args[0].strip().lower()
     if arg == 'on':
         set_user_breaking_news_preference(telegram_id, True)
-        await update.message.reply_text(t('breaking_on', user_lang), parse_mode='Markdown')
+        await reply_msg.reply_text(t('breaking_on', user_lang), parse_mode='Markdown')
     elif arg == 'off':
         set_user_breaking_news_preference(telegram_id, False)
-        await update.message.reply_text(t('breaking_off', user_lang), parse_mode='Markdown')
+        await reply_msg.reply_text(t('breaking_off', user_lang), parse_mode='Markdown')
     else:
         current = get_user_breaking_news_preference(telegram_id)
         if current:
-            await update.message.reply_text(t('breaking_status_on', user_lang), parse_mode='Markdown')
+            await reply_msg.reply_text(t('breaking_status_on', user_lang), parse_mode='Markdown')
         else:
-            await update.message.reply_text(t('breaking_status_off', user_lang), parse_mode='Markdown')
+            await reply_msg.reply_text(t('breaking_status_off', user_lang), parse_mode='Markdown')
 
 
 # ============ STALKER COMMANDS ============
