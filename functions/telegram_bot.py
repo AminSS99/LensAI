@@ -718,8 +718,12 @@ async def _render_saved_page(update_or_query, telegram_id: int, user_lang: str, 
         url = article.get('url', '')
         category = article.get('category', 'tech')
         saved_at = article.get('saved_at', '')
+        is_read = article.get('is_read', False)
         
         emoji = cat_emoji.get(category, '🔧')
+        if not is_read:
+            emoji = f"🆕 {emoji}"
+
         date_str = saved_at[:10] if saved_at else ''
         
         from .security_utils import escape_markdown_v1, sanitize_markdown_url
@@ -2517,6 +2521,9 @@ async def summarize_url_callback(update: Update, context: ContextTypes.DEFAULT_T
         await query.answer("Link expired. Please send the link again.", show_alert=True)
         return
 
+    from .user_storage import mark_article_read
+    mark_article_read(telegram_id, url)
+
     await query.answer(t('summarizing_link', user_lang))
 
     try:
@@ -2742,6 +2749,9 @@ async def read_url_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not url:
         await query.answer("Link expired. Please send the link again.", show_alert=True)
         return
+
+    from .user_storage import mark_article_read
+    mark_article_read(telegram_id, url)
 
     await query.answer(t('reading_link', user_lang))
 

@@ -132,6 +132,40 @@ def categorize_article(title: str, url: str = "") -> str:
 
 # ============ SAVED ARTICLES ============
 
+def mark_article_read(telegram_id: int, url: str) -> bool:
+    """Mark a saved article as read."""
+    from .security_utils import stable_hash
+    db = get_firestore_client()
+    if db:
+        try:
+            user_articles = db.collection('users').document(str(telegram_id)).collection('saved_articles')
+            doc_ref = user_articles.document(stable_hash(url))
+            if doc_ref.get().exists:
+                doc_ref.set({'is_read': True}, merge=True)
+                return True
+
+            # Backward compatibility check
+            existing = list(user_articles.where('url', '==', url).limit(1).stream())
+            if existing:
+                existing[0].reference.set({'is_read': True}, merge=True)
+                return True
+        except Exception as e:
+            print(f"Firestore mark read error: {e}")
+
+    # Fallback to local
+    data = _load_local_data(telegram_id)
+    updated = False
+    for article in data.get('saved_articles', []):
+        if article['url'] == url:
+            article['is_read'] = True
+            updated = True
+            break
+
+    if updated:
+        _save_local_data(telegram_id, data)
+        return True
+    return False
+
 def save_article(telegram_id: int, title: str, url: str, source: str = "", category: str = "") -> bool:
     """
     Save an article for a user to Firestore (or local).
