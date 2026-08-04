@@ -1385,7 +1385,7 @@ async def recap_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_lang = get_user_language(telegram_id)
     
     # Get all saved articles
-    articles = get_saved_articles(telegram_id, limit=50)
+    articles = get_saved_articles(telegram_id, limit=200)
     
     # Filter to last 7 days
     week_ago = datetime.now() - timedelta(days=7)
@@ -1441,6 +1441,9 @@ async def recap_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 InlineKeyboardButton(f"↗️ {i}", url=f"https://t.me/share/url?url={urllib.parse.quote(url)}&text={urllib.parse.quote(title)}")
             ])
 
+    if keyboard:
+        keyboard.append([InlineKeyboardButton(t('btn_summarize_week', user_lang), callback_data="summarize_recap")])
+
     reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
     
     message += f"\n_Total: {len(weekly_articles)} articles this week_"
@@ -1449,6 +1452,60 @@ async def recap_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(message, parse_mode='Markdown', disable_web_page_preview=True, reply_markup=reply_markup)
     except Exception:
         await update.message.reply_text(message, disable_web_page_preview=True, reply_markup=reply_markup)
+
+
+async def summarize_recap_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle summarize week button - generate AI digest of weekly saved articles."""
+    from .user_storage import get_saved_articles, get_user_language
+    from .translations import t
+    from .summarizer import summarize_news
+    from datetime import datetime, timedelta
+
+    query = update.callback_query
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+
+    await query.answer(t('summarizing_week', user_lang))
+
+    # Show loading message
+    loading_msg = await query.message.reply_text(t('summarizing_week', user_lang), parse_mode='Markdown')
+
+    try:
+        articles = get_saved_articles(telegram_id, limit=200)
+        week_ago = datetime.now() - timedelta(days=7)
+        weekly_articles = []
+
+        for article in articles:
+            saved_at = article.get('saved_at', '')
+            if saved_at:
+                try:
+                    saved_date = datetime.fromisoformat(saved_at.replace('Z', '+00:00'))
+                    if saved_date.replace(tzinfo=None) > week_ago:
+                        weekly_articles.append(article)
+                except Exception:
+                    pass
+
+        if not weekly_articles:
+            await loading_msg.edit_text(t('recap_empty', user_lang))
+            return
+
+        # Top 15 articles for the week
+        digest = await summarize_news(weekly_articles[:15], language=user_lang)
+
+        from .message_utils import split_message
+        chunks = split_message(digest)
+
+        # Delete loading message
+        await loading_msg.delete()
+
+        for chunk in chunks:
+            try:
+                await query.message.reply_text(chunk, parse_mode='Markdown', disable_web_page_preview=True)
+            except Exception:
+                await query.message.reply_text(chunk, disable_web_page_preview=True)
+
+    except Exception as e:
+        await loading_msg.edit_text(t('summary_error', user_lang, error=str(e)[:100]))
 
 
 async def share_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2838,66 +2895,6 @@ async def read_url_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 
-async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle inline queries to share saved articles."""
-    from .user_storage import get_all_saved_articles, get_user_language
-    from .translations import t
-    from .security_utils import escape_markdown_v1
-    import uuid
-
-    query = update.inline_query.query
-    telegram_id = update.effective_user.id
-    user_lang = get_user_language(telegram_id)
-
-    # Get all saved articles for this user
-    articles = get_all_saved_articles(telegram_id)
-
-    # Filter articles if query exists
-    if query:
-        query_lower = query.lower()
-        articles = [
-            a for a in articles
-            if query_lower in a.get('title', '').lower()
-            or query_lower in a.get('category', '').lower()
-        ]
-
-    # Limit to 50 results (Telegram's limit)
-    articles = articles[:50]
-
-    results = []
-    for article in articles:
-        title = article.get('title', 'Untitled')
-        url = article.get('url', '')
-        category = article.get('category', 'tech')
-
-        # Determine emoji based on category
-        emoji_map = {
-            'ai': '🤖', 'security': '🔒', 'crypto': '💰',
-            'startups': '🚀', 'hardware': '💻', 'software': '📱', 'tech': '🔧'
-        }
-        emoji = emoji_map.get(category, '📰')
-
-        # Prepare message text
-        safe_title = escape_markdown_v1(title)
-        safe_url = escape_markdown_v1(url)
-        message_text = t('inline_share_text', user_lang, title=safe_title, url=safe_url)
-
-        result_id = str(uuid.uuid4())
-        results.append(
-            InlineQueryResultArticle(
-                id=result_id,
-                title=f"{emoji} {title}",
-                description=url,
-                input_message_content=InputTextMessageContent(
-                    message_text=message_text,
-                    parse_mode='Markdown'
-                )
-            )
-        )
-
-    await update.inline_query.answer(results, is_personal=True, cache_time=0)
-
-
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle any text message - button presses or questions for the active AI model."""
     from .user_storage import get_user_language
@@ -3463,15 +3460,13 @@ def create_bot_application() -> Application:
     application.add_handler(CallbackQueryHandler(save_search_callback, pattern='^save_search_'))
     application.add_handler(CallbackQueryHandler(export_callback, pattern='^do_export_'))
     application.add_handler(CallbackQueryHandler(random_next_callback, pattern='^random_next$'))
+    application.add_handler(CallbackQueryHandler(summarize_recap_callback, pattern='^summarize_recap$'))
     
     # Add inline query handler for sharing saved articles
     application.add_handler(InlineQueryHandler(inline_query_handler))
 
     # Add message handler for buttons and Q&A (handles any text that isn't a command)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    
-    # Add inline query handler for sharing saved articles
-    application.add_handler(InlineQueryHandler(inline_query_handler))
 
     # Set up bot commands for native Telegram menu (will be called after initialization)
     application.post_init = setup_bot_commands
