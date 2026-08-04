@@ -142,6 +142,7 @@ Use /sources to toggle sources""",
         'stats_empty': "📊 *Reading Statistics*\n\nYou haven't saved any articles yet! Save articles to see your reading stats.",
         'stats_header': "📊 *Your Reading Statistics*\n\n",
         'stats_total': "*Total Saved:* {total}\n",
+        'stats_read': "*Total Read:* {read}\n",
         'stats_top_sources': "\n*Top Sources:*\n",
 
         # Category labels
@@ -327,6 +328,7 @@ _Работает локально - настройки сохранятся п�
         'stats_empty': "📊 *Статистика чтения*\n\nВы еще не сохранили ни одной статьи! Сохраняйте статьи, чтобы увидеть свою статистику.",
         'stats_header': "📊 *Ваша статистика чтения*\n\n",
         'stats_total': "*Всего сохранено:* {total}\n",
+        'stats_read': "*Всего прочитано:* {read}\n",
         'stats_top_sources': "\n*Топ источников:*\n",
 
         # Category labels

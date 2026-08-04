@@ -164,6 +164,10 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     telegram_id = update.effective_user.id
     user_lang = get_user_language(telegram_id)
 
+    # Allow overriding language via args (e.g. /news ru)
+    if getattr(context, 'args', None) and context.args[0].lower() in ['en', 'ru', 'az']:
+        user_lang = context.args[0].lower()
+
     # Resolve sources first so cache is language+source scoped.
     sources = ['hackernews', 'techcrunch', 'ai_blogs', 'theverge', 'github', 'producthunt']
     try:
@@ -729,8 +733,9 @@ async def _render_saved_page(update_or_query, telegram_id: int, user_lang: str, 
         url = article.get('url', '')
         category = article.get('category', 'tech')
         saved_at = article.get('saved_at', '')
+        is_read = article.get('is_read', False)
         
-        emoji = cat_emoji.get(category, '🔧')
+        emoji = '✅' if is_read else cat_emoji.get(category, '🔧')
         date_str = saved_at[:10] if saved_at else ''
         
         from .security_utils import escape_markdown_v1, sanitize_markdown_url
@@ -1922,11 +1927,13 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     total_saved = len(articles)
+    total_read = sum(1 for a in articles if a.get('is_read', False))
     categories = Counter(a.get('category', 'tech') for a in articles)
     sources = Counter(a.get('source') for a in articles if a.get('source'))
 
     message = t('stats_header', user_lang)
     message += t('stats_total', user_lang, total=total_saved)
+    message += t('stats_read', user_lang, read=total_read)
     message += "\n"
 
     for cat, count in categories.most_common(5):
@@ -2068,7 +2075,16 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     
-    query = ' '.join(context.args).strip()
+    # Parse source filter
+    source_filter = None
+    args = list(context.args)
+    if '--source' in args:
+        idx = args.index('--source')
+        if idx + 1 < len(args):
+            source_filter = args[idx + 1].lower()
+            del args[idx:idx+2]
+
+    query = ' '.join(args).strip()
     query_lower = query.lower()
     
     # Validation
@@ -2086,7 +2102,12 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from .security_utils import escape_markdown_v1
     safe_query = escape_markdown_v1(query)
     
-    await reply_msg.reply_text(t('searching', user_lang, query=safe_query), parse_mode='Markdown')
+    search_msg = t('searching', user_lang, query=safe_query)
+    if source_filter:
+        safe_source = escape_markdown_v1(source_filter)
+        search_msg += f" (Source: {safe_source})"
+
+    await reply_msg.reply_text(search_msg, parse_mode='Markdown')
     
     try:
         # Fetch news without blocking the event loop.
@@ -2100,9 +2121,11 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if isinstance(tc_results, list):
             all_news.extend(tc_results)
         
-        # Filter by query
+        # Filter by query and source
         results = []
         for article in all_news:
+            if source_filter and source_filter not in article.get('source', '').lower():
+                continue
             title = article.get('title', '').lower()
             if query_lower in title or any(word in title for word in query_lower.split()):
                 results.append(article)
@@ -2820,6 +2843,9 @@ async def read_url_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not url:
         await query.answer("Link expired. Please send the link again.", show_alert=True)
         return
+
+    from .user_storage import mark_article_read
+    mark_article_read(telegram_id, url)
 
     await query.answer(t('reading_link', user_lang))
 
