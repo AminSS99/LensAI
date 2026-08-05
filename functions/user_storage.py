@@ -225,6 +225,42 @@ def mark_article_read(telegram_id: int, url: str) -> bool:
     return False
 
 
+def mark_article_unread(telegram_id: int, url: str) -> bool:
+    """Mark a saved article as unread in Firestore (or local)."""
+    db = get_firestore_client()
+    if db:
+        try:
+            user_articles = db.collection('users').document(str(telegram_id)).collection('saved_articles')
+            doc_ref = user_articles.document(stable_hash(url))
+
+            if doc_ref.get().exists:
+                doc_ref.update({'is_read': False})
+                return True
+
+            # Backward compatibility check
+            existing = list(user_articles.where('url', '==', url).limit(1).stream())
+            if existing:
+                existing[0].reference.update({'is_read': False})
+                return True
+        except Exception as e:
+            print(f"Firestore mark unread error: {e}")
+
+    # Fallback to local
+    data = _load_local_data(telegram_id)
+    updated = False
+    for article in data.get('saved_articles', []):
+        if article.get('url') == url:
+            article['is_read'] = False
+            updated = True
+            break
+
+    if updated:
+        _save_local_data(telegram_id, data)
+        return True
+
+    return False
+
+
 def get_saved_articles(telegram_id: int, limit: int = 10, category: str = None, offset: int = 0) -> List[Dict[str, Any]]:
     """Get user's saved articles from Firestore (or local)."""
     db = get_firestore_client()

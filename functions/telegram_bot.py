@@ -743,7 +743,6 @@ async def _render_saved_page(update_or_query, telegram_id: int, user_lang: str, 
         safe_url = sanitize_markdown_url(url)
 
         item_num = offset + i
-
         if safe_url.startswith('http'):
             message += f"{item_num}. {emoji} [{safe_title}]({safe_url})"
         else:
@@ -757,14 +756,22 @@ async def _render_saved_page(update_or_query, telegram_id: int, user_lang: str, 
         from .security_utils import stable_hash
         url_hash = stable_hash(url)[:8]
         delete_label = "🗑️"
-        # encode page in callback data so delete button can refresh the correct page
-        keyboard.append([
+
+        button_row = [
             InlineKeyboardButton(f"📖 {item_num}", callback_data=f"read_url_{url_hash}"),
             InlineKeyboardButton(f"🧠 {item_num}", callback_data=f"summarize_url_{url_hash}"),
             InlineKeyboardButton(f"↗️ {item_num}", url=f"https://t.me/share/url?url={urllib.parse.quote(url)}&text={urllib.parse.quote(title)}"),
             InlineKeyboardButton(f"{delete_label} {item_num}. {title[:15]}...", callback_data=f"del_{url_hash}_{page}")
-        ])
-    
+        ]
+
+        if is_read:
+
+
+            keyboard.append(button_row)
+            # Add mark unread to next line
+            keyboard.append([InlineKeyboardButton(t('btn_mark_unread', user_lang), callback_data=f"mark_unread_{url_hash}_{page}")])
+        else:
+            keyboard.append(button_row)
     message += t('saved_footer', user_lang)
 
     # Add pagination buttons
@@ -1146,6 +1153,56 @@ async def export_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         category = parts[3] if len(parts) > 3 and parts[3] != 'all' else None
 
         await _do_export(message_obj, telegram_id, user_lang, export_format, category)
+
+
+async def mark_unread_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Mark a saved article as unread."""
+    from .user_storage import mark_article_unread, get_user_language, get_temp_url
+    from .translations import t
+
+    query = update.callback_query
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+
+    parts = query.data.split('_')
+    if len(parts) < 3:
+        await query.answer("Invalid request", show_alert=True)
+        return
+
+    url_hash = parts[2]
+    url = get_temp_url(url_hash, telegram_id)
+
+    if not url:
+        from .user_storage import get_all_saved_articles, get_temp_search_result
+        from .security_utils import stable_hash
+
+        articles = get_all_saved_articles(telegram_id)
+        for article in articles:
+            article_url = article.get('url', '')
+            if stable_hash(article_url)[:8] == url_hash:
+                url = article_url
+                break
+
+        if not url:
+            search_result = get_temp_search_result(url_hash, telegram_id)
+            if search_result and 'url' in search_result:
+                url = search_result['url']
+
+    if not url:
+        await query.answer("Link expired.", show_alert=True)
+        return
+
+    mark_article_unread(telegram_id, url)
+    await query.answer("Marked as unread!")
+
+    # We should also refresh the page if we can determine the page number
+    page_str = parts[3] if len(parts) > 3 else "0"
+    if page_str.isdigit():
+        page = int(page_str)
+        await _render_saved_page(query, telegram_id, user_lang, page, is_callback=True)
+    else:
+        # Just remove the message if it's from a single view or we don't know the page
+        pass
 
 
 async def clear_all_prompt_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3501,6 +3558,7 @@ def create_bot_application() -> Application:
     application.add_handler(CallbackQueryHandler(summarize_url_callback, pattern='^summarize_url_'))
     application.add_handler(CallbackQueryHandler(similar_url_callback, pattern='^similar_url_'))
     application.add_handler(CallbackQueryHandler(read_url_callback, pattern='^read_url_'))
+    application.add_handler(CallbackQueryHandler(mark_unread_callback, pattern='^mark_unread_'))
     application.add_handler(CallbackQueryHandler(clear_all_prompt_callback, pattern='^clear_all_prompt_'))
     application.add_handler(CallbackQueryHandler(clear_all_confirm_callback, pattern='^clear_all_confirm_'))
     application.add_handler(CallbackQueryHandler(clear_all_cancel_callback, pattern='^clear_all_cancel_'))
