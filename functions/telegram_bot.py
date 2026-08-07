@@ -2948,6 +2948,36 @@ async def read_url_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 
+
+async def topics_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /topics command - group saved articles by topic."""
+    from .user_storage import get_all_saved_articles, get_user_language
+    from .translations import t
+    from .topic_clustering import cluster_articles, format_clustered_articles
+
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+
+    articles = get_all_saved_articles(telegram_id)
+
+    if not articles:
+        await update.message.reply_text(t('no_saved', user_lang), parse_mode='Markdown')
+        return
+
+    clusters = cluster_articles(articles)
+    formatted_topics = format_clustered_articles(clusters, user_lang)
+
+    header = "🗂 *Your Saved Articles by Topic*\n" if user_lang != 'ru' else "🗂 *Ваши сохраненные статьи по темам*\n"
+    message = header + formatted_topics
+
+    from .message_utils import split_message_simple
+    chunks = split_message_simple(message, max_length=4000)
+    for chunk in chunks:
+        try:
+            await update.message.reply_text(chunk, parse_mode='Markdown', disable_web_page_preview=True)
+        except Exception:
+            await update.message.reply_text(chunk, disable_web_page_preview=True)
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle any text message - button presses or questions for the active AI model."""
     from .user_storage import get_user_language
@@ -3333,6 +3363,7 @@ async def setup_bot_commands(application: Application):
         BotCommand("search", "🔍 Search articles"),
         BotCommand("semsearch", "🧠 Semantic search"),
         BotCommand("filter", "📂 Filter by category"),
+        BotCommand("topics", "🗂 View by topics"),
         BotCommand("recap", "📊 Weekly recap"),
         BotCommand("stats", "📈 Reading statistics"),
         BotCommand("status", "⚙️ Your settings"),
@@ -3362,6 +3393,7 @@ async def setup_bot_commands(application: Application):
         BotCommand("search", "🔍 Search articles"),
         BotCommand("semsearch", "🧠 Semantic search"),
         BotCommand("filter", "📂 Filter by category"),
+        BotCommand("topics", "🗂 View by topics"),
         BotCommand("recap", "📊 Weekly recap"),
         BotCommand("stats", "📈 Reading statistics"),
         BotCommand("status", "⚙️ Your settings"),
@@ -3391,6 +3423,7 @@ async def setup_bot_commands(application: Application):
         BotCommand("search", "🔍 Поиск статей"),
         BotCommand("semsearch", "🧠 Умный поиск"),
         BotCommand("filter", "📂 Фильтр по категориям"),
+        BotCommand("topics", "🗂 Группировка по темам"),
         BotCommand("recap", "📊 Недельный обзор"),
         BotCommand("stats", "📈 Статистика чтения"),
         BotCommand("status", "⚙️ Настройки"),
@@ -3474,6 +3507,7 @@ def create_bot_application() -> Application:
     application.add_handler(CommandHandler("search", search_command))
     application.add_handler(CommandHandler("language", language_command))
     application.add_handler(CommandHandler("filter", filter_command))
+    application.add_handler(CommandHandler("topics", topics_command))
     application.add_handler(CommandHandler("recap", recap_command))
     application.add_handler(CommandHandler("stats", stats_command))
     application.add_handler(CommandHandler("share", share_command))
