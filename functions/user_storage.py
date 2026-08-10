@@ -332,6 +332,24 @@ def clear_saved_articles(telegram_id: int):
     data['saved_articles'] = []
     _save_local_data(telegram_id, data)
 
+def clear_read_articles(telegram_id: int):
+    """Clear all read articles for a user."""
+    db = get_firestore_client()
+    if db:
+        try:
+            docs = db.collection('users').document(str(telegram_id)).collection('saved_articles').where('is_read', '==', True).stream()
+            for doc in docs:
+                doc.reference.delete()
+            return
+        except Exception as e:
+            print(f"Firestore clear read error: {e}")
+
+    # Fallback to local
+    data = _load_local_data(telegram_id)
+    if 'saved_articles' in data:
+        data['saved_articles'] = [a for a in data['saved_articles'] if not a.get('is_read', False)]
+        _save_local_data(telegram_id, data)
+
 
 # ============ USER PREFERENCES ============
 
