@@ -2624,6 +2624,9 @@ async def summarize_url_callback(update: Update, context: ContextTypes.DEFAULT_T
         await query.answer("Link expired. Please send the link again.", show_alert=True)
         return
 
+    from .user_storage import mark_article_read
+    mark_article_read(telegram_id, url)
+
     await query.answer(t('summarizing_link', user_lang))
 
     try:
