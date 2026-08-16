@@ -2707,6 +2707,7 @@ async def summarize_url_callback(update: Update, context: ContextTypes.DEFAULT_T
             ],
             [
                 InlineKeyboardButton("↗️ Share", url=share_url),
+                InlineKeyboardButton(t('btn_unread', user_lang), callback_data=f"unread_url_{url_hash}"),
                 InlineKeyboardButton(del_label, callback_data=f"del_{url_hash}_keep")
             ]
         ]
@@ -2807,6 +2808,60 @@ async def similar_url_callback(update, context):
         await query.message.reply_text(message, disable_web_page_preview=True, reply_markup=reply_markup)
 
 # ============ Q&A HANDLER ============
+
+
+async def unread_url_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Mark a saved URL as unread."""
+    from .user_storage import get_user_language, get_temp_url, mark_article_unread
+    from .translations import t
+
+    query = update.callback_query
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+
+    parts = query.data.split('_')
+    if len(parts) < 3:
+        await query.answer("Invalid request", show_alert=True)
+        return
+
+    url_hash = parts[2]
+    url = get_temp_url(url_hash, telegram_id)
+
+    if not url:
+        from .user_storage import get_all_saved_articles
+        from .security_utils import stable_hash
+
+        articles = get_all_saved_articles(telegram_id)
+        for article in articles:
+            article_url = article.get('url', '')
+            if stable_hash(article_url)[:8] == url_hash:
+                url = article_url
+                break
+
+    if not url:
+        await query.answer("Link expired.", show_alert=True)
+        return
+
+    mark_article_unread(telegram_id, url)
+
+    # Optional: Answer with a confirmation message
+    success_msg = "Marked as unread!" if user_lang == 'en' else "Отмечено как непрочитанное!"
+    await query.answer(success_msg)
+
+    # Remove the "Mark Unread" button by updating the markup
+    if query.message and query.message.reply_markup:
+        keyboard = query.message.reply_markup.inline_keyboard
+        new_keyboard = []
+        for row in keyboard:
+            new_row = [btn for btn in row if not (btn.callback_data and btn.callback_data.startswith('unread_url_'))]
+            if new_row:
+                new_keyboard.append(new_row)
+
+        from telegram import InlineKeyboardMarkup
+        try:
+            await query.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(new_keyboard))
+        except Exception:
+            pass
 
 
 async def read_url_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3501,6 +3556,7 @@ def create_bot_application() -> Application:
     application.add_handler(CallbackQueryHandler(summarize_url_callback, pattern='^summarize_url_'))
     application.add_handler(CallbackQueryHandler(similar_url_callback, pattern='^similar_url_'))
     application.add_handler(CallbackQueryHandler(read_url_callback, pattern='^read_url_'))
+    application.add_handler(CallbackQueryHandler(unread_url_callback, pattern='^unread_url_'))
     application.add_handler(CallbackQueryHandler(clear_all_prompt_callback, pattern='^clear_all_prompt_'))
     application.add_handler(CallbackQueryHandler(clear_all_confirm_callback, pattern='^clear_all_confirm_'))
     application.add_handler(CallbackQueryHandler(clear_all_cancel_callback, pattern='^clear_all_cancel_'))
