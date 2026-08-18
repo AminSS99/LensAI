@@ -315,6 +315,28 @@ def delete_saved_article(telegram_id: int, url: str) -> bool:
     return False
 
 
+def mark_all_read(telegram_id: int):
+    """Mark all saved articles as read for a user."""
+    db = get_firestore_client()
+    if db:
+        try:
+            docs = db.collection('users').document(str(telegram_id)).collection('saved_articles').list_documents()
+            for doc in docs:
+                doc.update({'is_read': True})
+        except Exception as e:
+            print(f"Firestore mark all read error: {e}")
+
+    # Fallback to local
+    data = _load_local_data(telegram_id)
+    updated = False
+    for article in data.get('saved_articles', []):
+        if not article.get('is_read', False):
+            article['is_read'] = True
+            updated = True
+
+    if updated:
+        _save_local_data(telegram_id, data)
+
 def clear_saved_articles(telegram_id: int):
     """Clear all saved articles for a user."""
     db = get_firestore_client()
