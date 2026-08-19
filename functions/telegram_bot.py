@@ -758,8 +758,14 @@ async def _render_saved_page(update_or_query, telegram_id: int, user_lang: str, 
         url_hash = stable_hash(url)[:8]
         delete_label = "🗑️"
         # encode page in callback data so delete button can refresh the correct page
+        if is_read:
+            unread_btn_text = t('btn_unread', user_lang)
+            read_btn = InlineKeyboardButton(f"{unread_btn_text} ({item_num})", callback_data=f"unread_url_{url_hash}_{page}")
+        else:
+            read_btn = InlineKeyboardButton(f"📖 {item_num}", callback_data=f"read_url_{url_hash}")
+
         keyboard.append([
-            InlineKeyboardButton(f"📖 {item_num}", callback_data=f"read_url_{url_hash}"),
+            read_btn,
             InlineKeyboardButton(f"🧠 {item_num}", callback_data=f"summarize_url_{url_hash}"),
             InlineKeyboardButton(f"↗️ {item_num}", url=f"https://t.me/share/url?url={urllib.parse.quote(url)}&text={urllib.parse.quote(title)}"),
             InlineKeyboardButton(f"{delete_label} {item_num}. {title[:15]}...", callback_data=f"del_{url_hash}_{page}")
@@ -2809,6 +2815,55 @@ async def similar_url_callback(update, context):
 # ============ Q&A HANDLER ============
 
 
+async def unread_url_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Mark a URL as unread."""
+    from .user_storage import get_user_language, get_temp_url, mark_article_unread
+    from .translations import t
+
+    query = update.callback_query
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+
+    data = query.data
+    parts = data.split('_')
+
+    if len(parts) < 3:
+        msg = "Invalid request" if user_lang == 'en' else "Неверный запрос"
+        await query.answer(msg, show_alert=True)
+        return
+
+    url_hash = parts[2]
+    page = int(parts[3]) if len(parts) > 3 else 0
+    url = get_temp_url(url_hash, telegram_id)
+
+    if not url:
+        from .user_storage import get_all_saved_articles, get_temp_search_result
+        from .security_utils import stable_hash
+
+        articles = get_all_saved_articles(telegram_id)
+        for article in articles:
+            article_url = article.get('url', '')
+            if stable_hash(article_url)[:8] == url_hash:
+                url = article_url
+                break
+
+        if not url:
+            search_result = get_temp_search_result(url_hash, telegram_id)
+            if search_result and 'url' in search_result:
+                url = search_result['url']
+
+    if not url:
+        await query.answer("Link expired. Please send the link again.", show_alert=True)
+        return
+
+    mark_article_unread(telegram_id, url)
+
+    await query.answer(t('marked_unread', user_lang))
+
+    # Refresh the saved page to update the checkmark/buttons
+    await _render_saved_page(query, telegram_id, user_lang, page, is_callback=True)
+
+
 async def read_url_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Read a saved URL directly in Telegram."""
     from .user_storage import get_user_language, get_temp_url
@@ -3501,6 +3556,7 @@ def create_bot_application() -> Application:
     application.add_handler(CallbackQueryHandler(summarize_url_callback, pattern='^summarize_url_'))
     application.add_handler(CallbackQueryHandler(similar_url_callback, pattern='^similar_url_'))
     application.add_handler(CallbackQueryHandler(read_url_callback, pattern='^read_url_'))
+    application.add_handler(CallbackQueryHandler(unread_url_callback, pattern='^unread_url_'))
     application.add_handler(CallbackQueryHandler(clear_all_prompt_callback, pattern='^clear_all_prompt_'))
     application.add_handler(CallbackQueryHandler(clear_all_confirm_callback, pattern='^clear_all_confirm_'))
     application.add_handler(CallbackQueryHandler(clear_all_cancel_callback, pattern='^clear_all_cancel_'))
