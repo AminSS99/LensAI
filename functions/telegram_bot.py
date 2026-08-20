@@ -788,10 +788,14 @@ async def _render_saved_page(update_or_query, telegram_id: int, user_lang: str, 
 
     # Add Export and Clear All buttons
     clear_all_text = t('clear_all_btn', user_lang)
+    clear_read_text = t('clear_read_btn', user_lang)
     export_text = t('export_btn', user_lang)
     keyboard.append([
         InlineKeyboardButton(export_text, callback_data="do_export_prompt_all"),
         InlineKeyboardButton(clear_all_text, callback_data=f"clear_all_prompt_{page}")
+    ])
+    keyboard.append([
+        InlineKeyboardButton(clear_read_text, callback_data=f"clear_read_prompt_{page}")
     ])
 
     reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
@@ -1262,6 +1266,63 @@ async def clear_all_cancel_callback(update: Update, context: ContextTypes.DEFAUL
 
     await _render_saved_page(query, telegram_id, user_lang, page, is_callback=True)
 
+async def clear_read_prompt_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle clear read prompt button press."""
+    query = update.callback_query
+    await query.answer()
+    telegram_id = update.effective_user.id
+    from .user_storage import get_user_language
+    from .translations import t
+    user_lang = get_user_language(telegram_id)
+
+    data = query.data
+    page = data.replace('clear_read_prompt_', '')
+
+    message = t('clear_read_prompt', user_lang)
+    keyboard = [
+        [InlineKeyboardButton(t('clear_read_confirm_btn', user_lang), callback_data=f"clear_read_confirm_{page}")],
+        [InlineKeyboardButton(t('clear_read_cancel_btn', user_lang), callback_data=f"clear_read_cancel_{page}")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await query.edit_message_text(
+        message,
+        parse_mode='Markdown',
+        reply_markup=reply_markup
+    )
+
+async def clear_read_confirm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle clear read confirm button press."""
+    query = update.callback_query
+    await query.answer()
+    telegram_id = update.effective_user.id
+    from .user_storage import clear_read_articles, get_user_language
+    from .translations import t
+
+    user_lang = get_user_language(telegram_id)
+    clear_read_articles(telegram_id)
+
+    await query.edit_message_text(
+        t('cleared_read', user_lang),
+        parse_mode='Markdown'
+    )
+
+async def clear_read_cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle clear read cancel button press."""
+    query = update.callback_query
+    await query.answer()
+    telegram_id = update.effective_user.id
+    from .user_storage import get_user_language
+
+    user_lang = get_user_language(telegram_id)
+    data = query.data
+    try:
+        page = int(data.replace('clear_read_cancel_', ''))
+    except (TypeError, ValueError):
+        page = 0
+
+    await _render_saved_page(query, telegram_id, user_lang, page, is_callback=True)
+
 async def search_history_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle search history button press."""
     query = update.callback_query
@@ -1341,6 +1402,17 @@ async def clear_saved_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     user_lang = get_user_language(telegram_id)
     clear_saved_articles(telegram_id)
     await update.message.reply_text(t('cleared_saved', user_lang))
+
+
+async def clear_read_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /clear_read command - clear read articles."""
+    from .user_storage import clear_read_articles, get_user_language
+    from .translations import t
+
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+    clear_read_articles(telegram_id)
+    await update.message.reply_text(t('cleared_read', user_lang))
 
 
 async def filter_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3559,6 +3631,7 @@ def create_bot_application() -> Application:
     application.add_handler(CommandHandler("save", save_command))
     application.add_handler(CommandHandler("clear_saved", clear_saved_command)) # Keep legacy alias
     application.add_handler(CommandHandler("clear", clear_saved_command))
+    application.add_handler(CommandHandler("clear_read", clear_read_command))
     application.add_handler(CommandHandler("export", export_command))
     application.add_handler(CommandHandler("random", random_command))
     application.add_handler(CommandHandler("search", search_command))
@@ -3596,6 +3669,9 @@ def create_bot_application() -> Application:
     application.add_handler(CallbackQueryHandler(clear_all_prompt_callback, pattern='^clear_all_prompt_'))
     application.add_handler(CallbackQueryHandler(clear_all_confirm_callback, pattern='^clear_all_confirm_'))
     application.add_handler(CallbackQueryHandler(clear_all_cancel_callback, pattern='^clear_all_cancel_'))
+    application.add_handler(CallbackQueryHandler(clear_read_prompt_callback, pattern='^clear_read_prompt_'))
+    application.add_handler(CallbackQueryHandler(clear_read_confirm_callback, pattern='^clear_read_confirm_'))
+    application.add_handler(CallbackQueryHandler(clear_read_cancel_callback, pattern='^clear_read_cancel_'))
     application.add_handler(CallbackQueryHandler(search_history_callback, pattern='^search_history_'))
     application.add_handler(CallbackQueryHandler(filter_category_callback, pattern='^filter_cat_'))
     application.add_handler(CallbackQueryHandler(filter_category_callback, pattern='^filter_menu$'))
