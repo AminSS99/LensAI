@@ -166,13 +166,22 @@ def format_clustered_articles(clusters: Dict[str, List[Dict[str, Any]]], lang: s
     
     for topic, articles in clusters.items():
         label = get_topic_label(topic, lang)
-        output.append(f"\n**{label}** ({len(articles)})")
+        output.append(f"\n*{label}* ({len(articles)})")
         output.append("-" * 30)
         
         for article in articles[:5]:  # Limit per topic
             title = article.get('title', 'Untitled')[:60]
             source = article.get('source', '')
-            output.append(f"• {title}")
+            url = article.get('url', '')
+            if url.startswith('http'):
+                from .security_utils import sanitize_markdown_url, escape_markdown_v1
+                safe_title = escape_markdown_v1(title)
+                safe_url = sanitize_markdown_url(url)
+                output.append(f"• [{safe_title}]({safe_url})")
+            else:
+                from .security_utils import escape_markdown_v1
+                safe_title = escape_markdown_v1(title)
+                output.append(f"• {safe_title}")
             if source:
                 output.append(f"  _{source}_")
     
