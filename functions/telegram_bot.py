@@ -772,6 +772,8 @@ async def _render_saved_page(update_or_query, telegram_id: int, user_lang: str, 
             keyboard.append([InlineKeyboardButton(t('btn_mark_unread', user_lang), callback_data=f"mark_unread_{url_hash}_{page}")])
         else:
             keyboard.append(button_row)
+            # Add mark read to next line
+            keyboard.append([InlineKeyboardButton(t('btn_mark_read', user_lang), callback_data=f"mark_read_{url_hash}_{page}")])
     message += t('saved_footer', user_lang)
 
     # Add pagination buttons
@@ -1206,6 +1208,55 @@ async def mark_unread_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         await _render_saved_page(query, telegram_id, user_lang, page, is_callback=True)
     else:
         # Just remove the message if it's from a single view or we don't know the page
+        pass
+
+
+async def mark_read_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Mark a saved article as read."""
+    from .user_storage import mark_article_read, get_user_language, get_temp_url
+    from .translations import t
+
+    query = update.callback_query
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+
+    parts = query.data.split('_')
+    if len(parts) < 3:
+        await query.answer("Invalid request", show_alert=True)
+        return
+
+    url_hash = parts[2]
+    url = get_temp_url(url_hash, telegram_id)
+
+    if not url:
+        from .user_storage import get_all_saved_articles, get_temp_search_result
+        from .security_utils import stable_hash
+
+        articles = get_all_saved_articles(telegram_id)
+        for article in articles:
+            article_url = article.get('url', '')
+            if stable_hash(article_url)[:8] == url_hash:
+                url = article_url
+                break
+
+        if not url:
+            search_result = get_temp_search_result(url_hash, telegram_id)
+            if search_result and 'url' in search_result:
+                url = search_result['url']
+
+    if not url:
+        await query.answer("Link expired.", show_alert=True)
+        return
+
+    mark_article_read(telegram_id, url)
+    await query.answer("Marked as read!")
+
+    # Refresh the page
+    page_str = parts[3] if len(parts) > 3 else "0"
+    if page_str.isdigit():
+        page = int(page_str)
+        await _render_saved_page(query, telegram_id, user_lang, page, is_callback=True)
+    else:
         pass
 
 
@@ -3669,6 +3720,7 @@ def create_bot_application() -> Application:
     application.add_handler(CallbackQueryHandler(similar_url_callback, pattern='^similar_url_'))
     application.add_handler(CallbackQueryHandler(read_url_callback, pattern='^read_url_'))
     application.add_handler(CallbackQueryHandler(mark_unread_callback, pattern='^mark_unread_'))
+    application.add_handler(CallbackQueryHandler(mark_read_callback, pattern='^mark_read_'))
     application.add_handler(CallbackQueryHandler(clear_all_prompt_callback, pattern='^clear_all_prompt_'))
     application.add_handler(CallbackQueryHandler(clear_all_confirm_callback, pattern='^clear_all_confirm_'))
     application.add_handler(CallbackQueryHandler(clear_all_cancel_callback, pattern='^clear_all_cancel_'))
