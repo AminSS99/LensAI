@@ -141,6 +141,7 @@ Use /sources to toggle sources""",
         'clear_read_confirm_btn': "✅ Yes, delete read",
         'clear_read_cancel_btn': "❌ Cancel",
         'cleared_read': "🗑️ All read articles cleared!",
+        'marked_unread': "📖 Marked as unread!",
         'export_btn': "📤 Export",
         'inline_share_text': "📰 *{title}*\n\n{url}\n\n_Shared via @LensAI\\_bot_",
         
@@ -320,6 +321,7 @@ _Работает локально - настройки сохранятся п�
         'btn_summarize': "🧠 Краткое содержание",
         'btn_read': "📖 Читать",
         'btn_unsave': "🗑️ Удалить",
+        'btn_mark_unread': "📖🔄 Отметить непрочитанным",
         'reading_link': "🔄 Извлекаю текст статьи...",
         'summarizing_link': "🔄 Анализирую статью...",
         'summary_error': "❌ Не удалось суммаризировать статью: {error}",
@@ -332,6 +334,7 @@ _Работает локально - настройки сохранятся п�
         'clear_read_confirm_btn': "✅ Да, удалить прочитанные",
         'clear_read_cancel_btn': "❌ Отмена",
         'cleared_read': "🗑️ Все прочитанные статьи удалены!",
+        'marked_unread': "📖 Отмечено как непрочитанное!",
         'export_btn': "📤 Экспорт",
         'inline_share_text': "📰 *{title}*\n\n{url}\n\n_Поделились через @LensAI\\_bot_",
         
