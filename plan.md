@@ -1,11 +1,16 @@
-1. **Goal**: Introduce a "Summarize" inline button for saved articles so users can quickly generate AI summaries of specific URLs without manually sending the link or re-copying it.
-2. **Where to Add Summarize Buttons**:
-   - `saved_command`: Currently paginates and shows inline "Delete 🗑️" buttons. We will add a "Summarize 🧠" inline button alongside each "Delete 🗑️" button.
-   - `random_command`: Currently shows a random article with no reply markup. We will add a "Summarize 🧠" inline button.
-   - `filter_command`: Currently lists filtered articles. We will add "Summarize 🧠" buttons for the first few items or attach a generic keyboard for the listed items.
-   - `search_command`: Currently lists search results. We will attach summarize buttons here too if applicable, or we'll stick to just saved items as per "Summarize saved URL". The feature description implies making "Summarize" easily accessible where articles are listed. The `/random` and `/saved` commands are perfect places.
-3. **Existing Infrastructure**: The `summarize_url_<hash>` callback handler is already implemented (`summarize_url_callback`). We just need to add the buttons that trigger it.
-4. **Execution**:
-   - Update `_render_saved_page` in `functions/telegram_bot.py` to include a summarize button before the delete button in the inline keyboard array.
-   - Update `random_command` in `functions/telegram_bot.py` to add a reply markup containing a summarize button for the chosen article.
-   - Run tests and `pre_commit_instructions` to ensure safety and functionality.
+1.  **Add Translation Keys:** Add `btn_mark_read` translation keys to `functions/translations.py` for 'en' and 'ru' languages.
+    -   `'btn_mark_read': "📖✅ Mark Read"` for 'en'.
+    -   `'btn_mark_read': "📖✅ Отметить как прочитанное"` for 'ru'.
+2.  **Update `_render_saved_page` (functions/telegram_bot.py):**
+    -   Modify the loop where we build the keyboard.
+    -   If an article `is_read` is False (not read), add a new button on the next line using the `btn_mark_read` translation and callback data `mark_read_{url_hash}_{page}`. Similar to the current logic for `btn_mark_unread`.
+3.  **Create Callback Handler:**
+    -   Create `mark_read_callback` in `functions/telegram_bot.py`, patterned exactly after `mark_unread_callback`.
+    -   Extract `url_hash`. Find the `url`.
+    -   Call `mark_article_read(telegram_id, url)`.
+    -   Re-render the page (`_render_saved_page`).
+4.  **Register Callback Handler:**
+    -   Add `application.add_handler(CallbackQueryHandler(mark_read_callback, pattern='^mark_read_'))` in `setup_bot_commands` or `create_bot_application` in `functions/telegram_bot.py`.
+5.  **Pre-commit Steps:**
+    -   Run tests.
+    -   Lint/syntax check Python.
