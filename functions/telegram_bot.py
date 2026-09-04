@@ -1254,6 +1254,16 @@ async def mark_unread_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     if page_str.isdigit():
         page = int(page_str)
         await _render_saved_page(query, telegram_id, user_lang, page, is_callback=True)
+    elif page_str == "keep":
+        # Remove the 'mark unread' button from the current message
+        if query.message and query.message.reply_markup:
+            keyboard = query.message.reply_markup.inline_keyboard
+            new_keyboard = []
+            for row in keyboard:
+                new_row = [btn for btn in row if not btn.callback_data or not btn.callback_data.startswith('mark_unread_')]
+                if new_row:
+                    new_keyboard.append(new_row)
+            await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(new_keyboard))
     else:
         # Just remove the message if it's from a single view or we don't know the page
         pass
@@ -2888,6 +2898,9 @@ async def summarize_url_callback(update: Update, context: ContextTypes.DEFAULT_T
                 InlineKeyboardButton(t('btn_similar', user_lang), callback_data=f"similar_url_{url_hash}")
             ],
             [
+                InlineKeyboardButton(t('btn_mark_unread', user_lang), callback_data=f"mark_unread_{url_hash}_keep"),
+            ],
+            [
                 InlineKeyboardButton("↗️ Share", url=share_url),
                 InlineKeyboardButton(del_label, callback_data=f"del_{url_hash}_keep")
             ]
@@ -3098,6 +3111,9 @@ async def read_url_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 InlineKeyboardButton("🌐 Original", url=url),
                 InlineKeyboardButton("🧠 Summarize", callback_data=f"summarize_url_{url_hash}"),
                 InlineKeyboardButton(t('btn_similar', user_lang), callback_data=f"similar_url_{url_hash}")
+            ],
+            [
+                InlineKeyboardButton(t('btn_mark_unread', user_lang), callback_data=f"mark_unread_{url_hash}_keep"),
             ],
             [
                 InlineKeyboardButton("↗️ Share", url=share_url),
