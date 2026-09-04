@@ -1247,7 +1247,7 @@ async def mark_unread_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     mark_article_unread(telegram_id, url)
-    await query.answer("Marked as unread!")
+    await query.answer(t('marked_unread', user_lang))
 
     # We should also refresh the page if we can determine the page number
     page_str = parts[3] if len(parts) > 3 else "0"
@@ -1265,7 +1265,7 @@ async def mark_unread_callback(update: Update, context: ContextTypes.DEFAULT_TYP
                     new_keyboard.append(new_row)
             await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(new_keyboard))
     else:
-        # Just remove the message if it's from a single view or we don't know the page
+        # For single view, we might need to remove the inline markup or recreate it without mark unread
         pass
 
 
