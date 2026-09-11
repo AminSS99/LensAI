@@ -2251,17 +2251,27 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Fetch and append recent search history
         recent_searches = get_search_history(telegram_id, limit=5)
-        reply_markup = None
+        keyboard = []
         if recent_searches:
             unique_searches = list(dict.fromkeys(recent_searches))
             header = t('search_history_header', user_lang)
             prompt += f"\n\n{header}"
 
-            keyboard = []
             for query in unique_searches:
                 keyboard.append([InlineKeyboardButton(f"🔍 {query}", callback_data=f"search_history_{query[:45]}")])
             keyboard.append([InlineKeyboardButton("🗑️ Clear History" if user_lang == 'en' else "🗑️ Очистить историю", callback_data="clear_search_history")])
-            reply_markup = InlineKeyboardMarkup(keyboard)
+
+        # Append suggested topics
+        suggested_header = t('search_suggested_header', user_lang)
+        prompt += f"\n\n{suggested_header}"
+        suggested_topics = ["AI", "Security", "Startups", "Crypto"]
+        # Create a 2x2 grid for suggested topics
+        row1 = [InlineKeyboardButton(f"💡 {topic}", callback_data=f"search_history_{topic}") for topic in suggested_topics[:2]]
+        row2 = [InlineKeyboardButton(f"💡 {topic}", callback_data=f"search_history_{topic}") for topic in suggested_topics[2:]]
+        keyboard.append(row1)
+        keyboard.append(row2)
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
 
         await reply_msg.reply_text(
             prompt,
