@@ -789,12 +789,14 @@ async def _render_saved_page(update_or_query, telegram_id: int, user_lang: str, 
     # Add Export and Clear All buttons
     clear_all_text = t('clear_all_btn', user_lang)
     clear_read_text = t('clear_read_btn', user_lang)
+    mark_all_read_text = t('mark_all_read_btn', user_lang)
     export_text = t('export_btn', user_lang)
     keyboard.append([
         InlineKeyboardButton(export_text, callback_data="do_export_prompt_all"),
         InlineKeyboardButton(clear_all_text, callback_data=f"clear_all_prompt_{page}")
     ])
     keyboard.append([
+        InlineKeyboardButton(mark_all_read_text, callback_data=f"mark_all_read_{page}"),
         InlineKeyboardButton(clear_read_text, callback_data=f"clear_read_prompt_{page}")
     ])
 
@@ -1324,6 +1326,25 @@ async def clear_all_cancel_callback(update: Update, context: ContextTypes.DEFAUL
     except (TypeError, ValueError):
         page = 0
 
+    await _render_saved_page(query, telegram_id, user_lang, page, is_callback=True)
+
+async def mark_all_read_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle mark all read button press."""
+    query = update.callback_query
+    telegram_id = update.effective_user.id
+    from .user_storage import mark_all_read_articles, get_user_language
+    from .translations import t
+
+    user_lang = get_user_language(telegram_id)
+
+    # Extract page to return to the same page
+    data = query.data
+    page_str = data.replace('mark_all_read_', '')
+    page = int(page_str) if page_str.isdigit() else 0
+
+    mark_all_read_articles(telegram_id)
+
+    await query.answer(t('marked_all_read', user_lang))
     await _render_saved_page(query, telegram_id, user_lang, page, is_callback=True)
 
 async def clear_read_prompt_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3739,6 +3760,7 @@ def create_bot_application() -> Application:
     application.add_handler(CallbackQueryHandler(clear_all_prompt_callback, pattern='^clear_all_prompt_'))
     application.add_handler(CallbackQueryHandler(clear_all_confirm_callback, pattern='^clear_all_confirm_'))
     application.add_handler(CallbackQueryHandler(clear_all_cancel_callback, pattern='^clear_all_cancel_'))
+    application.add_handler(CallbackQueryHandler(mark_all_read_callback, pattern='^mark_all_read_'))
     application.add_handler(CallbackQueryHandler(clear_read_prompt_callback, pattern='^clear_read_prompt_'))
     application.add_handler(CallbackQueryHandler(clear_read_confirm_callback, pattern='^clear_read_confirm_'))
     application.add_handler(CallbackQueryHandler(clear_read_cancel_callback, pattern='^clear_read_cancel_'))

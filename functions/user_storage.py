@@ -368,6 +368,29 @@ def clear_saved_articles(telegram_id: int):
     data['saved_articles'] = []
     _save_local_data(telegram_id, data)
 
+def mark_all_read_articles(telegram_id: int):
+    """Mark all saved articles as read for a user."""
+    db = get_firestore_client()
+    if db:
+        try:
+            # We fetch all articles since we want to handle missing is_read fields as well
+            all_docs = db.collection('users').document(str(telegram_id)).collection('saved_articles').stream()
+            for doc in all_docs:
+                d_dict = doc.to_dict()
+                if not d_dict.get('is_read', False):
+                    doc.reference.update({'is_read': True})
+            return
+        except Exception as e:
+            print(f"Firestore mark all read error: {e}")
+
+    # Fallback to local
+    data = _load_local_data(telegram_id)
+    if 'saved_articles' in data:
+        for a in data['saved_articles']:
+            a['is_read'] = True
+        _save_local_data(telegram_id, data)
+
+
 def clear_read_articles(telegram_id: int):
     """Clear all read articles for a user."""
     db = get_firestore_client()
