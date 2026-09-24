@@ -1040,7 +1040,8 @@ async def _do_export(message_obj, telegram_id: int, user_lang: str, export_forma
             add_date = int(saved_at.timestamp()) if hasattr(saved_at, 'timestamp') else int(datetime.now(timezone.utc).timestamp())
 
             if url:
-                lines.append(f'        <DT><A HREF="{html.escape(url)}" ADD_DATE="{add_date}">{html.escape(title)}</A>')
+                safe_url = url if url.lower().startswith(('http://', 'https://')) else '#'
+                lines.append(f'        <DT><A HREF="{html.escape(safe_url)}" ADD_DATE="{add_date}">{html.escape(title)}</A>')
 
         lines.extend([
             "    </DL><p>",
@@ -1065,7 +1066,8 @@ async def _do_export(message_obj, telegram_id: int, user_lang: str, export_forma
             title = _clean_export_value(article.get('title')) or "Untitled"
             url = _clean_export_value(article.get('url'))
             if url:
-                lines.append(f'    <outline type="link" text="{html.escape(title)}" url="{html.escape(url)}"/>')
+                safe_url = url if url.lower().startswith(('http://', 'https://')) else '#'
+                lines.append(f'    <outline type="link" text="{html.escape(title)}" url="{html.escape(safe_url)}"/>')
 
         lines.extend(['  </body>', '</opml>'])
         document = io.BytesIO(("\n".join(lines)).encode('utf-8'))
