@@ -25,7 +25,7 @@ MESSAGES = {
         'schedule_prompt': "⏰ **Set Daily Digest Time**\n\nUse `/settime HH:MM` to schedule your daily news digest.\n\nExamples:\n• `/settime 09:00` - Morning digest\n• `/settime 18:30` - Evening digest\n• `/settime 12:00` - Lunch digest",
         'no_saved': "🔖 **No saved articles yet!**\n\nWhen reading news, forward any article link to me and I'll save it for you.\n\nOr use `/save <url>` to save an article.",
         'saved_header': "🔖 **Your Saved Articles**\n\n",
-        'saved_footer': "\n_Use /clear to delete all_",
+        'saved_footer': "\n_Use /clear to delete all, /clear_read to delete read articles_",
         'article_saved': "✅ Article saved! View with /saved",
         'article_exists': "ℹ️ Article already saved!",
         'cleared_saved': "🗑️ All saved articles cleared!",
@@ -65,6 +65,7 @@ Use /settime to change it!""",
 • /filter <category> - Filter by category (ai, security, crypto, startups, hardware, software, tech)
 • /recap - Weekly recap of saved articles
 • /clear - Clear all saved articles
+• /clear_read - Clear all read articles
 
 ⚙️ **Settings**
 • /schedule - Set daily digest time
@@ -226,7 +227,7 @@ Use /sources to toggle sources""",
         'schedule_prompt': "⏰ **Настройка ежедневного дайджеста**\n\nИспользуйте `/settime ЧЧ:ММ` для планирования.\n\nПримеры:\n• `/settime 09:00` - Утренний дайджест\n• `/settime 18:30` - Вечерний дайджест\n• `/settime 12:00` - Обеденный дайджест",
         'no_saved': "🔖 **Нет сохранённых статей!**\n\nОтправьте мне ссылку, и я сохраню её.\n\nИли используйте `/save <ссылка>`.",
         'saved_header': "🔖 **Ваши сохранённые статьи**\n\n",
-        'saved_footer': "\n_Используйте /clear чтобы удалить все_",
+        'saved_footer': "\n_Используйте /clear чтобы удалить все, /clear_read чтобы удалить прочитанные_",
         'article_saved': "✅ Статья сохранена! Смотреть: /saved",
         'article_exists': "ℹ️ Статья уже сохранена!",
         'cleared_saved': "🗑️ Все сохранённые статьи удалены!",
@@ -266,6 +267,7 @@ Use /sources to toggle sources""",
 • /filter <категория> - Фильтр по категории (ai, security, crypto, startups, hardware, software, tech)
 • /recap - Недельный обзор сохранённых
 • /clear - Очистить все сохранённые
+• /clear_read - Очистить прочитанные статьи
 
 ⚙️ **Настройки**
 • /schedule - Время ежедневного дайджеста
