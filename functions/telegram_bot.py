@@ -683,7 +683,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    reply_msg = update.message if update.message else update.callback_query.message
+    reply_msg = update.effective_message
     if update.callback_query:
         await update.callback_query.edit_message_text(status_message, parse_mode='Markdown', reply_markup=reply_markup)
     else:
@@ -789,12 +789,14 @@ async def _render_saved_page(update_or_query, telegram_id: int, user_lang: str, 
     # Add Export and Clear All buttons
     clear_all_text = t('clear_all_btn', user_lang)
     clear_read_text = t('clear_read_btn', user_lang)
+    mark_all_read_text = t('mark_all_read_btn', user_lang)
     export_text = t('export_btn', user_lang)
     keyboard.append([
         InlineKeyboardButton(export_text, callback_data="do_export_prompt_all"),
         InlineKeyboardButton(clear_all_text, callback_data=f"clear_all_prompt_{page}")
     ])
     keyboard.append([
+        InlineKeyboardButton(mark_all_read_text, callback_data=f"mark_all_read_prompt_{page}"),
         InlineKeyboardButton(clear_read_text, callback_data=f"clear_read_prompt_{page}")
     ])
 
@@ -1383,6 +1385,77 @@ async def clear_read_cancel_callback(update: Update, context: ContextTypes.DEFAU
 
     await _render_saved_page(query, telegram_id, user_lang, page, is_callback=True)
 
+
+async def mark_all_read_prompt_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle mark all read prompt button press."""
+    query = update.callback_query
+    await query.answer()
+    telegram_id = update.effective_user.id
+    from .user_storage import get_user_language
+    from .translations import t
+    user_lang = get_user_language(telegram_id)
+
+    data = query.data
+    page = data.replace('mark_all_read_prompt_', '')
+
+    message = t('mark_all_read_prompt', user_lang)
+    keyboard = [
+        [InlineKeyboardButton(t('mark_all_read_confirm_btn', user_lang), callback_data=f"mark_all_read_confirm_{page}")],
+        [InlineKeyboardButton(t('mark_all_read_cancel_btn', user_lang), callback_data=f"mark_all_read_cancel_{page}")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await query.edit_message_text(
+        message,
+        parse_mode='Markdown',
+        reply_markup=reply_markup
+    )
+
+async def mark_all_read_confirm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle mark all read confirm button press."""
+    query = update.callback_query
+    await query.answer()
+    telegram_id = update.effective_user.id
+    from .user_storage import mark_all_articles_read, get_user_language
+    from .translations import t
+
+    user_lang = get_user_language(telegram_id)
+    mark_all_articles_read(telegram_id)
+
+    await query.edit_message_text(
+        t('marked_all_read', user_lang),
+        parse_mode='Markdown'
+    )
+
+async def mark_all_read_cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle mark all read cancel button press."""
+    query = update.callback_query
+    await query.answer()
+    telegram_id = update.effective_user.id
+    from .user_storage import get_user_language
+
+    user_lang = get_user_language(telegram_id)
+
+    data = query.data
+    page = 0
+    if data.replace('mark_all_read_cancel_', '').isdigit():
+        page = int(data.replace('mark_all_read_cancel_', ''))
+
+    await _render_saved_page(query, telegram_id, user_lang, page, is_callback=True)
+
+async def mark_all_read_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /mark_all_read command - mark all articles as read."""
+    from .user_storage import mark_all_articles_read, get_user_language
+    from .translations import t
+
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+
+    mark_all_articles_read(telegram_id)
+
+    reply_msg = update.effective_message
+    await reply_msg.reply_text(t('marked_all_read', user_lang))
+
 async def search_history_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle search history button press."""
     query = update.callback_query
@@ -1486,7 +1559,7 @@ async def filter_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     valid_categories = ['ai', 'security', 'crypto', 'startups', 'hardware', 'software', 'tech']
     
-    reply_msg = update.message if update.message else update.callback_query.message
+    reply_msg = update.effective_message
 
     if not context.args:
         keyboard = []
@@ -1830,7 +1903,7 @@ async def quiet_hours_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     telegram_id = update.effective_user.id
     from .database import set_user_quiet_hours, get_user
 
-    reply_msg = update.message if update.message else update.callback_query.message
+    reply_msg = update.effective_message
 
     if not getattr(context, 'args', None):
         user = get_user(telegram_id) or {}
@@ -2114,7 +2187,7 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     telegram_id = update.effective_user.id
     user_lang = get_user_language(telegram_id)
-    reply_msg = update.message if update.message else update.callback_query.message
+    reply_msg = update.effective_message
 
     articles = get_all_saved_articles(telegram_id)
     if not articles:
@@ -2236,7 +2309,7 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from .rate_limiter import check_rate_limit
     from .translations import t
     
-    reply_msg = update.message if update.message else update.callback_query.message
+    reply_msg = update.effective_message
     telegram_id = update.effective_user.id
     user_lang = get_user_language(telegram_id)
     
@@ -3343,7 +3416,7 @@ async def breaking_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     telegram_id = update.effective_user.id
     user_lang = get_user_language(telegram_id)
-    reply_msg = update.message if update.message else update.callback_query.message
+    reply_msg = update.effective_message
 
     if not getattr(context, 'args', None):
         current = get_user_breaking_news_preference(telegram_id)
@@ -3701,6 +3774,7 @@ def create_bot_application() -> Application:
     application.add_handler(CommandHandler("clear_saved", clear_saved_command)) # Keep legacy alias
     application.add_handler(CommandHandler("clear", clear_saved_command))
     application.add_handler(CommandHandler("clear_read", clear_read_command))
+    application.add_handler(CommandHandler("mark_all_read", mark_all_read_command))
     application.add_handler(CommandHandler("export", export_command))
     application.add_handler(CommandHandler("random", random_command))
     application.add_handler(CommandHandler("search", search_command))
@@ -3742,6 +3816,9 @@ def create_bot_application() -> Application:
     application.add_handler(CallbackQueryHandler(clear_read_prompt_callback, pattern='^clear_read_prompt_'))
     application.add_handler(CallbackQueryHandler(clear_read_confirm_callback, pattern='^clear_read_confirm_'))
     application.add_handler(CallbackQueryHandler(clear_read_cancel_callback, pattern='^clear_read_cancel_'))
+    application.add_handler(CallbackQueryHandler(mark_all_read_prompt_callback, pattern='^mark_all_read_prompt_'))
+    application.add_handler(CallbackQueryHandler(mark_all_read_confirm_callback, pattern='^mark_all_read_confirm_'))
+    application.add_handler(CallbackQueryHandler(mark_all_read_cancel_callback, pattern='^mark_all_read_cancel_'))
     application.add_handler(CallbackQueryHandler(search_history_callback, pattern='^search_history_'))
     application.add_handler(CallbackQueryHandler(filter_category_callback, pattern='^filter_cat_'))
     application.add_handler(CallbackQueryHandler(filter_category_callback, pattern='^filter_menu$'))
