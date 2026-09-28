@@ -1039,7 +1039,7 @@ async def _do_export(message_obj, telegram_id: int, user_lang: str, export_forma
             saved_at = article.get('saved_at')
             add_date = int(saved_at.timestamp()) if hasattr(saved_at, 'timestamp') else int(datetime.now(timezone.utc).timestamp())
 
-            if url:
+            if url and (url.startswith('http://') or url.startswith('https://')):
                 lines.append(f'        <DT><A HREF="{html.escape(url)}" ADD_DATE="{add_date}">{html.escape(title)}</A>')
 
         lines.extend([
@@ -1064,7 +1064,7 @@ async def _do_export(message_obj, telegram_id: int, user_lang: str, export_forma
         for article in articles:
             title = _clean_export_value(article.get('title')) or "Untitled"
             url = _clean_export_value(article.get('url'))
-            if url:
+            if url and (url.startswith('http://') or url.startswith('https://')):
                 lines.append(f'    <outline type="link" text="{html.escape(title)}" url="{html.escape(url)}"/>')
 
         lines.extend(['  </body>', '</opml>'])
