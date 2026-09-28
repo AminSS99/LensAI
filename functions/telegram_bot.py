@@ -635,6 +635,19 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(t('status_local', user_lang), parse_mode='Markdown')
         return
     
+    status_message, reply_markup = _generate_status_content(user, user_lang)
+
+    reply_msg = update.effective_message
+    if update.callback_query:
+        await update.callback_query.edit_message_text(status_message, parse_mode='Markdown', reply_markup=reply_markup)
+    else:
+        await reply_msg.reply_text(status_message, parse_mode='Markdown', reply_markup=reply_markup)
+
+def _generate_status_content(user: dict, user_lang: str):
+    """Helper function to build status text and keyboard."""
+    from .translations import t
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
     sources = user.get('sources', [])
     source_names = {
         'hackernews': 'Hacker News',
@@ -655,16 +668,25 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         quiet_text = "Off"
     
+    is_active = user.get('is_active', bool(user.get('schedule_time')))
+    active_state = t('status_active', user_lang) if is_active else t('status_paused', user_lang)
+
     status_message = t(
         'status_cloud',
         user_lang,
+        active_state=active_state,
         schedule_time=user.get('schedule_time', 'Not set'),
         timezone=user.get('timezone', 'Asia/Baku'),
         sources=sources_text
     )
     status_message += f"\n\nQuiet hours: {quiet_text}"
 
+    pause_btn_text = t('btn_pause', user_lang) if is_active else t('btn_resume', user_lang)
+
     keyboard = [
+        [
+            InlineKeyboardButton(pause_btn_text, callback_data='toggle_pause')
+        ],
         [
             InlineKeyboardButton("⚙️ Sources" if user_lang == 'en' else "⚙️ Источники", callback_data='manage_sources'),
             InlineKeyboardButton("⏰ Schedule" if user_lang == 'en' else "⏰ Расписание", callback_data='manage_schedule')
@@ -681,13 +703,61 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton("📊 Reading Stats" if user_lang == 'en' else "📊 Статистика", callback_data='manage_stats')
         ]
     ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    return status_message, InlineKeyboardMarkup(keyboard)
 
-    reply_msg = update.effective_message
-    if update.callback_query:
-        await update.callback_query.edit_message_text(status_message, parse_mode='Markdown', reply_markup=reply_markup)
-    else:
-        await reply_msg.reply_text(status_message, parse_mode='Markdown', reply_markup=reply_markup)
+async def toggle_pause_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle toggle pause inline button."""
+    from .database import get_user, create_or_update_user
+    from .user_storage import get_user_language
+
+    query = update.callback_query
+    await query.answer()
+
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+
+    try:
+        user = get_user(telegram_id)
+        if user:
+            is_active = user.get('is_active', bool(user.get('schedule_time')))
+            create_or_update_user(telegram_id, is_active=not is_active)
+
+            # Fetch updated user to re-render
+            user = get_user(telegram_id)
+            status_message, reply_markup = _generate_status_content(user, user_lang)
+            await query.edit_message_text(status_message, reply_markup=reply_markup, parse_mode='Markdown')
+    except Exception as e:
+        print(f"Error in toggle_pause_callback: {e}")
+
+async def pause_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /pause command - pauses scheduled digests."""
+    from .database import create_or_update_user
+    from .user_storage import get_user_language
+    from .translations import t
+
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+
+    try:
+        create_or_update_user(telegram_id, is_active=False)
+        await update.message.reply_text(t('pause_success', user_lang), parse_mode='Markdown')
+    except Exception as e:
+        await update.message.reply_text(f"Error pausing digest: {e}")
+
+async def resume_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /resume command - resumes scheduled digests."""
+    from .database import create_or_update_user
+    from .user_storage import get_user_language
+    from .translations import t
+
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+
+    try:
+        create_or_update_user(telegram_id, is_active=True)
+        await update.message.reply_text(t('resume_success', user_lang), parse_mode='Markdown')
+    except Exception as e:
+        await update.message.reply_text(f"Error resuming digest: {e}")
 
 
 # ============ SAVED ARTICLES ============
@@ -3684,6 +3754,8 @@ async def setup_bot_commands(application: Application):
         BotCommand("stalk", "📡 Track company/repo"),
         BotCommand("unstalk", "🗑 Stop tracking"),
         BotCommand("breaking", "🚨 Breaking news"),
+        BotCommand("pause", "⏸️ Pause daily digest"),
+        BotCommand("resume", "▶️ Resume daily digest"),
         BotCommand("share", "📨 Share bot"),
         BotCommand("trends", "🔥 Weekly trends"),
         BotCommand("help", "❓ Help"),
@@ -3714,6 +3786,8 @@ async def setup_bot_commands(application: Application):
         BotCommand("stalk", "📡 Track company/repo"),
         BotCommand("unstalk", "🗑 Stop tracking"),
         BotCommand("breaking", "🚨 Breaking news"),
+        BotCommand("pause", "⏸️ Pause daily digest"),
+        BotCommand("resume", "▶️ Resume daily digest"),
         BotCommand("share", "📨 Share bot"),
         BotCommand("trends", "🔥 Weekly trends"),
         BotCommand("help", "❓ Help"),
@@ -3744,6 +3818,8 @@ async def setup_bot_commands(application: Application):
         BotCommand("stalk", "📡 Отслеживать компанию/репо"),
         BotCommand("unstalk", "🗑 Прекратить отслеживание"),
         BotCommand("breaking", "🚨 Экстренные новости"),
+        BotCommand("pause", "⏸️ Приостановить дайджест"),
+        BotCommand("resume", "▶️ Возобновить дайджест"),
         BotCommand("share", "📨 Поделиться ботом"),
         BotCommand("trends", "🔥 Тренды недели"),
         BotCommand("help", "❓ Помощь"),
@@ -3829,9 +3905,12 @@ def create_bot_application() -> Application:
     application.add_handler(CommandHandler("breaking", breaking_command))
     application.add_handler(CommandHandler("stalk", stalk_command))
     application.add_handler(CommandHandler("unstalk", unstalk_command))
+    application.add_handler(CommandHandler("pause", pause_command))
+    application.add_handler(CommandHandler("resume", resume_command))
 
     # Add callback query handlers for inline buttons
     application.add_handler(CallbackQueryHandler(manage_settings_callback, pattern='^manage_'))
+    application.add_handler(CallbackQueryHandler(toggle_pause_callback, pattern='^toggle_pause$'))
     application.add_handler(CallbackQueryHandler(toggle_source_callback, pattern='^toggle_'))
     application.add_handler(CallbackQueryHandler(language_callback, pattern='^lang_'))
     application.add_handler(CallbackQueryHandler(schedule_callback, pattern='^schedule_'))

@@ -102,6 +102,7 @@ _Running locally - settings saved when deployed to cloud_""",
         
         'status_cloud': """📊 **Your Settings**
 
+📡 **Digest Status:** {active_state}
 ⏰ **Daily Digest Time:** {schedule_time}
 🌍 **Timezone:** {timezone}
 
@@ -109,8 +110,16 @@ _Running locally - settings saved when deployed to cloud_""",
 {sources}
 
 Use /settime to change schedule
-Use /sources to toggle sources""",
+Use /sources to toggle sources
+Use /pause to pause your digest""",
         
+        'pause_success': "⏸️ **Daily digest paused.**\n\nYou will not receive scheduled digests until you type /resume.",
+        'resume_success': "▶️ **Daily digest resumed.**\n\nYour scheduled digests will arrive at your configured time.",
+        'btn_pause': "⏸️ Pause Digest",
+        'btn_resume': "▶️ Resume Digest",
+        'status_active': "▶️ Active",
+        'status_paused': "⏸️ Paused",
+
         'sources_header': "📰 **Your News Sources**\n\nTap to toggle sources on/off:",
         'save_help': "📌 **How to save articles:**\n\n1. `/save <url>` - Save directly\n2. Forward me a message with a link\n3. Reply to a news digest with `/save`",
         'select_language': "🌐 **Select Language**\n\nChoose your preferred language for summaries:",
@@ -304,6 +313,7 @@ _Работает локально - настройки сохранятся п�
         
         'status_cloud': """📊 **Ваши настройки**
 
+📡 **Статус дайджеста:** {active_state}
 ⏰ **Время дайджеста:** {schedule_time}
 🌍 **Часовой пояс:** {timezone}
 
@@ -311,8 +321,16 @@ _Работает локально - настройки сохранятся п�
 {sources}
 
 Используйте /settime чтобы изменить расписание
-Используйте /sources чтобы настроить источники""",
+Используйте /sources чтобы настроить источники
+Используйте /pause чтобы приостановить дайджест""",
         
+        'pause_success': "⏸️ **Ежедневный дайджест приостановлен.**\n\nВы не будете получать дайджест по расписанию, пока не отправите /resume.",
+        'resume_success': "▶️ **Ежедневный дайджест возобновлен.**\n\nВаши дайджесты будут приходить в установленное время.",
+        'btn_pause': "⏸️ Пауза",
+        'btn_resume': "▶️ Возобновить",
+        'status_active': "▶️ Активен",
+        'status_paused': "⏸️ На паузе",
+
         'sources_header': "📰 **Ваши источники новостей**\n\nНажмите чтобы включить/выключить:",
         'save_help': "📌 **Как сохранить статьи:**\n\n1. `/save <ссылка>` - Сохранить напрямую\n2. Перешлите мне сообщение со ссылкой\n3. Ответьте на дайджест командой `/save`",
         'select_language': "🌐 **Выберите язык**\n\nВыберите предпочитаемый язык для дайджестов:",
