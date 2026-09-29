@@ -134,7 +134,7 @@ def _is_user_due_now(user: dict, now_utc: datetime) -> bool:
     """
     Decide whether user should receive digest now (timezone + quiet-hours aware).
     """
-    if not user.get("is_active", False):
+    if not user.get("is_active", bool(user.get("schedule_time"))):
         return False
 
     schedule_time = user.get("schedule_time")

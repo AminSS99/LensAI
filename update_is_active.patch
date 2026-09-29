@@ -1,0 +1,31 @@
+--- functions/telegram_bot.py
++++ functions/telegram_bot.py
+@@ -668,7 +668,7 @@
+     else:
+         quiet_text = "Off"
+
+-    is_active = user.get('is_active', False)
++    is_active = user.get('is_active', bool(user.get('schedule_time')))
+     active_state = t('status_active', user_lang) if is_active else t('status_paused', user_lang)
+
+     status_message = t(
+@@ -719,7 +719,7 @@
+     try:
+         user = get_user(telegram_id)
+         if user:
+-            is_active = user.get('is_active', False)
++            is_active = user.get('is_active', bool(user.get('schedule_time')))
+             create_or_update_user(telegram_id, is_active=not is_active)
+
+             # Fetch updated user to re-render
+--- functions/main.py
++++ functions/main.py
+@@ -134,7 +134,7 @@
+     """
+     Decide whether user should receive digest now (timezone + quiet-hours aware).
+     """
+-    if not user.get("is_active", False):
++    if not user.get("is_active", bool(user.get("schedule_time"))):
+         return False
+
+     schedule_time = user.get("schedule_time")
