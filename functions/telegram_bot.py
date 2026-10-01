@@ -3765,6 +3765,7 @@ async def setup_bot_commands(application: Application):
         BotCommand("share", "📨 Share bot"),
         BotCommand("trends", "🔥 Weekly trends"),
         BotCommand("help", "❓ Help"),
+        BotCommand("mark_all_read", "✅ Mark all as read"),
     ]
 
     # English commands
@@ -3797,6 +3798,7 @@ async def setup_bot_commands(application: Application):
         BotCommand("share", "📨 Share bot"),
         BotCommand("trends", "🔥 Weekly trends"),
         BotCommand("help", "❓ Help"),
+        BotCommand("mark_all_read", "✅ Mark all as read"),
     ]
 
     # Russian commands
@@ -3829,6 +3831,7 @@ async def setup_bot_commands(application: Application):
         BotCommand("share", "📨 Поделиться ботом"),
         BotCommand("trends", "🔥 Тренды недели"),
         BotCommand("help", "❓ Помощь"),
+        BotCommand("mark_all_read", "✅ Отметить все как прочитанные"),
     ]
 
     # Delete any existing commands first (ensures clean update across all scopes)
