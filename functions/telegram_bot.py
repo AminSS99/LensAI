@@ -2304,6 +2304,8 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = t('stats_header', user_lang)
     message += t('stats_total', user_lang, total=total_saved)
     message += t('stats_read', user_lang, read=total_read)
+    completion_rate = int(round((total_read / total_saved) * 100)) if total_saved > 0 else 0
+    message += t('stats_completion_rate', user_lang, rate=completion_rate)
     message += "\n"
 
     for cat, count in categories.most_common(5):

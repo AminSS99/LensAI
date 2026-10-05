@@ -168,6 +168,7 @@ Use /pause to pause your digest""",
         'stats_header': "📊 *Your Reading Statistics*\n\n",
         'stats_total': "*Total Saved:* {total}\n",
         'stats_read': "*Total Read:* {read}\n",
+        'stats_completion_rate': "*Completion Rate:* {rate}%\n",
         'stats_top_sources': "\n*Top Sources:*\n",
 
         # Category labels
@@ -378,6 +379,7 @@ _Работает локально - настройки сохранятся п�
         'stats_header': "📊 *Ваша статистика чтения*\n\n",
         'stats_total': "*Всего сохранено:* {total}\n",
         'stats_read': "*Всего прочитано:* {read}\n",
+        'stats_completion_rate': "*Процент прочитанного:* {rate}%\n",
         'stats_top_sources': "\n*Топ источников:*\n",
 
         # Category labels
