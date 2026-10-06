@@ -3384,8 +3384,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Users should use the /slash commands from the menu.
     
     import re
-    # Check if it's a URL to save
-    if re.match(r'^https?://[^\s]+$', user_message):
+    # Check if the message contains a URL to save
+    url_match = re.search(r'https?://[^\s]+', user_message)
+
+    extracted_url = None
+    if url_match:
         from .user_storage import save_article, save_temp_url
         from .security_utils import stable_hash, is_safe_url
         import httpx
@@ -3397,7 +3400,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id = update.effective_chat.id
         await context.bot.send_chat_action(chat_id=chat_id, action=constants.ChatAction.TYPING)
 
-        url = user_message.strip()
+        extracted_url = url_match.group(0).strip()
+        url = extracted_url
         title = url[:50]
 
         try:
@@ -3449,9 +3453,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(t('link_saved', user_lang), reply_markup=reply_markup)
         else:
             await update.message.reply_text(t('link_exists', user_lang), reply_markup=reply_markup)
-        return
-    
-    # Otherwise, treat as a question for AI
+
+        # If the message is just the URL, we're done. Otherwise, continue to AI chat.
+        if user_message.strip() == extracted_url:
+            return
+
+    # Treat remaining text (or text without URLs) as a question for AI
     from .summarizer import chat_completion
     from .rate_limiter import check_rate_limit
     
