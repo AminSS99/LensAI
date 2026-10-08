@@ -3450,6 +3450,33 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.message.reply_text(t('link_exists', user_lang), reply_markup=reply_markup)
         return
+
+    # NEW FEATURE: Extract and save URLs from text/forwarded messages
+    urls_to_save = []
+    if update.message.entities:
+        entities = update.message.parse_entities(['url', 'text_link'])
+        for entity, text in entities.items():
+            if entity.type == 'url':
+                extracted_url = text
+                if not extracted_url.startswith('http'):
+                    extracted_url = 'http://' + extracted_url
+                urls_to_save.append(extracted_url)
+            elif entity.type == 'text_link':
+                urls_to_save.append(entity.url)
+
+        urls_to_save = list(dict.fromkeys(urls_to_save))
+
+        if urls_to_save:
+            from .user_storage import save_article
+            import urllib.parse
+            saved_count = 0
+            for extracted_url in urls_to_save:
+                domain = urllib.parse.urlparse(extracted_url).netloc
+                title = f"Link from {domain}" if domain else extracted_url[:50]
+                if save_article(telegram_id, title, extracted_url):
+                    saved_count += 1
+            if saved_count > 0:
+                await update.message.reply_text(t('auto_saved_links', user_lang, count=saved_count))
     
     # Otherwise, treat as a question for AI
     from .summarizer import chat_completion
