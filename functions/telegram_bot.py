@@ -1070,7 +1070,8 @@ async def _do_export(message_obj, telegram_id: int, user_lang: str, export_forma
                 InlineKeyboardButton("🤖 JSON (.json)", callback_data=f"do_export_json_{category_filter or 'all'}")
             ],
             [
-                InlineKeyboardButton("📑 OPML (.opml)", callback_data=f"do_export_opml_{category_filter or 'all'}")
+                InlineKeyboardButton("📑 OPML (.opml)", callback_data=f"do_export_opml_{category_filter or 'all'}"),
+                InlineKeyboardButton("📡 RSS (.xml)", callback_data=f"do_export_rss_{category_filter or 'all'}")
             ],
             [
                 InlineKeyboardButton(t('clear_all_cancel_btn', user_lang), callback_data="do_export_cancel")
@@ -1078,7 +1079,7 @@ async def _do_export(message_obj, telegram_id: int, user_lang: str, export_forma
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await message_obj.reply_text(
-            "📦 *Choose export format:*\n\n_Markdown_ is great for notes like Obsidian or Notion.\n_Excel_ is great for spreadsheets.\n_Bookmarks_ can be imported directly into your browser.\n_JSON_ is perfect for importing to scripts and APIs.\n_OPML_ is perfect for RSS readers and podcast managers.",
+            "📦 *Choose export format:*\n\n_Markdown_ is great for notes like Obsidian or Notion.\n_Excel_ is great for spreadsheets.\n_Bookmarks_ can be imported directly into your browser.\n_JSON_ is perfect for importing to scripts and APIs.\n_OPML_ is perfect for podcast managers.\n_RSS_ lets you subscribe to your saved articles.",
             parse_mode='Markdown',
             reply_markup=reply_markup
         )
@@ -1122,6 +1123,42 @@ async def _do_export(message_obj, telegram_id: int, user_lang: str, export_forma
 
         document = io.BytesIO("\n".join(lines).encode('utf-8'))
         document.name = f"lensai_saved_articles{filename_category}_{timestamp}.html"
+    elif export_format == 'rss':
+        import html
+        import urllib.parse
+        from email.utils import formatdate
+        lines = [
+            '<?xml version="1.0" encoding="UTF-8" ?>',
+            '<rss version="2.0">',
+            '<channel>',
+            '  <title>LensAI Saved Articles</title>',
+            '  <description>Your saved articles from LensAI</description>',
+            f'  <pubDate>{formatdate(timeval=datetime.now(timezone.utc).timestamp(), localtime=False, usegmt=True)}</pubDate>'
+        ]
+
+        for article in articles:
+            title = _clean_export_value(article.get('title')) or "Untitled"
+            url = _clean_export_value(article.get('url'))
+            if url:
+                parsed = urllib.parse.urlparse(url)
+                if parsed.scheme in ('http', 'https'):
+                    saved_at = _clean_export_value(article.get('saved_at'))
+                    pub_date = formatdate(timeval=datetime.now(timezone.utc).timestamp(), localtime=False, usegmt=True)
+                    if saved_at:
+                        try:
+                            dt = datetime.fromisoformat(saved_at)
+                            pub_date = formatdate(timeval=dt.timestamp(), localtime=False, usegmt=True)
+                        except Exception:
+                            pass
+                    lines.append('  <item>')
+                    lines.append(f'    <title>{html.escape(title)}</title>')
+                    lines.append(f'    <link>{html.escape(url)}</link>')
+                    lines.append(f'    <pubDate>{pub_date}</pubDate>')
+                    lines.append('  </item>')
+
+        lines.extend(['</channel>', '</rss>'])
+        document = io.BytesIO(("\n".join(lines)).encode('utf-8'))
+        document.name = f"lensai_saved_articles{filename_category}_{timestamp}.xml"
     elif export_format == 'opml':
         import html
         lines = [
@@ -1230,8 +1267,10 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             export_format = 'html'
         elif arg_lower in ['json']:
             export_format = 'json'
-        elif arg_lower in ['opml', 'rss']:
+        elif arg_lower == 'opml':
             export_format = 'opml'
+        elif arg_lower == 'rss':
+            export_format = 'rss'
         else:
             category_filter = arg_lower
 
