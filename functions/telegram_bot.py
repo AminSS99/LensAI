@@ -1771,8 +1771,12 @@ async def filter_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 InlineKeyboardButton(f"↗️ {i}", url=f"https://t.me/share/url?url={urllib.parse.quote(url)}&text={urllib.parse.quote(title)}")
             ])
 
-    # Add a back button
-    keyboard.append([InlineKeyboardButton("⬅️ Back to Categories" if user_lang == 'en' else "⬅️ Назад к категориям", callback_data="filter_menu")])
+    # Add an export button and a back button
+    export_text = t('export_btn', user_lang)
+    keyboard.append([
+        InlineKeyboardButton(export_text, callback_data=f"do_export_prompt_{category}"),
+        InlineKeyboardButton("⬅️ Back to Categories" if user_lang == 'en' else "⬅️ Назад к категориям", callback_data="filter_menu")
+    ])
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     try:
