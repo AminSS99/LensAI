@@ -2234,6 +2234,57 @@ async def admin_status_command(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text(message)
 
 
+async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Broadcast a message to all active users (admin only)."""
+    from .database import get_all_active_users
+    import asyncio
+
+    telegram_id = update.effective_user.id
+    if telegram_id not in get_admin_ids():
+        await update.message.reply_text("Unauthorized.")
+        return
+
+    if not getattr(context, 'args', None):
+        await update.message.reply_text("Usage: /broadcast <message>")
+        return
+
+    message_text = " ".join(context.args)
+
+    try:
+        users = get_all_active_users()
+    except Exception as e:
+        await update.message.reply_text(f"Database error: {e}")
+        return
+
+    if not users:
+        await update.message.reply_text("No active users found.")
+        return
+
+    status_msg = await update.message.reply_text(f"Starting broadcast to {len(users)} users...")
+
+    success_count = 0
+    fail_count = 0
+
+    for user in users:
+        user_id = user.get('telegram_id')
+        if not user_id:
+            continue
+
+        try:
+            await context.bot.send_message(chat_id=user_id, text=message_text, parse_mode='Markdown')
+            success_count += 1
+        except Exception:
+            fail_count += 1
+
+        # Small delay to avoid rate limits
+        await asyncio.sleep(0.05)
+
+    await status_msg.edit_text(
+        f"Broadcast complete!\n"
+        f"✅ Success: {success_count}\n"
+        f"❌ Failed: {fail_count}"
+    )
+
 
 async def manage_settings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle settings management buttons from status command."""
@@ -3964,6 +4015,7 @@ def create_bot_application() -> Application:
     application.add_handler(CommandHandler("unstalk", unstalk_command))
     application.add_handler(CommandHandler("pause", pause_command))
     application.add_handler(CommandHandler("resume", resume_command))
+    application.add_handler(CommandHandler("broadcast", broadcast_command))
 
     # Add callback query handlers for inline buttons
     application.add_handler(CallbackQueryHandler(manage_settings_callback, pattern='^manage_'))
