@@ -1048,8 +1048,14 @@ async def _do_export(message_obj, telegram_id: int, user_lang: str, export_forma
         if hasattr(value, "isoformat"):
             value = value.isoformat()
         cleaned = str(value).replace("\r", " ").replace("\n", " ").strip()
-        if export_format == 'csv' and cleaned and cleaned[0] in ('=', '+', '-', '@'):
-            cleaned = "'" + cleaned
+
+        if export_format == 'csv' and cleaned:
+            # Prevent evasion using zero-width spaces or other invisible characters
+            evasion_chars = "\u200b\u200c\u200d\uFEFF\x0B\x0C\r\n\t "
+            stripped = cleaned.lstrip(evasion_chars)
+            if stripped and stripped[0] in ('=', '+', '-', '@'):
+                cleaned = "'" + cleaned
+
         return cleaned
 
     articles = get_all_saved_articles(telegram_id, category=category_filter)
