@@ -1047,7 +1047,8 @@ async def _do_export(message_obj, telegram_id: int, user_lang: str, export_forma
             return ""
         if hasattr(value, "isoformat"):
             value = value.isoformat()
-        cleaned = str(value).replace("\r", " ").replace("\n", " ").strip()
+        cleaned = str(value).replace("\r", " ").replace("\n", " ")
+        cleaned = cleaned.lstrip(" \t\n\r\x0b\x0c\u200b\ufeff").strip()
         if export_format == 'csv' and cleaned and cleaned[0] in ('=', '+', '-', '@'):
             cleaned = "'" + cleaned
         return cleaned
