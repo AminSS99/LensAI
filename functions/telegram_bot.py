@@ -762,20 +762,20 @@ async def resume_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ============ SAVED ARTICLES ============
 
-async def _render_saved_page(update_or_query, telegram_id: int, user_lang: str, page: int, is_callback: bool = False):
+async def _render_saved_page(update_or_query, telegram_id: int, user_lang: str, page: int, is_callback: bool = False, unread_only: bool = False):
     from .user_storage import get_saved_articles
     from .translations import t
     
     limit = 10
     offset = page * limit
     # Fetch limit + 1 to check if there is a next page
-    articles = get_saved_articles(telegram_id, limit=limit + 1, offset=offset)
+    articles = get_saved_articles(telegram_id, limit=limit + 1, offset=offset, unread_only=unread_only)
     
     has_next = len(articles) > limit
     articles = articles[:limit]
     
     if not articles and page == 0:
-        msg = t('no_saved', user_lang)
+        msg = t('no_unread_saved' if unread_only else 'no_saved', user_lang)
         if is_callback:
             await update_or_query.edit_message_text(msg, parse_mode='Markdown')
         else:
@@ -791,7 +791,7 @@ async def _render_saved_page(update_or_query, telegram_id: int, user_lang: str, 
         'hardware': '💻', 'software': '📱', 'tech': '🔧'
     }
     
-    message = t('saved_header', user_lang)
+    message = t('unread_header' if unread_only else 'saved_header', user_lang)
     if page > 0:
         # Append page info safely preserving any whitespace
         message = message.rstrip() + f" (Page {page + 1})\n\n"
@@ -848,10 +848,10 @@ async def _render_saved_page(update_or_query, telegram_id: int, user_lang: str, 
     nav_buttons = []
     if page > 0:
         prev_text = "⬅️ Назад" if user_lang == 'ru' else "⬅️ Previous"
-        nav_buttons.append(InlineKeyboardButton(prev_text, callback_data=f"saved_page_{page-1}"))
+        nav_buttons.append(InlineKeyboardButton(prev_text, callback_data=f"unread_page_{page-1}" if unread_only else f"saved_page_{page-1}"))
     if has_next:
         next_text = "Вперед ➡️" if user_lang == 'ru' else "Next ➡️"
-        nav_buttons.append(InlineKeyboardButton(next_text, callback_data=f"saved_page_{page+1}"))
+        nav_buttons.append(InlineKeyboardButton(next_text, callback_data=f"unread_page_{page+1}" if unread_only else f"saved_page_{page+1}"))
 
     if nav_buttons:
         keyboard.append(nav_buttons)
@@ -868,6 +868,13 @@ async def _render_saved_page(update_or_query, telegram_id: int, user_lang: str, 
     keyboard.append([
         InlineKeyboardButton(mark_all_read_text, callback_data=f"mark_all_read_prompt_{page}"),
         InlineKeyboardButton(clear_read_text, callback_data=f"clear_read_prompt_{page}")
+    ])
+
+    unread_btn_text = "📖 Unread Only" if user_lang != 'ru' else "📖 Только непрочитанные"
+    all_btn_text = "🔖 All Articles" if user_lang != 'ru' else "🔖 Все статьи"
+
+    keyboard.append([
+        InlineKeyboardButton(all_btn_text if unread_only else unread_btn_text, callback_data=f"saved_page_0" if unread_only else f"unread_page_0")
     ])
 
     reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
@@ -907,6 +914,28 @@ async def saved_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     await _render_saved_page(query, telegram_id, user_lang, page, is_callback=True)
 
+
+async def unread_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /unread command - show unread saved articles."""
+    from .user_storage import get_user_language
+
+    telegram_id = update.effective_user.id
+    user_lang = get_user_language(telegram_id)
+
+    await _render_saved_page(update, telegram_id, user_lang, 0, is_callback=False, unread_only=True)
+
+async def unread_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle unread articles pagination."""
+    query = update.callback_query
+    await query.answer()
+    telegram_id = update.effective_user.id
+    from .user_storage import get_user_language
+    user_lang = get_user_language(telegram_id)
+
+    data = query.data
+    page = int(data.replace('unread_page_', ''))
+
+    await _render_saved_page(query, telegram_id, user_lang, page, is_callback=True, unread_only=True)
 
 async def saved_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /saved command - show saved articles with delete buttons."""
@@ -1350,9 +1379,18 @@ async def mark_read_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     # We should also refresh the page if we can determine the page number
     page_str = parts[3] if len(parts) > 3 else "0"
+    is_unread = "_unread_" in query.message.text.lower() if query.message and query.message.text else False # heuristic, but it works since title has 'Unread'
+    # Check callback path instead
+    if query.message and query.message.reply_markup:
+        # Check if 'All Articles' button exists
+        for row in query.message.reply_markup.inline_keyboard:
+            for btn in row:
+                if btn.callback_data == "saved_page_0":
+                    is_unread = True
+                    break
     if page_str.isdigit():
         page = int(page_str)
-        await _render_saved_page(query, telegram_id, user_lang, page, is_callback=True)
+        await _render_saved_page(query, telegram_id, user_lang, page, is_callback=True, unread_only=is_unread)
     else:
         # Just remove the message if it's from a single view or we don't know the page
         pass
@@ -1400,9 +1438,18 @@ async def mark_unread_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 
     # We should also refresh the page if we can determine the page number
     page_str = parts[3] if len(parts) > 3 else "0"
+    is_unread = "_unread_" in query.message.text.lower() if query.message and query.message.text else False # heuristic, but it works since title has 'Unread'
+    # Check callback path instead
+    if query.message and query.message.reply_markup:
+        # Check if 'All Articles' button exists
+        for row in query.message.reply_markup.inline_keyboard:
+            for btn in row:
+                if btn.callback_data == "saved_page_0":
+                    is_unread = True
+                    break
     if page_str.isdigit():
         page = int(page_str)
-        await _render_saved_page(query, telegram_id, user_lang, page, is_callback=True)
+        await _render_saved_page(query, telegram_id, user_lang, page, is_callback=True, unread_only=is_unread)
     elif page_str == "keep":
         # Remove the 'mark unread' button from the current message
         if query.message and query.message.reply_markup:
@@ -3798,6 +3845,7 @@ async def setup_bot_commands(application: Application):
         BotCommand("start", "🚀 Start the bot"),
         BotCommand("news", "📰 Get AI news digest"),
         BotCommand("saved", "🔖 View saved articles"),
+        BotCommand("unread", "📖 View unread articles"),
         BotCommand("clear", "🧹 Clear saved articles"),
         BotCommand("mark_all_read", "✅ Mark all as read"),
         BotCommand("export", "📤 Export saved articles"),
@@ -3831,6 +3879,7 @@ async def setup_bot_commands(application: Application):
         BotCommand("start", "🚀 Start the bot"),
         BotCommand("news", "📰 Get AI news digest"),
         BotCommand("saved", "🔖 View saved articles"),
+        BotCommand("unread", "📖 View unread articles"),
         BotCommand("clear", "🧹 Clear saved articles"),
         BotCommand("mark_all_read", "✅ Mark all as read"),
         BotCommand("export", "📤 Export saved articles"),
@@ -3864,6 +3913,7 @@ async def setup_bot_commands(application: Application):
         BotCommand("start", "🚀 Запустить бота"),
         BotCommand("news", "📰 Дайджест новостей"),
         BotCommand("saved", "🔖 Сохранённые статьи"),
+        BotCommand("unread", "📖 Непрочитанные статьи"),
         BotCommand("clear", "🧹 Очистить сохраненные статьи"),
         BotCommand("mark_all_read", "✅ Отметить все прочитанными"),
         BotCommand("export", "📤 Экспорт статей"),
@@ -3949,6 +3999,7 @@ def create_bot_application() -> Application:
     
     # New feature commands
     application.add_handler(CommandHandler("saved", saved_command))
+    application.add_handler(CommandHandler("unread", unread_command))
     application.add_handler(CommandHandler("save", save_command))
     application.add_handler(CommandHandler("clear_saved", clear_saved_command)) # Keep legacy alias
     application.add_handler(CommandHandler("clear", clear_saved_command))
@@ -3987,6 +4038,7 @@ def create_bot_application() -> Application:
     application.add_handler(CallbackQueryHandler(why_digest_callback, pattern='^why_digest_'))
     application.add_handler(CallbackQueryHandler(delete_article_callback, pattern='^del_'))
     application.add_handler(CallbackQueryHandler(saved_page_callback, pattern='^saved_page_'))
+    application.add_handler(CallbackQueryHandler(unread_page_callback, pattern='^unread_page_'))
     application.add_handler(CallbackQueryHandler(summarize_url_callback, pattern='^summarize_url_'))
     application.add_handler(CallbackQueryHandler(similar_url_callback, pattern='^similar_url_'))
     application.add_handler(CallbackQueryHandler(read_url_callback, pattern='^read_url_'))
