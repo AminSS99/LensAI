@@ -261,7 +261,7 @@ def mark_article_unread(telegram_id: int, url: str) -> bool:
     return False
 
 
-def get_saved_articles(telegram_id: int, limit: int = 10, category: str = None, offset: int = 0) -> List[Dict[str, Any]]:
+def get_saved_articles(telegram_id: int, limit: int = 10, category: str = None, offset: int = 0, unread_only: bool = False) -> List[Dict[str, Any]]:
     """Get user's saved articles from Firestore (or local)."""
     db = get_firestore_client()
     if db:
@@ -276,11 +276,20 @@ def get_saved_articles(telegram_id: int, limit: int = 10, category: str = None, 
                 
             # Order by saved_at desc
             query = query.order_by('saved_at', direction=firestore.Query.DESCENDING)
-            if offset > 0:
-                query = query.offset(offset)
-            docs = query.limit(limit).stream()
             
-            return [doc.to_dict() for doc in docs]
+            if unread_only:
+                docs = query.stream()
+                articles = []
+                for doc in docs:
+                    d = doc.to_dict()
+                    if not d.get('is_read', False):
+                        articles.append(d)
+                return articles[offset:offset + limit]
+            else:
+                if offset > 0:
+                    query = query.offset(offset)
+                docs = query.limit(limit).stream()
+                return [doc.to_dict() for doc in docs]
         except Exception as e:
             print(f"Firestore get error: {e}")
             # Fall through
@@ -293,6 +302,10 @@ def get_saved_articles(telegram_id: int, limit: int = 10, category: str = None, 
         articles = [a for a in articles if a.get('category', 'tech') == category]
 
     rev_articles = list(reversed(articles))
+
+    if unread_only:
+        rev_articles = [a for a in rev_articles if not a.get('is_read', False)]
+
     return rev_articles[offset:offset + limit]
 
 

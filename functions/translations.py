@@ -125,6 +125,10 @@ Use /pause to pause your digest""",
         'select_language': "🌐 **Select Language**\n\nChoose your preferred language for summaries:",
         'az_coming_soon': "🇦🇿 **Azərbaycan dili tezliklə!**\n\nAzerbaijani language support is coming soon. Stay tuned!",
         
+        # Unread
+        'unread_header': "📖 **Unread Articles**\n\n",
+        'no_unread': "📖 You have no unread articles!\n\nUse /saved to view all articles.",
+
         # New features
         'share_bot': "📤 **Share LensAI Bot**\n\nShare this bot with friends:\n\n🔗 https://t.me/LensAI_bot\n\n_Stay updated with the latest tech news!_",
         'filter_prompt': "📂 **Filter by Category**\n\nUse `/filter <category>` to see saved articles by category.\n\nCategories: `ai`, `security`, `crypto`, `startups`, `hardware`, `software`, `tech`",
@@ -337,6 +341,10 @@ _Работает локально - настройки сохранятся п�
         'select_language': "🌐 **Выберите язык**\n\nВыберите предпочитаемый язык для дайджестов:",
         'az_coming_soon': "🇦🇿 **Azərbaycan dili tezliklə!**\n\nПоддержка азербайджанского языка скоро появится. Следите за обновлениями!",
         
+        # Unread
+        'unread_header': "📖 **Непрочитанные статьи**\n\n",
+        'no_unread': "📖 У вас нет непрочитанных статей!\n\nИспользуйте /saved чтобы увидеть все статьи.",
+
         # New features
         'share_bot': "📤 **Поделиться LensAI Bot**\n\nПоделитесь ботом с друзьями:\n\n🔗 https://t.me/LensAI_bot\n\n_Будьте в курсе последних новостей технологий!_",
         'filter_prompt': "📂 **Фильтр по категории**\n\nИспользуйте `/filter <категория>` для просмотра статей.\n\nКатегории: `ai`, `security`, `crypto`, `startups`, `hardware`, `software`, `tech`",
