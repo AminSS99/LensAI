@@ -762,14 +762,14 @@ async def resume_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ============ SAVED ARTICLES ============
 
-async def _render_saved_page(update_or_query, telegram_id: int, user_lang: str, page: int, is_callback: bool = False):
+async def _render_saved_page(update_or_query, telegram_id: int, user_lang: str, page: int, is_callback: bool = False, unread_only: bool = False):
     from .user_storage import get_saved_articles
     from .translations import t
     
     limit = 10
     offset = page * limit
     # Fetch limit + 1 to check if there is a next page
-    articles = get_saved_articles(telegram_id, limit=limit + 1, offset=offset)
+    articles = get_saved_articles(telegram_id, limit=limit + 1, offset=offset, unread_only=unread_only)
     
     has_next = len(articles) > limit
     articles = articles[:limit]
@@ -846,15 +846,21 @@ async def _render_saved_page(update_or_query, telegram_id: int, user_lang: str, 
 
     # Add pagination buttons
     nav_buttons = []
+    unread_suffix = "_unread" if unread_only else ""
     if page > 0:
         prev_text = "⬅️ Назад" if user_lang == 'ru' else "⬅️ Previous"
-        nav_buttons.append(InlineKeyboardButton(prev_text, callback_data=f"saved_page_{page-1}"))
+        nav_buttons.append(InlineKeyboardButton(prev_text, callback_data=f"saved_page_{page-1}{unread_suffix}"))
     if has_next:
         next_text = "Вперед ➡️" if user_lang == 'ru' else "Next ➡️"
-        nav_buttons.append(InlineKeyboardButton(next_text, callback_data=f"saved_page_{page+1}"))
+        nav_buttons.append(InlineKeyboardButton(next_text, callback_data=f"saved_page_{page+1}{unread_suffix}"))
 
     if nav_buttons:
         keyboard.append(nav_buttons)
+
+    # Add Show Unread / Show All toggle button
+    toggle_text = t('btn_show_all', user_lang) if unread_only else t('btn_show_unread', user_lang)
+    toggle_callback = f"saved_page_0" if unread_only else f"saved_page_0_unread"
+    keyboard.append([InlineKeyboardButton(toggle_text, callback_data=toggle_callback)])
 
     # Add Export and Clear All buttons
     clear_all_text = t('clear_all_btn', user_lang)
@@ -903,9 +909,11 @@ async def saved_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     user_lang = get_user_language(telegram_id)
 
     data = query.data
+    unread_only = data.endswith('_unread')
+    data = data.replace('_unread', '')
     page = int(data.replace('saved_page_', ''))
 
-    await _render_saved_page(query, telegram_id, user_lang, page, is_callback=True)
+    await _render_saved_page(query, telegram_id, user_lang, page, is_callback=True, unread_only=unread_only)
 
 
 async def saved_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
