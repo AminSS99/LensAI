@@ -812,9 +812,15 @@ async def _render_saved_page(update_or_query, telegram_id: int, user_lang: str, 
         safe_title = escape_markdown_v1(title)
         safe_url = sanitize_markdown_url(url)
 
+        import urllib.parse
+        parsed_uri = urllib.parse.urlparse(url)
+        domain = '{uri.netloc}'.format(uri=parsed_uri).removeprefix('www.')
+
         item_num = offset + i
         if safe_url.startswith('http'):
             message += f"{item_num}. {emoji} [{safe_title}]({safe_url})"
+            if domain:
+                message += f" `[{escape_markdown_v1(domain)}]`"
         else:
             message += f"{item_num}. {emoji} {safe_title}"
         
@@ -1761,8 +1767,15 @@ async def filter_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         safe_title = escape_markdown_v1(title)
         raw_url = article.get('url', '')
         url = sanitize_markdown_url(raw_url)
+        import urllib.parse
+        parsed_uri = urllib.parse.urlparse(url)
+        domain = '{uri.netloc}'.format(uri=parsed_uri).removeprefix('www.')
+
         if url.startswith('http'):
-            message += f"{i}. [{safe_title}]({url})\n"
+            message += f"{i}. [{safe_title}]({url})"
+            if domain:
+                message += f" `[{escape_markdown_v1(domain)}]`"
+            message += "\n"
         else:
             message += f"{i}. {safe_title}\n"
 
